@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Aion2Builder.App/Aion2Builder.App.csproj" />
+    <Project Path="src/Aion2Builder.Cli/Aion2Builder.Cli.csproj" />
+    <Project Path="src/Aion2Builder.Core/Aion2Builder.Core.csproj" />
+  </Folder>
+</Solution>

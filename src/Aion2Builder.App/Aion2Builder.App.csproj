@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>Aion2Builder</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    Interface écrite en C# (pas de .axaml) : le compilateur XAML d'Avalonia est une DLL non signée
+    que Smart App Control bloque à la compilation. Sans fichier XAML ni ressource Avalonia, cette
+    étape ne s'exécute pas.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Aion2Builder.Core\Aion2Builder.Core.csproj" />
+  </ItemGroup>
+</Project>

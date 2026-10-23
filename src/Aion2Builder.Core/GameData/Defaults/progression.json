@@ -1,0 +1,90 @@
+{
+  "_note": "Paliers de progression d'équipement. Un palier est atteint quand le niveau d'objet (gear score du site officiel) dépasse 'minItemLevel' et que le niveau du personnage dépasse 'minLevel'. 'targetGrade' = rareté visée à ce palier : les pièces en dessous sont de transition (ne pas trop les enchanter), celles à ce grade ou plus sont à garder. Seuils et sources indicatifs (guides communautaires) : ajuste-les à la saison en cours.",
+  "grades": [
+    { "code": "Common", "name": "Blanc", "rank": 1, "color": "#EDEDED" },
+    { "code": "Rare", "name": "Vert", "rank": 2, "color": "#52B35C" },
+    { "code": "Legend", "name": "Bleu", "rank": 3, "color": "#3D94D8" },
+    { "code": "Unique", "name": "Jaune", "rank": 4, "color": "#FB9800" },
+    { "code": "Epic", "name": "Orange", "rank": 5, "color": "#EE6C2A" },
+    { "code": "Mythic", "name": "Rouge", "rank": 6, "color": "#D33939" },
+    { "code": "Special", "name": "Turquoise", "rank": 4, "color": "#34B798" }
+  ],
+  "slotGroups": {
+    "MainHand": "Weapon", "SubHand": "Weapon",
+    "Helmet": "Armor", "Shoulder": "Armor", "Torso": "Armor", "Pants": "Armor", "Gloves": "Armor", "Boots": "Armor", "Cape": "Armor",
+    "Necklace": "Accessory", "Earring1": "Accessory", "Earring2": "Accessory", "Ring1": "Accessory", "Ring2": "Accessory",
+    "Bracelet1": "Accessory", "Bracelet2": "Accessory", "Belt": "Accessory",
+    "Rune1": "Special", "Rune2": "Special", "Amulet": "Special"
+  },
+  "groupNames": { "Weapon": "Arme", "Armor": "Armure", "Accessory": "Accessoire", "Special": "Rune / amulette" },
+  "slotNames": {
+    "MainHand": "Arme", "SubHand": "Main secondaire", "Helmet": "Casque", "Shoulder": "Épaulettes", "Torso": "Torse", "Pants": "Jambières",
+    "Gloves": "Gants", "Boots": "Bottes", "Cape": "Cape", "Necklace": "Collier", "Earring1": "Boucle d'oreille 1", "Earring2": "Boucle d'oreille 2",
+    "Ring1": "Anneau 1", "Ring2": "Anneau 2", "Bracelet1": "Bracelet 1", "Bracelet2": "Bracelet 2", "Belt": "Ceinture",
+    "Rune1": "Rune 1", "Rune2": "Rune 2", "Amulet": "Amulette"
+  },
+  "requiredSlots": ["MainHand", "SubHand", "Helmet", "Shoulder", "Torso", "Pants", "Gloves", "Boots", "Cape", "Necklace", "Earring1", "Earring2", "Ring1", "Ring2", "Bracelet1", "Bracelet2", "Belt", "Rune1", "Amulet"],
+  "optionalSlots": ["Rune2"],
+  "enchant": {
+    "_note": "Coût relatif de chaque niveau d'enchantement (index 0 = passage +0 -> +1). Sert à comparer enchanter / changer de pièce.",
+    "costByLevel": [1, 1, 1, 2, 2, 3, 4, 6, 9, 13, 18, 25, 35, 50, 70],
+    "safeLevel": 5,
+    "transitionalMax": 3
+  },
+  "stages": [
+    {
+      "id": "leveling", "name": "Montée de niveau", "minLevel": 1, "maxLevel": 44, "minItemLevel": 0, "targetGrade": "Rare",
+      "goal": "Atteindre le niveau maximum : l'équipement change trop vite pour y investir.",
+      "gear": [
+        { "group": "Weapon", "pve": "Récompenses de quêtes de campagne", "pvp": "Récompenses de quêtes de campagne" },
+        { "group": "Armor", "pve": "Récompenses de quêtes et expéditions de niveau", "pvp": "Récompenses de quêtes et expéditions de niveau" },
+        { "group": "Accessory", "pve": "Quêtes et coffres de récompense", "pvp": "Quêtes et coffres de récompense" }
+      ],
+      "tips": ["N'enchante pas au-delà de +0/+3 : tout sera remplacé.", "Garde tes matériaux d'enchantement et ta monnaie pour le niveau max."]
+    },
+    {
+      "id": "campaign", "name": "Équipement de campagne (bleu)", "minLevel": 45, "minItemLevel": 0, "targetGrade": "Legend",
+      "goal": "Compléter un set bleu de quête puis enchaîner les expéditions.",
+      "gear": [
+        { "group": "Weapon", "pve": "Arme bleue de quête (set du Libérateur), puis arme d'expédition", "pvp": "Arme bleue de quête, puis arme achetée en points Abyssaux" },
+        { "group": "Armor", "pve": "Set bleu de quête, remplacé pièce par pièce par les armures d'expédition", "pvp": "Set bleu de quête puis pièces Abyssales" },
+        { "group": "Accessory", "pve": "Accessoires d'expédition (anneaux, boucles, collier) à enchanter jusqu'à +5", "pvp": "Accessoires d'expédition, puis accessoires Abyssaux" },
+        { "group": "Special", "pve": "Amulette par transmutation, rune de quête", "pvp": "Amulette par transmutation, rune de quête" }
+      ],
+      "tips": ["Les accessoires sont gardés plus longtemps que l'armure : ce sont eux qu'il faut enchanter en premier.", "Ne monte pas une arme bleue de quête au-dessus de +3."]
+    },
+    {
+      "id": "expedition", "name": "Expéditions (bleu enchanté → jaune)", "minLevel": 45, "minItemLevel": 1100, "targetGrade": "Unique",
+      "goal": "Passer les emplacements un par un au grade jaune via les expéditions et la transmutation.",
+      "gear": [
+        { "group": "Weapon", "pve": "Arme jaune des expéditions difficiles (priorité n°1 : plus gros gain de stats)", "pvp": "Arme jaune de la boutique Abyssale" },
+        { "group": "Armor", "pve": "Armures jaunes d'expédition ; commence par les pièces les plus faibles", "pvp": "Armures Abyssales (stats JcJ)" },
+        { "group": "Accessory", "pve": "Accessoires jaunes d'expédition / transmutation", "pvp": "Accessoires Abyssaux" },
+        { "group": "Special", "pve": "Amulette et runes de meilleur grade (transmutation)", "pvp": "Amulette et runes de meilleur grade (transmutation)" }
+      ],
+      "tips": ["Enchante les pièces jaunes jusqu'au niveau sûr (+5) avant de chercher la pièce suivante.", "Vends au marché ce qui ne sert pas à ta classe pour financer les enchantements."]
+    },
+    {
+      "id": "raid", "name": "Raids et Abysses (jaune → orange)", "minLevel": 45, "minItemLevel": 1400, "targetGrade": "Epic",
+      "goal": "Obtenir les pièces orange du contenu le plus difficile.",
+      "gear": [
+        { "group": "Weapon", "pve": "Arme orange de raid / expédition cauchemar", "pvp": "Arme orange Abyssale (rang Abyssal)" },
+        { "group": "Armor", "pve": "Armures orange de raid", "pvp": "Armures orange Abyssales" },
+        { "group": "Accessory", "pve": "Accessoires orange de raid", "pvp": "Accessoires orange Abyssaux" },
+        { "group": "Special", "pve": "Runes et amulette orange", "pvp": "Runes et amulette orange" }
+      ],
+      "tips": ["L'arme d'abord, puis les accessoires, puis l'armure.", "Au-delà de +5 l'enchantement coûte cher : réserve-le aux pièces orange."]
+    },
+    {
+      "id": "endgame", "name": "Fin de jeu (orange → rouge, dépassement)", "minLevel": 45, "minItemLevel": 1700, "targetGrade": "Mythic",
+      "goal": "Optimiser : pièces rouges, dépassement (exceed) et stats secondaires parfaites.",
+      "gear": [
+        { "group": "Weapon", "pve": "Arme rouge (raid le plus difficile)", "pvp": "Arme rouge Abyssale" },
+        { "group": "Armor", "pve": "Pièces rouges / dépassement des orange", "pvp": "Pièces rouges Abyssales" },
+        { "group": "Accessory", "pve": "Relance des stats secondaires vers tes stats prioritaires", "pvp": "Relance des stats secondaires vers tes stats JcJ" },
+        { "group": "Special", "pve": "Runes rouges", "pvp": "Runes rouges" }
+      ],
+      "tips": ["Le gain par point d'enchantement baisse : compare avec la relance des stats secondaires."]
+    }
+  ]
+}

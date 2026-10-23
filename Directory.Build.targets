@@ -1,0 +1,8 @@
+<Project>
+  <!--
+    Avalonia.BuildServices lance à chaque build une tâche de télémétrie contenue dans une DLL non signée,
+    que Smart App Control (Windows) bloque et qui fait échouer la compilation. Cette cible vide,
+    importée après celles des paquets NuGet, la remplace. Aucun effet sur l'application.
+  -->
+  <Target Name="AvaloniaStats" />
+</Project>

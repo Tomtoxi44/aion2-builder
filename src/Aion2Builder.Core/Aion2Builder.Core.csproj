@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Aion2Builder</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Données de jeu par défaut : embarquées, et surchargeables par des fichiers du même nom
+         dans le dossier utilisateur (voir GameDataStore). -->
+    <EmbeddedResource Include="GameData\Defaults\*.json" LogicalName="Aion2Builder.Defaults.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

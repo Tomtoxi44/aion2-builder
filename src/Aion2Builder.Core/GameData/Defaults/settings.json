@@ -1,0 +1,26 @@
+{
+  "_note": "Réglages de l'algorithme. Les coûts Daevanion sont relatifs (le site officiel ne les donne pas) : seul leur rapport compte.",
+  "daevanion": {
+    "boardPools": { "Ariel": "PvE", "Azphel": "PvP" },
+    "poolNames": { "Normal": "Points Daevanion (plateaux communs)", "PvE": "Cristaux JcE (Ariel)", "PvP": "Cristaux JcJ (Azphel)" },
+    "nodeCost": { "Common": 1, "Rare": 2, "Legend": 3, "Unique": 4, "Epic": 5, "Mythic": 6 },
+    "skillNodeValue": 2.0,
+    "coreSkillMultiplier": 1.6,
+    "unequippedSkillNodeValue": 0.2,
+    "maxPathLength": 5,
+    "planLength": 15
+  },
+  "skills": {
+    "commonPvpSkills": ["Dissipation de choc"],
+    "lowLevelGap": 4,
+    "wastedLevelThreshold": 5
+  },
+  "stats": {
+    "categoryTolerance": 0.06,
+    "wastedShare": 0.05,
+    "lowWeight": 0.15
+  },
+  "gear": {
+    "weakSlotGap": 4
+  }
+}
