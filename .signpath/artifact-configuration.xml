@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Configuration d'artefact SignPath (à coller dans le projet SignPath « aion2-builder », configuration par défaut).
+  L'artefact GitHub est un zip qui contient Aion2Builder.exe ; nom et version du produit sont vérifiés avant signature.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="Aion2Builder.exe" product-name="Aion 2 Builder" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

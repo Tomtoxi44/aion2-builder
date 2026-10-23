@@ -2,6 +2,9 @@
 
 # Aion 2 Builder
 
+[Télécharger](https://github.com/Tomtoxi44/aion2-builder/releases/latest) · [Code signing policy](#code-signing-policy) ·
+[Confidentialité](#confidentialité-privacy-policy) · [Licence MIT](LICENSE) · outil non officiel, non affilié à NCSOFT
+
 Application locale (.NET 10) qui importe ton personnage AION 2 depuis le site officiel et te dit, **pour ta classe et
 en vue JcE (PvE) ou JcJ (PvP)** :
 
@@ -33,18 +36,19 @@ fichier »), c'est Smart App Control : voir la dernière section.
 
 ### Sur un PC sans le projet (mise à jour automatique)
 
-À chaque push sur `main`, GitHub compile un exe autonome (pas de .NET à installer), numéroté `v1.0.<n>`, et le dépose
-sur Aion 2 Todo.
+À chaque push sur `main`, GitHub compile un exe autonome (pas de .NET à installer), numéroté `v1.0.<n>`, le publie
+dans les [versions GitHub](https://github.com/Tomtoxi44/aion2-builder/releases) et le dépose sur Aion 2 Todo.
 
-1. Télécharge-le une fois : <https://aion2-todo-7275.azurewebsites.net/api/downloads/builder/file>, et range-le dans
-   un dossier à toi (pas dans `Program Files` : l'application doit pouvoir remplacer son exe).
+1. Télécharge-le une fois (dernière version GitHub, ou <https://aion2-todo-7275.azurewebsites.net/api/downloads/builder/file>)
+   et range-le dans un dossier à toi (pas dans `Program Files` : l'application doit pouvoir remplacer son exe).
 2. Au lancement puis toutes les 6 h, l'application regarde s'il existe une version plus récente : un bouton
    « ⬆ v1.0.n disponible » apparaît en haut à droite. Un clic la télécharge, vérifie son empreinte, remplace l'exe et
    relance l'application (l'ancienne version est effacée au lancement suivant). « Aide → Vérifier les mises à jour »
    le fait à la demande. La version en cours est affichée en bas à droite.
 
-Une compilation locale (`publier.cmd`) porte la version « build locale » et ne propose pas de mise à jour. L'exe n'est
-pas signé : si Smart App Control est actif sur ce PC, Windows le bloque.
+Une compilation locale (`publier.cmd`) porte la version « build locale » et ne propose pas de mise à jour. Les exe
+publiés seront signés dès que la signature SignPath sera en place (voir [Code signing policy](#code-signing-policy)) ;
+d'ici là, Windows peut afficher « éditeur inconnu » au premier lancement, et Smart App Control les bloque.
 
 ## Utilisation en ligne de commande
 
@@ -71,7 +75,7 @@ Interface graphique :
 dotnet run --project src/Aion2Builder.App
 ```
 
-L'interface est organisée comme un éditeur (maquette : `Redesign ergonomique de l'application/design_handoff_ide_redesign`) :
+L'interface est organisée comme un éditeur :
 
 - **Import** (avatar du rail ou **Ctrl+K**) : tape le nom, les résultats du site officiel s'affichent au fil de la saisie ;
   Entrée importe le meilleur résultat. L'étiquette « eu · tous serveurs » choisit la région et le serveur (liste
@@ -163,6 +167,37 @@ pas remplie.
 - Familiers : seuls les effets de possession sont comptés. Les stats tirées par l'analyse de perception d'espèce ne sont
   lisibles ni sur le site officiel ni par le Pet Meter. Le site Aion 2 Todo (offre gratuite) peut mettre une minute à répondre.
 - Les options possibles par type de pièce sont relevées sur des pièces réelles : la liste peut être incomplète.
+
+## Confidentialité (privacy policy)
+
+Aion 2 Builder n'envoie rien sans que tu le demandes, sauf la vérification des mises à jour, que tu peux couper.
+
+- **Site officiel AION 2** (`aion2.plaync.com`, `api-search.plaync.com`) : seulement quand tu cherches, importes ou
+  actualises un personnage (nom cherché, région, serveur).
+- **Aion 2 Todo** (`aion2-todo-7275.azurewebsites.net`) :
+  - vérification des mises à jour au lancement puis toutes les 6 h : une simple demande du numéro de la dernière
+    version. C'est le seul envoi automatique ; il se coupe dans **Aide → Vérifier automatiquement**. Le téléchargement
+    n'a lieu que si tu cliques sur le bouton de mise à jour ;
+  - familiers : seulement si tu relies ta clé de synchro, envoyée à Aion 2 Todo pour lire ta collection.
+- Les requêtes portent le numéro de version de l'application (en-tête `User-Agent`). Aucune télémétrie, aucune
+  statistique d'usage, rien n'est envoyé ailleurs.
+- Ce que l'application garde (personnages importés, préférences, clé des familiers) reste sur ton PC, dans
+  `%APPDATA%\Aion2Builder` ; supprimer ce dossier efface tout.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
+[SignPath Foundation](https://signpath.org/).
+
+- Seuls les exe compilés par GitHub Actions depuis ce dépôt (workflow `Build`) sont signés, et chaque version est
+  approuvée à la main avant signature. Mise en place en cours : les versions publiées avant ne sont pas signées.
+- Auteurs (committers) et relecteurs (reviewers) : [Tomtoxi44](https://github.com/Tomtoxi44)
+- Approbateurs (approvers) : [Tomtoxi44](https://github.com/Tomtoxi44)
+- Confidentialité : voir [Confidentialité (privacy policy)](#confidentialité-privacy-policy).
+
+## Licence
+
+[MIT](LICENSE). Outil non officiel, non affilié à NCSOFT : AION 2, ses noms et ses données appartiennent à NCSOFT.
 
 ## Compiler sous Windows avec Smart App Control
 

@@ -10,6 +10,14 @@
     <ApplicationIcon>Assets/app.ico</ApplicationIcon>
     <!-- Compilation locale : 0.0.0 (pas de mise à jour proposée). GitHub passe -p:Version=1.0.N. -->
     <Version>0.0.0</Version>
+    <!-- Métadonnées de l'exe (Propriétés → Détails), exigées par SignPath sur les fichiers signés. -->
+    <Product>Aion 2 Builder</Product>
+    <AssemblyTitle>Aion 2 Builder</AssemblyTitle>
+    <Company>A.Tommy</Company>
+    <Description>Aion 2 Builder : conseils de build pour AION 2</Description>
+    <Copyright>Copyright (c) 2026 A.Tommy. Licence MIT.</Copyright>
+    <!-- Version produit = 1.0.N exactement (sans « +commit ») : SignPath la contrôle à la signature. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
   <!--

@@ -483,3 +483,6 @@ $RECYCLE.BIN/
 
 # Exécutable généré par publier.cmd
 publish/
+
+# Maquette de la refonte (outil de design, runtime sous licence inconnue) : gardée en local, hors dépôt public.
+Redesign ergonomique de l'application/

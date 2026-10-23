@@ -21,7 +21,7 @@ namespace Aion2Builder.App;
 
 /// <summary>Dernières saisies, pour rouvrir l'application sur le même personnage, le même écran et le même thème.</summary>
 sealed record UiPrefs(string Region = "eu", string Server = "", string Name = "", GameMode Mode = GameMode.PvE, string? LastFile = null,
-    int Tab = 0, string Screen = "Home", string Accent = "Orange")
+    int Tab = 0, string Screen = "Home", string Accent = "Orange", bool AutoUpdate = true)
 {
     static string PathOf => System.IO.Path.Combine(AppPaths.Root, "ui.json");
 
@@ -303,7 +303,8 @@ public sealed class MainWindow : Window
                 Menu("Personnage", ("Actualiser depuis le site officiel", () => _ = RefreshAsync()), ("Changer de personnage", ShowImport)),
                 Menu("Données", ("Recharger les données", ReloadData), ("Actualiser les familiers (Aion 2 Todo)", () => _ = PetsAsync(null)), ("Ouvrir le dossier des données", OpenDataFolder)),
                 Menu("Aide", ("Comment c'est calculé ?", () => Update(st => { st.Screen = report is null ? Screen.Import : Screen.Home; st.HomeHow = true; })),
-                    ("Vérifier les mises à jour", () => _ = CheckUpdateAsync(manual: true))),
+                    ("Vérifier les mises à jour", () => _ = CheckUpdateAsync(manual: true)),
+                    ($"{(prefs.AutoUpdate ? "✓ " : "")}Vérifier automatiquement (au lancement, puis toutes les 6 h)", ToggleAutoUpdate)),
             },
         };
 
@@ -785,9 +786,18 @@ public sealed class MainWindow : Window
         }
     }
 
+    /// <summary>Seul envoi réseau fait sans demande explicite : désactivable (politique de confidentialité, README).</summary>
+    void ToggleAutoUpdate()
+    {
+        prefs = prefs with { AutoUpdate = !prefs.AutoUpdate };
+        prefs.Save();
+        SetStatus(prefs.AutoUpdate ? "vérification automatique des mises à jour activée" : "vérification automatique désactivée : « Aide → Vérifier les mises à jour » reste disponible");
+        Render();
+    }
+
     async Task CheckUpdateAsync(bool manual)
     {
-        if (installing) return;
+        if (installing || !manual && !prefs.AutoUpdate) return;
         if (Updater.Current is null)
         {
             if (manual) SetStatus("build locale (publier.cmd) : mets-la à jour avec git pull puis publier.cmd");
