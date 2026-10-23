@@ -7,7 +7,7 @@ using Aion2Builder.Import;
 namespace Aion2Builder.App;
 
 /// <summary>
-/// Mise à jour par Aion 2 Todo : chaque push sur main y dépose l'exe compilé par GitHub (version 1.0.N).
+/// Mise à jour par Aion 2 Todo : chaque push sur main y dépose l'exe compilé par GitHub (version 1.1.N).
 /// Une compilation locale (publier.cmd) porte la version 0.0.0 : elle ne propose pas de mise à jour.
 /// </summary>
 static class Updater
