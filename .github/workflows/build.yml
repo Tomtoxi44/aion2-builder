@@ -11,6 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -26,6 +27,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: windows-latest
+    timeout-minutes: 90 # dont jusqu'à 60 min d'attente de l'approbation SignPath
     permissions:
       actions: read   # SignPath relit l'artefact et l'historique du run (vérification de l'origine)
       contents: write # création de la version GitHub
