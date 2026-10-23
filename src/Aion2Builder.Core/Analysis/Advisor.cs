@@ -20,7 +20,7 @@ public sealed class Advisor(GameDatabase db)
         var daevanion = planner.Plan(c, profile, sp);
 
         var findings = new List<Finding>();
-        findings.AddRange(stats.Findings(sp, profile));
+        findings.AddRange(stats.Findings(sp, profile, c));
         findings.AddRange(gearAdvisor.Findings(gear, c, profile));
         findings.AddRange(skillAdvisor.Findings(skills, c, profile));
         findings.AddRange(planner.Findings(daevanion, c, profile));

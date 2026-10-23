@@ -107,7 +107,30 @@ public sealed class StatAnalyzer(GameDatabase db)
         return Budget(d, flatTotal, e.Value) - Budget(d, flatTotal, 0);
     }
 
-    public List<Finding> Findings(StatProfile sp, ResolvedProfile p)
+    /// <summary>Où ce personnage peut encore trouver chaque stat : cases Daevanion fermées, stats secondaires de ses pièces, titres.</summary>
+    sealed class Availability
+    {
+        public int Nodes;
+        public SortedSet<string> Slots = [];
+        public bool Title;
+    }
+
+    Dictionary<string, Availability> Obtainable(CharacterSnapshot c, ResolvedProfile p)
+    {
+        var result = new Dictionary<string, Availability>();
+        Availability Get(string key) => result.TryGetValue(key, out var a) ? a : result[key] = new Availability();
+        foreach (var board in c.Boards.Where(b => DaevanionPlanner.Relevant(db.Settings.Daevanion.BoardPools.GetValueOrDefault(b.Name, "Normal"), p.Mode)))
+            foreach (var e in board.Nodes.Where(n => !n.Open).SelectMany(n => n.Effects).Where(e => e.IsStat && Applies(e, p.Mode)))
+                Get(e.StatKey!).Nodes++;
+        foreach (var item in c.Equipment)
+            foreach (var e in item.SubStats.Where(e => e.IsStat && Applies(e, p.Mode)))
+                Get(e.StatKey!).Slots.Add(db.SlotName(item.Slot));
+        foreach (var e in c.Titles.SelectMany(t => t.Effects).Where(e => e.IsStat && Applies(e, p.Mode)))
+            Get(e.StatKey!).Title = true;
+        return result;
+    }
+
+    public List<Finding> Findings(StatProfile sp, ResolvedProfile p, CharacterSnapshot c)
     {
         var findings = new List<Finding>();
         var s = db.Settings.Stats;
@@ -119,56 +142,73 @@ public sealed class StatAnalyzer(GameDatabase db)
             return findings;
         }
 
+        // On ne conseille que des stats que ce personnage peut réellement aller chercher.
+        var obtainable = Obtainable(c, p);
+        bool Can(StatTotal t) => obtainable.ContainsKey(t.Def.Key);
+        string Where(StatTotal t)
+        {
+            if (!obtainable.TryGetValue(t.Def.Key, out var a))
+                return t.Def.Where.Count > 0 ? string.Join(", ", t.Def.Where.Take(2)) : "stats secondaires";
+            var parts = new List<string>();
+            if (a.Nodes > 0) parts.Add($"{a.Nodes} case(s) Daevanion encore fermée(s)");
+            if (a.Slots.Count > 0) parts.Add($"stat secondaire possible sur : {string.Join(", ", a.Slots.Take(4))}");
+            if (a.Title) parts.Add("titres");
+            return string.Join(" ; ", parts);
+        }
+        StatTotal? Wanted(StatCategory? category) =>
+            sp.Stats.Where(x => (category is null || x.Def.Category == category) && x.Weight > s.LowWeight && Can(x))
+                .OrderByDescending(x => x.Deficit * x.Weight).FirstOrDefault();
+
         findings.Add(new Finding(Area.Stats, Severity.Info, $"Efficacité des stats : {Fmt.Pct(sp.Efficiency)}",
             $"Part de tes stats ajustables (stats secondaires, Daevanion, titres, stats divines) placée dans des stats utiles pour {who}. Les stats fixes des pièces (DÉF d'une armure, ATQ d'une arme) sont hors calcul : elles viennent avec la pièce."));
 
         // 1. Répartition Attaque / Défense / Survie / Utilité.
-        var over = sp.Categories.Where(c => c.Gap > s.CategoryTolerance).OrderByDescending(c => c.Gap).ToList();
-        var under = sp.Categories.Where(c => c.Gap < -s.CategoryTolerance).OrderBy(c => c.Gap).ToList();
-        string Line(CategoryShare c) => $"{GameDatabase.CategoryName(c.Category)} : {Fmt.Pct(c.Share)} de tes stats ajustables (≈ {Fmt.Pct(c.Target)} visé)";
+        var over = sp.Categories.Where(x => x.Gap > s.CategoryTolerance).OrderByDescending(x => x.Gap).ToList();
+        var under = sp.Categories.Where(x => x.Gap < -s.CategoryTolerance).OrderBy(x => x.Gap).ToList();
+        string Line(CategoryShare x) => $"{GameDatabase.CategoryName(x.Category)} : {Fmt.Pct(x.Share)} de tes stats ajustables (≈ {Fmt.Pct(x.Target)} visé)";
         if (over.Count > 0 && under.Count > 0)
         {
             var o = over[0];
             var u = under[0];
-            var give = sp.Stats.Where(x => x.Def.Category == o.Category).OrderByDescending(x => x.Budget * (1 - x.Weight)).First();
-            var take = sp.Stats.Where(x => x.Def.Category == u.Category).OrderByDescending(x => x.Deficit * x.Weight).First();
+            var give = sp.Stats.Where(x => x.Def.Category == o.Category).OrderByDescending(x => x.ChoiceBudget * (1 - x.Weight)).First();
+            var take = Wanted(u.Category);
             var big = Math.Max(o.Gap, -u.Gap) > 2 * s.CategoryTolerance;
             findings.Add(new Finding(Area.Stats, big ? Severity.Important : Severity.Advice,
                 $"Trop {GameDatabase.Of(o.Category)}, pas assez {GameDatabase.Of(u.Category)}",
                 $"{Line(o)}. {Line(u)}. Repères pour {who}.",
-                $"Sur tes prochaines pièces, relances de stats secondaires et pierres de mana, remplace « {give.Def.Name} » par « {take.Def.Name} » ({Where(take)}).",
+                take is null
+                    ? $"Lors des relances de stats secondaires et au prochain changement de pièce, abandonne « {give.Def.Name} »."
+                    : $"Lors des relances de stats secondaires, des choix Daevanion et des changements de pièce, remplace « {give.Def.Name} » par « {take.Def.Name} » ({Where(take)}).",
                 big ? 70 : 45));
         }
         else
         {
             foreach (var o in over)
-                findings.Add(new Finding(Area.Stats, Severity.Advice, $"Beaucoup {GameDatabase.Of(o.Category)}",
-                    $"{Line(o)}.", $"Réoriente une partie vers « {Best(sp).Def.Name} ».", 35));
+                findings.Add(new Finding(Area.Stats, Severity.Advice, $"Beaucoup {GameDatabase.Of(o.Category)}", $"{Line(o)}.",
+                    Wanted(null) is { } best ? $"Réoriente une partie vers « {best.Def.Name} » ({Where(best)})." : null, 35));
             foreach (var u in under)
-            {
-                var take = sp.Stats.Where(x => x.Def.Category == u.Category).OrderByDescending(x => x.Deficit * x.Weight).First();
-                findings.Add(new Finding(Area.Stats, Severity.Advice, $"Pas assez {GameDatabase.Of(u.Category)}",
-                    $"{Line(u)}.", $"Cherche « {take.Def.Name} » ({Where(take)}).", 40));
-            }
+                if (Wanted(u.Category) is { } take)
+                    findings.Add(new Finding(Area.Stats, Severity.Advice, $"Pas assez {GameDatabase.Of(u.Category)}",
+                        $"{Line(u)}.", $"Cherche « {take.Def.Name} » ({Where(take)}).", 40));
         }
 
         // 2. Stats qui prennent de la place sans servir la classe.
         foreach (var w in sp.Stats.Where(x => x.Weight <= s.LowWeight && x.Share >= s.WastedShare).Take(3))
         {
-            var from = string.Join(", ", w.Sources.Where(x => !x.Fixed).Take(3).Select(x => x.Source));
+            var from = string.Join(", ", w.Sources.Where(x => !x.Fixed).Select(x => x.Source).Distinct().Take(3));
             findings.Add(new Finding(Area.Stats, Severity.Advice, $"{w.Def.Name} peu utile ({Fmt.Pct(w.Share)} de tes stats ajustables)",
                 $"Pour {who}, « {w.Def.Name} » rapporte peu. Elle vient surtout de : {from}.",
                 "Remplace-la en priorité lors des relances de stats secondaires ou au prochain changement de pièce.",
                 25 + 100 * w.Share));
         }
 
-        // 3. Stats prioritaires en retard sur la répartition idéale.
-        var wanted = sp.Stats.Where(x => x.Weight >= 0.6 && x.Deficit > 0.01)
+        // 3. Stats prioritaires en retard sur la répartition idéale, et réellement disponibles.
+        var wanted = sp.Stats.Where(x => x.Weight >= 0.6 && x.Deficit > 0.01 && Can(x))
             .OrderByDescending(x => x.Deficit * x.Weight).Take(3).ToList();
         if (wanted.Count > 0)
             findings.Add(new Finding(Area.Stats, Severity.Advice, $"Stats à aller chercher : {string.Join(", ", wanted.Select(x => x.Def.Name))}",
-                string.Join(" · ", wanted.Select(x => $"{x.Def.Name} : {Fmt.Pct(x.Share)} des stats ajustables (≈ {Fmt.Pct(x.ExpectedShare)} visé)")),
-                $"Vise-les sur tes cases Daevanion, tes stats secondaires et tes pierres de mana — {Where(wanted[0])}.",
+                string.Join(" · ", wanted.Select(x => $"{x.Def.Name} : {Fmt.Pct(x.Share)} des stats ajustables (≈ {Fmt.Pct(x.ExpectedShare)} visé) — {Where(x)}")),
+                "Priorise-les dans tes choix Daevanion et tes relances de stats secondaires.",
                 50 + 100 * wanted.Sum(x => x.Deficit * x.Weight)));
 
         if (sp.OtherModeBudget > 0.05 * sp.TotalBudget)
@@ -184,9 +224,4 @@ public sealed class StatAnalyzer(GameDatabase db)
 
         return findings;
     }
-
-    static StatTotal Best(StatProfile sp) =>
-        sp.Stats.OrderByDescending(x => x.Deficit * x.Weight).First();
-
-    static string Where(StatTotal t) => t.Def.Where.Count > 0 ? string.Join(", ", t.Def.Where.Take(3)) : "stats secondaires";
 }

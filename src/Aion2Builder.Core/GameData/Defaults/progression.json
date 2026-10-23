@@ -48,7 +48,7 @@
       "gear": [
         { "group": "Weapon", "pve": "Arme bleue de quête (set du Libérateur), puis arme d'expédition", "pvp": "Arme bleue de quête, puis arme achetée en points Abyssaux" },
         { "group": "Armor", "pve": "Set bleu de quête, remplacé pièce par pièce par les armures d'expédition", "pvp": "Set bleu de quête puis pièces Abyssales" },
-        { "group": "Accessory", "pve": "Accessoires d'expédition (anneaux, boucles, collier) à enchanter jusqu'à +5", "pvp": "Accessoires d'expédition, puis accessoires Abyssaux" },
+        { "group": "Accessory", "pve": "Accessoires d'expédition (anneaux, boucles, collier)", "pvp": "Accessoires d'expédition, puis accessoires Abyssaux" },
         { "group": "Special", "pve": "Amulette par transmutation, rune de quête", "pvp": "Amulette par transmutation, rune de quête" }
       ],
       "tips": ["Les accessoires sont gardés plus longtemps que l'armure : ce sont eux qu'il faut enchanter en premier.", "Ne monte pas une arme bleue de quête au-dessus de +3."]
