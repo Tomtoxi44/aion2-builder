@@ -4,6 +4,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 
 namespace Aion2Builder.App;
 
@@ -14,6 +15,22 @@ static class Ui
     public static AccentTheme Accent { get; set; } = AccentTheme.All[0];
 
     static readonly Cursor Hand = new(StandardCursorType.Hand);
+
+    /// <summary>Indicateur de chargement : arc qui tourne tant qu'il est affiché.</summary>
+    public static Control Spinner(double size, IBrush color)
+    {
+        var rotate = new RotateTransform();
+        var arc = new Avalonia.Controls.Shapes.Arc
+        {
+            Width = size, Height = size, StartAngle = 0, SweepAngle = 270, Stroke = color, StrokeThickness = Math.Max(1.5, size / 7),
+            StrokeLineCap = PenLineCap.Round, RenderTransform = rotate, VerticalAlignment = VerticalAlignment.Center,
+        };
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+        timer.Tick += (_, _) => rotate.Angle = (rotate.Angle + 8) % 360;
+        arc.AttachedToVisualTree += (_, _) => timer.Start();
+        arc.DetachedFromVisualTree += (_, _) => timer.Stop();
+        return arc;
+    }
 
     public static TextBlock T(string text, double size = 13, IBrush? color = null, FontWeight weight = FontWeight.Normal,
         bool mono = false, bool wrap = false)

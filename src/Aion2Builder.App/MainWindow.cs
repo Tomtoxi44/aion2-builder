@@ -82,6 +82,11 @@ public sealed class MainWindow : Window
     List<SearchHit> hits = [];
     bool searching;
     CancellationTokenSource? searchCts;
+    // Import en cours : la ligne du personnage cliqué tourne et affiche l'étape (« Détails 5/30… ») ; un seul import à la fois.
+    string? loading;
+    string loadStep = "";
+    TextBlock? loadText;
+    string? importError;
 
     public MainWindow()
     {
@@ -584,6 +589,10 @@ public sealed class MainWindow : Window
     void RenderHits()
     {
         hitsPanel.Children.Clear();
+        if (importError is { } error) hitsPanel.Children.Add(T($"✕ {error}", 12, Tok.Bad, wrap: true).WithMargin(12, 7));
+        // Import lancé par Entrée sans résultat affiché : ligne à part avec le nom tapé.
+        if (loading is { } key && key.StartsWith("name:", StringComparison.Ordinal))
+            hitsPanel.Children.Add(LoadingRow(T(key[5..], 13, Accent.Main, FontWeight.SemiBold)));
         var text = search.Text?.Trim() ?? "";
         if (searching) { hitsPanel.Children.Add(T("recherche…", 13, Tok.Muted).WithMargin(12, 7)); return; }
         if (text.Length < 2) { hitsPanel.Children.Add(T("tape au moins 2 lettres du nom", 13, Tok.Faint).WithMargin(12, 7)); return; }
@@ -592,12 +601,32 @@ public sealed class MainWindow : Window
         {
             var level = T(h.Level.ToString(), 13, Tok.Muted, mono: true);
             level.HorizontalAlignment = HorizontalAlignment.Right;
-            hitsPanel.Children.Add(Clickable(Columns("*,120,100,60",
-                    T(h.Name, 13, weight: FontWeight.SemiBold), T(h.ClassCode is null ? "?" : db.FindClass(h.ClassCode)?.Name ?? h.ClassCode, 13, Tok.Muted),
-                    T(h.ServerName, 13, Tok.Muted), level),
-                () => _ = ImportAsync(h.Name, (client, progress) => client.Fetch(db, RegionCode, h.ServerId, h.CharacterId, progress)),
-                hover: Tok.HoverStrong, padding: new Thickness(12, 7)));
+            var isLoading = h.CharacterId == loading;
+            var cells = Columns("*,120,100,60",
+                T(h.Name, 13, isLoading ? Accent.Main : null, FontWeight.SemiBold), T(h.ClassCode is null ? "?" : db.FindClass(h.ClassCode)?.Name ?? h.ClassCode, 13, Tok.Muted),
+                T(h.ServerName, 13, Tok.Muted), level);
+            if (isLoading) { hitsPanel.Children.Add(LoadingRow(cells)); continue; }
+            var row = Clickable(cells, () => _ = ImportAsync(h.Name, (client, progress) => client.Fetch(db, RegionCode, h.ServerId, h.CharacterId, progress), h.CharacterId),
+                hover: loading is null ? Tok.HoverStrong : null, padding: new Thickness(12, 7));
+            if (loading is not null) row.Opacity = 0.4;
+            hitsPanel.Children.Add(row);
         }
+    }
+
+    /// <summary>Ligne du personnage en cours d'import : fond d'accent, indicateur qui tourne et étape en cours.</summary>
+    Border LoadingRow(Control content)
+    {
+        loadText = T(loadStep, 12, Accent.Main, mono: true);
+        var status = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 5, 0, 0),
+            Children = { Spinner(13, Accent.Main), loadText },
+        };
+        return new Border
+        {
+            Background = Accent.Dim, BorderBrush = Accent.Main, BorderThickness = new Thickness(2, 0, 0, 0), Padding = new Thickness(10, 7, 12, 7),
+            Child = new StackPanel { Children = { content, status } },
+        };
     }
 
     Control HistoryHeader()
@@ -647,6 +676,7 @@ public sealed class MainWindow : Window
     {
         searchCts?.Cancel();
         var cts = searchCts = new CancellationTokenSource();
+        importError = null;
         var text = search.Text?.Trim() ?? "";
         if (text.Length < 2)
         {
@@ -681,7 +711,7 @@ public sealed class MainWindow : Window
         if (name.Length == 0) { SetStatus("Indique le nom du personnage.", error: true); return; }
         var best = hits.FirstOrDefault(h => h.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) ?? hits.FirstOrDefault();
         if (best is not null)
-            await ImportAsync(best.Name, (client, progress) => client.Fetch(db, RegionCode, best.ServerId, best.CharacterId, progress));
+            await ImportAsync(best.Name, (client, progress) => client.Fetch(db, RegionCode, best.ServerId, best.CharacterId, progress), best.CharacterId);
         else
             await ImportAsync(name, async (client, progress) => (await client.FetchByName(db, RegionCode, name, ServerFilter, progress)).Snapshot);
     }
@@ -693,20 +723,44 @@ public sealed class MainWindow : Window
         await ImportAsync(c.Name, (client, progress) => client.Fetch(db, c.Region, c.ServerId, c.CharacterId, progress));
     }
 
-    async Task ImportAsync(string name, Func<ArmoryClient, IProgress<string>, Task<CharacterSnapshot>> fetch)
+    /// <param name="key">Identifiant du résultat cliqué (sa ligne affiche le chargement) ; sinon une ligne au nom tapé.</param>
+    async Task ImportAsync(string name, Func<ArmoryClient, IProgress<string>, Task<CharacterSnapshot>> fetch, string? key = null)
     {
+        if (loading is not null) return; // un double clic ne relance pas l'import
+        loading = key ?? $"name:{name}";
+        loadStep = "connexion au site officiel…";
+        importError = null;
+        RenderHits();
         SetStatus($"Import de {name}…");
         try
         {
             using var client = ArmoryClient.Create();
-            var snapshot = await fetch(client, new Progress<string>(m => SetStatus(m)));
+            var snapshot = await fetch(client, new Progress<string>(m =>
+            {
+                SetStatus(m);
+                loadStep = m;
+                if (loadText is not null) loadText.Text = m;
+            }));
             var path = store.Save(snapshot);
             prefs = prefs with { LastFile = path, Name = search.Text ?? snapshot.Name, Region = snapshot.Region };
             prefs.Save();
             SetStatus($"importé depuis le site officiel");
+            loading = null;
             Open(snapshot, path);
         }
-        catch (ArmoryException ex) { SetStatus(ex.Message, error: true); }
+        catch (ArmoryException ex)
+        {
+            importError = ex.Message;
+            SetStatus(ex.Message, error: true);
+        }
+        finally
+        {
+            if (loading is not null)
+            {
+                loading = null;
+                RenderHits();
+            }
+        }
     }
 
     /// <summary>Familiers : null = relire avec la clé enregistrée, "" = oublier la clé, sinon relier avec cette clé.</summary>
@@ -733,6 +787,7 @@ public sealed class MainWindow : Window
 
     void OpenSaved(SavedCharacter s)
     {
+        if (loading is not null) return; // l'import en cours ouvrira son personnage
         if (TryLoad(s.Path) is not { } snapshot) return;
         prefs = prefs with { LastFile = s.Path };
         prefs.Save();
