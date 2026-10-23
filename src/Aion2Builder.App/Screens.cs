@@ -31,6 +31,10 @@ sealed class UiState
     public bool AllNext { get; set; }
     /// <summary>Daevanion : route conçue depuis le centre au lieu du plan à partir du plateau actuel.</summary>
     public bool DaevaRoute { get; set; }
+    /// <summary>Détails : afficher aussi les simples informations.</summary>
+    public bool ShowInfo { get; set; }
+    /// <summary>Stats : afficher aussi les stats qui ne comptent pas pour la classe.</summary>
+    public bool AllStats { get; set; }
     public HashSet<Area> Collapsed { get; } = [];
 }
 
@@ -211,8 +215,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             tiles.Children.Add(tile);
         }
         var actions = new StackPanel();
-        foreach (var f in r.ActionPlan.Take(5)) actions.Children.Add(CompactAction(f));
+        var done = r.ActionPlan.Count(IsDone);
+        foreach (var f in r.ActionPlan.Where(f => !IsDone(f)).Take(5)) actions.Children.Add(CompactAction(f));
         if (actions.Children.Count == 0) actions.Children.Add(T("✓ Rien d'important à faire : tout est en ordre pour cette vue.", 13, Tok.Good).WithMargin(4, 8));
+        if (done > 0) actions.Children.Add(T($"{done} action(s) cochée(s) « fait » depuis l'import : elles sont dans Détails.", 11, Tok.Muted, mono: true).WithMargin(8, 6, 0, 0));
         var header = new DockPanel { Margin = new Thickness(2, 6, 2, 0) };
         var all = Clickable(T($"tout voir ({r.Findings.Count})", 11, Accent.Main), () => GoTo(Screen.Details));
         DockPanel.SetDock(all, Dock.Right);
@@ -221,13 +227,32 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         return new StackPanel { Spacing = 8, Children = { tiles, header, actions } };
     }
 
-    /// <summary>Une action sur une ligne : gravité, titre, zone ; le détail passe en infobulle.</summary>
+    bool IsDone(Finding f) => inputs.IsDone(f.Title, r.Character.FetchedAtUtc);
+
+    /// <summary>Coche / décoche « fait » (gardé jusqu'au prochain import du personnage).</summary>
+    void ToggleDone(Finding f)
+    {
+        var done = inputs.DoneFor == r.Character.FetchedAtUtc ? inputs.Done.ToList() : [];
+        if (!done.Remove(f.Title)) done.Add(f.Title);
+        onInputs(inputs with { Done = done, DoneFor = r.Character.FetchedAtUtc });
+    }
+
+    Border Check(Finding f)
+    {
+        var done = IsDone(f);
+        var box = Clickable(T(done ? "☑" : "☐", 14, done ? Tok.Good : Tok.Muted), () => ToggleDone(f), hover: Tok.HoverStrong, padding: new Thickness(3, 0));
+        box.CornerRadius = new CornerRadius(3);
+        box.VerticalAlignment = VerticalAlignment.Top;
+        return Tip(box, done ? "Fait : décoche si ce n'est pas le cas" : "Coche quand c'est fait (jusqu'au prochain import, qui le vérifiera)");
+    }
+
+    /// <summary>Une action sur une ligne : case « fait », gravité, titre, zone ; le détail passe en infobulle.</summary>
     Border CompactAction(Finding f)
     {
         var (icon, color) = Sev(f.Severity);
-        var row = Clickable(ColumnsSpaced("16,*,Auto", 8, T(icon, 12, color, FontWeight.SemiBold, mono: true), T(f.Title, 13, weight: FontWeight.Medium),
+        var row = Clickable(ColumnsSpaced("22,16,*,Auto", 6, Check(f), T(icon, 12, color, FontWeight.SemiBold, mono: true), T(f.Title, 13, weight: FontWeight.Medium),
                 T(Fmt.Area(f.Area), 11, Tok.Muted, mono: true)),
-            () => Go(f), hover: Tok.TileHover, padding: new Thickness(8, 7));
+            () => Go(f), hover: Tok.TileHover, padding: new Thickness(6, 6));
         row.BorderBrush = Tok.RowLine2;
         row.BorderThickness = new Thickness(0, 0, 0, 1);
         return Tip(row, $"{f.Detail}\n→ {f.Action}");
@@ -558,7 +583,11 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
     StatTotal? SelectedStat => VisibleStats.FirstOrDefault(x => x.Def.Key == s.Stat) ?? VisibleStats.FirstOrDefault();
 
-    IReadOnlyList<StatTotal> VisibleStats => r.Stats.Stats.Where(x => x.Budget > 0 || x.ExpectedShare >= 0.03).ToList();
+    IReadOnlyList<StatTotal> AllVisibleStats => r.Stats.Stats.Where(x => x.Budget > 0 || x.ExpectedShare >= 0.03).ToList();
+
+    /// <summary>Par défaut, les stats qui comptent : utiles à la classe, ou qui prennent de la place, ou visées ; les autres se déplient.</summary>
+    IReadOnlyList<StatTotal> VisibleStats => s.AllStats ? AllVisibleStats
+        : AllVisibleStats.Where(x => x.Weight >= 0.5 || x.Share >= 0.03 || x.ExpectedShare >= 0.03 || x.Def.Key == s.Stat).ToList();
 
     static int Pts(double ratio) => (int)Math.Round(ratio * 100);
 
@@ -627,6 +656,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     T(Fmt.Pct(x.Share), 13, ShareColor(x), mono: true), T(Fmt.Pct(x.ExpectedShare), 13, Tok.Muted, mono: true), weight),
                 x.Def.Key == selected, () => update(st => st.Stat = x.Def.Key)));
         }
+        var hidden = AllVisibleStats.Count - VisibleStats.Count;
+        if (hidden > 0 || s.AllStats)
+            panel.Children.Add(Clickable(T(s.AllStats ? "▴ seulement les stats qui comptent" : $"▾ voir les {hidden} autres stats (peu utiles à ta classe et presque absentes)", 12, Accent.Main),
+                () => update(st => st.AllStats = !st.AllStats), hover: Tok.Hover, padding: new Thickness(20, 8)));
         return panel;
     }
 
@@ -1566,8 +1599,12 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     Control Details()
     {
         var panel = new StackPanel();
-        panel.Children.Add(SectionHeader($"Problèmes · {Mode}", T(r.Findings.Count.ToString(), 11, Tok.Muted, mono: true), 20));
-        foreach (var group in r.Findings.GroupBy(f => f.Area).OrderBy(g => g.Key))
+        // Les simples informations (bilans chiffrés) sont repliées par défaut : la liste montre d'abord ce qu'il y a à faire.
+        var infos = r.Findings.Count(f => f.Severity == Severity.Info);
+        var toggle = Clickable(T(s.ShowInfo ? $"masquer les infos ({infos})" : $"afficher aussi les infos ({infos})", 11, Accent.Main), () => update(st => st.ShowInfo = !st.ShowInfo));
+        panel.Children.Add(SectionHeader($"À faire · {Mode} · {r.Findings.Count - infos} conseils", toggle, 20));
+        var shown = r.Findings.Where(f => s.ShowInfo || f.Severity != Severity.Info);
+        foreach (var group in shown.GroupBy(f => f.Area).OrderBy(g => g.Key))
         {
             var collapsed = s.Collapsed.Contains(group.Key);
             var header = Clickable(new StackPanel
@@ -1580,19 +1617,23 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             header.BorderThickness = new Thickness(0, 0, 0, 1);
             panel.Children.Add(header);
             if (collapsed) continue;
-            foreach (var f in group)
+            foreach (var f in group.OrderBy(IsDone).ThenBy(f => f.Severity))
             {
+                // Titre et action ; le détail chiffré tient sur une ligne et s'affiche en entier au survol. Fait = grisé, en bas.
                 var (icon, color) = Sev(f.Severity);
+                var done = IsDone(f);
                 var iconText = T(icon, 13, color, FontWeight.SemiBold, mono: true);
                 iconText.VerticalAlignment = VerticalAlignment.Top;
-                var text = new StackPanel { Spacing = 3, Children = { T(f.Title, 13, weight: FontWeight.Medium, wrap: true) } };
-                foreach (var line in f.Detail.Split('\n')) text.Children.Add(T(line, 12, Tok.Muted, wrap: true).WithLineHeight(1.45));
-                var action = T(f.Action is null ? "" : $"→ {f.Action}", 12, Tok.Text2, wrap: true).WithLineHeight(1.45);
-                action.VerticalAlignment = VerticalAlignment.Top;
-                var row = Clickable(Columns("22,*,*", iconText, text, action), () => Go(f), hover: Tok.Hover, padding: new Thickness(36, 9, 20, 9));
+                var title = T(f.Title, 13, done ? Tok.Muted : null, FontWeight.Medium, wrap: true);
+                if (done) title.TextDecorations = TextDecorations.Strikethrough;
+                var text = new StackPanel { Spacing = 3, Children = { title } };
+                if (f.Action is not null && !done) text.Children.Add(T($"→ {f.Action}", 12, Tok.Text2, wrap: true).WithLineHeight(1.45));
+                if (!done) text.Children.Add(T(f.Detail.Replace('\n', ' '), 12, Tok.Muted));
+                var lead = f.Severity == Severity.Info ? (Control)new Border() : Check(f);
+                var row = Clickable(ColumnsSpaced("22,22,*", 6, lead, iconText, text), () => Go(f), hover: Tok.Hover, padding: new Thickness(30, 8, 20, 8));
                 row.BorderBrush = Tok.RowLine;
                 row.BorderThickness = new Thickness(0, 0, 0, 1);
-                panel.Children.Add(row);
+                panel.Children.Add(Tip(row, f.Detail));
             }
         }
         return panel;

@@ -123,6 +123,15 @@ public sealed record PlayerInputs
     public string Build { get; init; } = "players";
     [System.Text.Json.Serialization.JsonIgnore] public bool UsesDesigned => Build == "designed";
 
+    /// <summary>
+    /// Conseils cochés « fait » (par titre), valables pour l'import <see cref="DoneFor"/> : au prochain import,
+    /// le site dit lui-même ce qui a été fait, et la liste repart de zéro.
+    /// </summary>
+    public List<string> Done { get; init; } = [];
+    public DateTime? DoneFor { get; init; }
+
+    public bool IsDone(string title, DateTime fetchedAtUtc) => DoneFor == fetchedAtUtc && Done.Contains(title);
+
     public int UnspentFor(string pool) => pool switch
     {
         "PvE" => UnspentAriel,

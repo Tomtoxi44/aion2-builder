@@ -25,7 +25,7 @@ namespace Aion2Builder.App;
 /// </summary>
 sealed record UiPrefs(string Region = "eu", string Server = "", string Name = "", GameMode Mode = GameMode.PvE, string? LastFile = null,
     int Tab = 0, string Screen = "Home", string Accent = "Orange", bool AutoUpdate = true,
-    List<string>? Tabs = null, double InspectorWidth = 340, bool InspectorHidden = false)
+    List<string>? Tabs = null, double InspectorWidth = 340, bool InspectorHidden = false, int AutoRefreshHours = 0)
 {
     static string PathOf => System.IO.Path.Combine(AppPaths.Root, "ui.json");
 
@@ -99,6 +99,11 @@ public sealed class MainWindow : Window
     readonly List<string> tabs = [];
     readonly Dictionary<string, CharacterSnapshot> opened = [];
     string? currentPath;
+    // Fenêtre par-dessus l'interface : raccourcis clavier (F1) ou paramètres (Ctrl+,).
+    enum Overlay { None, Shortcuts, Settings }
+    Overlay overlay;
+    // Actualisation automatique : une seule tentative par personnage et par session.
+    readonly HashSet<string> autoRefreshed = [];
 
     public MainWindow()
     {
@@ -133,10 +138,24 @@ public sealed class MainWindow : Window
         server.GotFocus += (_, _) => server.IsDropDownOpen = true;
         KeyDown += (_, e) =>
         {
+            if (e.Key == Key.F1) { e.Handled = true; ShowOverlay(Overlay.Shortcuts); return; }
+            if (e.Key == Key.Escape && overlay != Overlay.None) { e.Handled = true; ShowOverlay(Overlay.None); return; }
+            if (e.Key == Key.F5) { e.Handled = true; _ = RefreshAsync(); return; }
             if (!e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
+            // Ctrl+1 à Ctrl+8 : les écrans du rail, dans l'ordre.
+            if (e.Key is >= Key.D1 and <= Key.D9 && report is not null && e.Key - Key.D1 < ScreenViews.Nav.Length)
+            {
+                e.Handled = true;
+                Navigate(ScreenViews.Nav[e.Key - Key.D1].Screen);
+                return;
+            }
             switch (e.Key)
             {
                 case Key.K: e.Handled = true; ShowImport(); break;
+                case Key.R: e.Handled = true; _ = RefreshAsync(); break;
+                case Key.M: e.Handled = true; SetMode(prefs.Mode == GameMode.PvE ? GameMode.PvP : GameMode.PvE); break;
+                case Key.OemComma: e.Handled = true; ShowOverlay(Overlay.Settings); break;
+                case Key.E: e.Handled = true; _ = ExportAsync(); break;
                 case Key.W when currentPath is not null: e.Handled = true; CloseTab(currentPath); break;
                 case Key.Tab when tabs.Count > 1 && currentPath is not null:
                     e.Handled = true;
@@ -234,6 +253,21 @@ public sealed class MainWindow : Window
         state.Board = null;
         if (!keepScreen || state.Screen == Screen.Import) state.Screen = Screen.Home;
         Recompute();
+        MaybeAutoRefresh(snapshot, path);
+    }
+
+    /// <summary>Paramètre « actualiser à l'ouverture » : relit le personnage sur le site officiel s'il date de plus de N heures.</summary>
+    void MaybeAutoRefresh(CharacterSnapshot snapshot, string path)
+    {
+        if (prefs.AutoRefreshHours <= 0 || loading is not null || !autoRefreshed.Add(path)) return;
+        if (DateTime.UtcNow - snapshot.FetchedAtUtc < TimeSpan.FromHours(prefs.AutoRefreshHours)) return;
+        Dispatcher.UIThread.Post(() => _ = RefreshAsync());
+    }
+
+    void ShowOverlay(Overlay which)
+    {
+        overlay = which;
+        Render();
     }
 
     void Recompute()
@@ -355,7 +389,82 @@ public sealed class MainWindow : Window
         root.Children.Add(title);
         root.Children.Add(middle);
         root.Children.Add(bar);
+        if (overlay != Overlay.None)
+        {
+            var layer = OverlayLayer();
+            Grid.SetRowSpan(layer, 3);
+            root.Children.Add(layer);
+        }
         Content = root;
+    }
+
+    /// <summary>Carte centrée sur un voile sombre ; un clic sur le voile ou Échap la ferme.</summary>
+    Control OverlayLayer()
+    {
+        var card = new Border
+        {
+            Width = 560, Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
+            BoxShadow = BoxShadows.Parse("0 12 40 0 #80000000"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+            Child = overlay == Overlay.Shortcuts ? ShortcutsCard() : SettingsCard(),
+        };
+        card.PointerPressed += (_, e) => e.Handled = true; // un clic dans la carte ne la ferme pas
+        var veil = new Border { Background = new SolidColorBrush(Color.FromArgb(0x99, 0, 0, 0)), Child = card };
+        veil.PointerPressed += (_, _) => ShowOverlay(Overlay.None);
+        return veil;
+    }
+
+    static readonly (string Keys, string What)[] Shortcuts =
+    [
+        ("Ctrl+K", "importer ou ouvrir un autre personnage"), ("Ctrl+Tab · Ctrl+Maj+Tab", "personnage suivant / précédent"),
+        ("Ctrl+W", "fermer l'onglet du personnage"), ("Ctrl+1 … Ctrl+8", "écrans du rail (Accueil, Stats, Équipement…)"),
+        ("Ctrl+M", "basculer JcE / JcJ"), ("Ctrl+R · F5", "actualiser depuis le site officiel"),
+        ("Ctrl+I", "afficher / masquer l'inspecteur (sa largeur se règle en glissant sa bordure)"),
+        ("Ctrl+E", "exporter le rapport en Markdown"), ("Ctrl+,", "paramètres"), ("F1", "cette aide"), ("Échap", "fermer"),
+    ];
+
+    Control ShortcutsCard()
+    {
+        var list = new StackPanel { Spacing = 8, Margin = new Thickness(18, 14) };
+        foreach (var (keys, what) in Shortcuts)
+            list.Children.Add(ColumnsSpaced("190,*", 12, T(keys, 12, Accent.Main, FontWeight.SemiBold, mono: true), T(what, 13, Tok.Text2)));
+        return new StackPanel { Children = { SectionHeader("Raccourcis clavier"), list } };
+    }
+
+    Control SettingsCard()
+    {
+        Control Choice(string label, string hint, IEnumerable<(string Text, bool On, Action Do)> options)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            foreach (var (text, on, act) in options)
+            {
+                var b = Clickable(T(text, 12, on ? Tok.OnAccent : Tok.Text2, FontWeight.SemiBold, mono: true), act, on ? Accent.Main : Tok.Window, on ? null : Tok.HoverStrong, new Thickness(10, 3));
+                b.CornerRadius = new CornerRadius(3);
+                b.BorderBrush = Tok.Border;
+                b.BorderThickness = new Thickness(1);
+                row.Children.Add(b);
+            }
+            return new StackPanel { Spacing = 6, Children = { T(label, 13, weight: FontWeight.Medium), T(hint, 12, Tok.Muted, wrap: true).WithLineHeight(1.4), row } };
+        }
+        void Set(UiPrefs updated) { prefs = updated; prefs.Save(); Render(); }
+
+        var body = new StackPanel
+        {
+            Spacing = 18, Margin = new Thickness(18, 14, 18, 18),
+            Children =
+            {
+                Choice("Mises à jour", "Demande à Aion 2 Todo s'il existe une nouvelle version, au lancement puis toutes les 6 h. Le téléchargement n'a lieu qu'au clic.",
+                    [("automatique", prefs.AutoUpdate, () => Set(prefs with { AutoUpdate = true })), ("à la demande", !prefs.AutoUpdate, () => Set(prefs with { AutoUpdate = false }))]),
+                Choice("Actualiser à l'ouverture", "Relit le personnage sur le site officiel quand tu l'ouvres, si son import date de plus de :",
+                    new[] { 0, 2, 6, 24 }.Select(h => (h == 0 ? "jamais" : $"{h} h", prefs.AutoRefreshHours == h, (Action)(() => Set(prefs with { AutoRefreshHours = h }))))),
+                Choice("Inspecteur", "Le panneau de droite ; sa largeur se règle en glissant sa bordure gauche.",
+                    [("affiché", !prefs.InspectorHidden, () => Set(prefs with { InspectorHidden = false })), ("masqué", prefs.InspectorHidden, () => Set(prefs with { InspectorHidden = true })),
+                     ("largeur par défaut", false, () => Set(prefs with { InspectorWidth = 340 }))]),
+                Choice("Données", dataSource,
+                    [("ouvrir le dossier", false, OpenDataFolder), ("recharger", false, () => { ShowOverlay(Overlay.None); ReloadData(); })]),
+            },
+        };
+        var close = Clickable(T("fermer · Échap", 11, Tok.Muted, mono: true), () => ShowOverlay(Overlay.None));
+        return new StackPanel { Children = { SectionHeader("Paramètres", close), body } };
     }
 
     Control TitleBar()
@@ -366,10 +475,13 @@ public sealed class MainWindow : Window
             Children =
             {
                 T("Aion 2 Builder", 13, Tok.Text, FontWeight.SemiBold),
-                Menu("Fichier", ("Importer un personnage…  Ctrl+K", ShowImport), ("Quitter", Close)),
-                Menu("Personnage", ("Actualiser depuis le site officiel", () => _ = RefreshAsync()), ("Changer de personnage", ShowImport)),
+                Menu("Fichier", ("Importer un personnage…  Ctrl+K", ShowImport), ("Exporter le rapport (Markdown)…  Ctrl+E", () => _ = ExportAsync()),
+                    ("Paramètres…  Ctrl+,", () => ShowOverlay(Overlay.Settings)), ("Quitter", Close)),
+                Menu("Personnage", ("Actualiser depuis le site officiel  Ctrl+R", () => _ = RefreshAsync()), ("Changer de personnage", ShowImport),
+                    ("Fermer l'onglet  Ctrl+W", () => { if (currentPath is not null) CloseTab(currentPath); })),
                 Menu("Données", ("Recharger les données", ReloadData), ("Actualiser les familiers (Aion 2 Todo)", () => _ = PetsAsync(null)), ("Ouvrir le dossier des données", OpenDataFolder)),
-                Menu("Aide", ("Comment c'est calculé ?", () => Update(st => { st.Screen = report is null ? Screen.Import : Screen.Home; st.HomeHow = true; })),
+                Menu("Aide", ("Raccourcis clavier  F1", () => ShowOverlay(Overlay.Shortcuts)),
+                    ("Comment c'est calculé ?", () => Update(st => { st.Screen = report is null ? Screen.Import : Screen.Home; st.HomeHow = true; })),
                     ("Vérifier les mises à jour", () => _ = CheckUpdateAsync(manual: true)),
                     ($"{(prefs.AutoUpdate ? "✓ " : "")}Vérifier automatiquement (au lancement, puis toutes les 6 h)", ToggleAutoUpdate)),
             },
@@ -924,6 +1036,28 @@ public sealed class MainWindow : Window
                 RenderHits();
             }
         }
+    }
+
+    /// <summary>Rapport de la vue en cours en Markdown, dans le fichier choisi.</summary>
+    async Task ExportAsync()
+    {
+        if (report is null || current is null) { SetStatus("Ouvre d'abord un personnage.", error: true); return; }
+        var file = await StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
+        {
+            Title = "Exporter le rapport",
+            SuggestedFileName = $"{current.Name}-{(prefs.Mode == GameMode.PvE ? "jce" : "jcj")}-{DateTime.Now:yyyy-MM-dd}.md",
+            DefaultExtension = "md",
+            FileTypeChoices = [new Avalonia.Platform.Storage.FilePickerFileType("Markdown") { Patterns = ["*.md"] }],
+        });
+        if (file is null) return;
+        try
+        {
+            await using var stream = await file.OpenWriteAsync();
+            await using var writer = new StreamWriter(stream);
+            await writer.WriteAsync(ReportMarkdown.Write(report, db, inputs));
+            SetStatus($"rapport exporté : {file.Name}");
+        }
+        catch (IOException ex) { SetStatus($"Export impossible : {ex.Message}", error: true); }
     }
 
     /// <summary>Seul envoi réseau fait sans demande explicite : désactivable (politique de confidentialité, README).</summary>

@@ -47,6 +47,7 @@ static int Help()
                  [--mode pve|pvp|both] [--refresh] [--json]   (importe le personnage s'il n'est pas enregistré)
                  [--sp N] [--dp N] [--ariel N] [--azphel N]  points non dépensés (compétences, Daevanion), gardés par personnage
                  [--build joueurs|concu]                      build qui guide les conseils (joueurs ou conçu), gardé par personnage
+                 [--md <fichier.md>]                          écrit le rapport en Markdown (à garder ou partager)
           list                                                Personnages enregistrés
           data [export]                                       Fichiers de données (poids, paliers…) modifiables
           pets [--key <clé>] [--refresh] [--forget]            Familiers du Pet Meter, lus sur Aion 2 Todo (clé : onglet
@@ -149,6 +150,12 @@ static async Task<int> Advise(Args cli)
     if (cli.Has("json"))
     {
         Console.WriteLine(JsonSerializer.Serialize<object>(reports.Count == 1 ? reports[0] : reports, GameDataStore.Json));
+        return 0;
+    }
+    if (cli.Get("md") is { } mdPath)
+    {
+        File.WriteAllText(mdPath, string.Join(Environment.NewLine, reports.Select(r => ReportMarkdown.Write(r, db, inputs))));
+        Console.WriteLine($"Rapport Markdown : {Path.GetFullPath(mdPath)}");
         return 0;
     }
     foreach (var r in reports) new ReportPrinter(db).Print(r);
