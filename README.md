@@ -58,14 +58,28 @@ gardée en cache une semaine dans `%APPDATA%\Aion2Builder\servers` (« Recharger
    une répartition visée Attaque / Défense / Survie / Utilité. On compare ta répartition à la cible, on repère les stats
    qui prennent de la place sans servir la classe, et celles qui manquent.
 3. **Paliers d'équipement.** Ton palier dépend de ton niveau et de ton niveau d'objet. À chaque palier correspond une
-   rareté visée : en dessous, la pièce est de transition (à remplacer, ne pas trop l'enchanter) ; au-dessus, elle est à garder
-   (à enchanter jusqu'au niveau sûr). Les pièces en retard sur la médiane passent en premier, l'arme pèse plus lourd.
-4. **Daevanion.** Une case ne s'ouvre qu'à côté d'une case ouverte (depuis le centre). Pour chaque case fermée, on calcule
-   le chemin le moins cher depuis la zone ouverte et on prend le meilleur rapport *valeur du chemin / coût*. Les cases de
-   niveau de compétence valent plus pour les compétences équipées et les compétences clés.
-5. **Compétences.** Les actives équipées forment ta rotation ; on signale les compétences clés absentes, celles en retard
-   sur la moyenne, et les niveaux investis dans des compétences non équipées. En JcJ, les compétences communes
-   indispensables (ex. *Dissipation de choc*) sont exigées.
+   rareté visée : en dessous, la pièce est de transition (à remplacer, enchantement plafonné à +3) ; au-dessus, elle est à
+   garder (à enchanter jusqu'au niveau sûr). Les pièces en retard sur la médiane passent en premier, l'arme pèse plus lourd.
+   Certains emplacements ont leur propre règle (`slotRules`) : la **ceinture noble** ne se remplace pas (pas de ceinture de
+   donjon sur les serveurs occidentaux), on la monte à +10 puis on la transmute au grade supérieur.
+4. **Compétences.** 1 point = +1 niveau jusqu'au niveau 10, réinitialisation gratuite ; au-delà, seuls le Daevanion et
+   l'équipement donnent des niveaux (spécialisations à 8, 12, 16, 20). L'application recalcule les points investis
+   (niveau − bonus Daevanion − bonus d'équipement), y ajoute tes points non dépensés, puis redistribue ce budget selon le
+   **rôle** de chaque compétence pour ta classe et le mode (dégâts principaux, burst, débuff, contrôle, défensif…) : elle dit
+   quelles compétences monter, lesquelles **réduire**, et pourquoi. Les stigmas (4 emplacements, fragments) sont classés de
+   la même façon, avec le coût en fragments pour atteindre le niveau visé.
+5. **Daevanion.** Une case coûte 1, 2, 3 ou 4 points selon sa couleur (vérifié : 134 points pour Nezekan, Zikel et Vaizel,
+   168 pour Triniel, 232 pour Azphel) et ne s'ouvre qu'à côté d'une case ouverte. Deux plans par réserve de points :
+   - **réorganisation** : en partant de ton placement actuel, les cases peu utiles en bout de chemin (importance < 0,4)
+     sont retirées si leurs points rapportent plus ailleurs → cases rouges à retirer, cases vertes à prendre ;
+   - **prochaines cases** : où mettre tes prochains points sans rien retirer (les points non dépensés que tu indiques
+     sont marqués « faisable maintenant »).
+   Les niveaux de compétence valent selon l'importance de la compétence, les stats selon leur poids et l'équilibre des
+   familles (une famille déjà au-dessus de sa cible vaut moins).
+
+Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
+dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par
+personnage. Survole une stat, une famille de stats, une note ou une case Daevanion pour son explication.
 
 ## Ajuster les données
 
@@ -80,8 +94,10 @@ puis édite les fichiers copiés dans `%APPDATA%\Aion2Builder\data` (un fichier 
 clique « Recharger les données » dans l'application.
 
 Les valeurs fournies sont **indicatives** (guides communautaires, observations) : seuils de paliers, coûts Daevanion
-(le site ne les donne pas) et compétences clés par classe sont à affiner selon la saison. Seul le Spiritualiste a déjà
-sa liste de compétences clés ; pour les autres classes, ajoute les noms français dans `classes.json` (`coreSkills`).
+et fiche de compétences par classe sont à affiner selon la saison. Seul le **Spiritualiste** a une fiche de compétences
+détaillée (`classes.json` → `skills` : rôle, priorité et niveau visé par mode, et la raison affichée ; les entrées « à valider »
+ne sont pas documentées par les guides). Pour les autres classes, l'analyse se base sur ta barre tant que leur fiche n'est
+pas remplie.
 
 ## Limites
 
@@ -94,6 +110,6 @@ sa liste de compétences clés ; pour les autres classes, ajoute les noms franç
 
 Smart App Control bloque les DLL non signées, dont les tâches de compilation d'Avalonia (compilateur XAML,
 télémétrie). D'où une interface écrite en C# sans `.axaml` et la cible vide `AvaloniaStats` dans
-`Directory.Build.targets`. Smart App Control bloque aussi l'exécution des binaires compilés localement : pour lancer
-l'application sur ce poste, il faut le désactiver (Sécurité Windows → Contrôle des applications et du navigateur) ou
-utiliser une autre machine.
+`Directory.Build.targets`. Smart App Control bloque aussi l'exécution des binaires compilés localement : quand il est actif, l'application ne
+peut pas être lancée sur ce poste (désactive-le dans Sécurité Windows → Contrôle des applications et du navigateur, ou
+utilise une autre machine).
