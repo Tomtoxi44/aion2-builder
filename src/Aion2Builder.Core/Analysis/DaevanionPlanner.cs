@@ -337,7 +337,8 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
         {
             var first = group.Take(6).ToList();
             var affordable = group.Count(s => s.Affordable);
-            findings.Add(new Finding(Area.Daevanion, Severity.Advice, $"Prochaines cases — {PoolName(group.Key)}",
+            // Sans point libre indiqué, rien à faire tout de suite : simple information (hors du plan d'action).
+            findings.Add(new Finding(Area.Daevanion, affordable > 0 ? Severity.Advice : Severity.Info, $"Prochaines cases — {PoolName(group.Key)}",
                 string.Join(" · ", first.Select(s => $"{s.Board.Name} : {s.Effects}{(s.IsPassage ? " (passage)" : "")}")),
                 affordable > 0
                     ? $"Tes points non dépensés couvrent les {affordable} premières : ouvre-les dans cet ordre."
