@@ -20,22 +20,19 @@ jobs:
       - run: dotnet build Aion2Builder.slnx -c Release
 
   # À chaque push sur main : exe autonome (sans .NET à installer), version 1.1.<numéro du run> (1.1 : dépôt recréé, le compteur
-  # de runs est reparti de 1 ; il faut rester au-dessus des 1.0.x déjà installées pour que la mise à jour les voie), signé par SignPath
-  # (dès que le projet SignPath est configuré), publié en version GitHub et déposé sur Aion 2 Todo, où l'application
-  # vérifie et télécharge ses mises à jour. Sous Windows : l'icône de l'exe ne s'ajoute que par une compilation Windows.
+  # de runs est reparti de 1 ; il faut rester au-dessus des 1.0.x déjà installées pour que la mise à jour les voie),
+  # publié en version GitHub et déposé sur Aion 2 Todo, où l'application vérifie et télécharge ses mises à jour.
+  # Sous Windows : l'icône de l'exe ne s'ajoute que par une compilation Windows.
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: windows-latest
-    timeout-minutes: 90 # dont jusqu'à 60 min d'attente de l'approbation SignPath
+    timeout-minutes: 30
     permissions:
-      actions: read   # SignPath relit l'artefact et l'historique du run (vérification de l'origine)
       contents: write # création de la version GitHub
     env:
       VERSION: 1.1.${{ github.run_number }}
       BUILDER_UPLOAD_KEY: ${{ secrets.BUILDER_UPLOAD_KEY }}
-      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
-      SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -58,52 +55,18 @@ jobs:
           $p.Kill()
           (Get-Item publish\Aion2Builder.exe).VersionInfo | Select-Object ProductName, ProductVersion, CompanyName | Format-List
 
-      - name: Artefact non signé
-        id: unsigned
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: Aion2Builder-${{ env.VERSION }}
           path: publish/Aion2Builder.exe
-
-      # Signature gratuite de la SignPath Foundation (projets open source). Chaque version attend l'approbation manuelle
-      # d'un approbateur dans SignPath (règle de la fondation) : jusqu'à une heure, sinon rien n'est publié.
-      # Configuration de l'artefact : .signpath/artifact-configuration.xml.
-      - name: Signature (SignPath)
-        if: env.SIGNPATH_API_TOKEN != '' && env.SIGNPATH_ORGANIZATION_ID != ''
-        uses: signpath/github-action-submit-signing-request@v3
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: aion2-builder
-          signing-policy-slug: release-signing
-          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
-          wait-for-completion: true
-          wait-for-completion-timeout-in-seconds: 3600
-          output-artifact-directory: signed
-          parameters: |
-            version: "${{ env.VERSION }}"
-
-      - name: Exe à publier
-        shell: pwsh
-        run: |
-          Get-ChildItem signed -Filter *.zip -ErrorAction SilentlyContinue | ForEach-Object { Expand-Archive $_.FullName -DestinationPath signed -Force }
-          if (Test-Path signed\Aion2Builder.exe) {
-            $sig = Get-AuthenticodeSignature signed\Aion2Builder.exe
-            if ($sig.Status -ne 'Valid') { throw "Signature invalide : $($sig.Status)" }
-            Write-Host "Signé par : $($sig.SignerCertificate.Subject)"
-            "EXE=signed\Aion2Builder.exe" >> $env:GITHUB_ENV
-          } else {
-            Write-Host "Exe non signé (SignPath pas encore configuré)."
-            "EXE=publish\Aion2Builder.exe" >> $env:GITHUB_ENV
-          }
 
       - name: Version GitHub
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          gh release create "v$env:VERSION" "$env:EXE" --target "$env:GITHUB_SHA" --title "Aion 2 Builder v$env:VERSION" `
-            --notes "Exe Windows autonome (sans installation), compilé par GitHub Actions depuis $env:GITHUB_SHA. Voir la section « Code signing policy » du README."
+          gh release create "v$env:VERSION" publish\Aion2Builder.exe --target "$env:GITHUB_SHA" --title "Aion 2 Builder v$env:VERSION" `
+            --notes "Exe Windows autonome (sans installation), compilé par GitHub Actions depuis $env:GITHUB_SHA."
 
       - name: Dépôt sur Aion 2 Todo
         if: env.BUILDER_UPLOAD_KEY != ''
@@ -111,6 +74,6 @@ jobs:
         run: |
           curl.exe --fail-with-body -sS --retry 3 --retry-all-errors --max-time 600 -X PUT `
             -H "X-Upload-Key: $env:BUILDER_UPLOAD_KEY" -H "Content-Type: application/octet-stream" `
-            --data-binary "@$env:EXE" `
+            --data-binary "@publish/Aion2Builder.exe" `
             "https://aion2-todo-7275.azurewebsites.net/api/downloads/builder?version=$env:VERSION"
           if ($LASTEXITCODE -ne 0) { throw "Dépôt refusé ou site injoignable" }

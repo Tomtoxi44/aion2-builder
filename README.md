@@ -2,8 +2,7 @@
 
 # Aion 2 Builder
 
-[Télécharger](https://github.com/Tomtoxi44/aion2-builder/releases/latest) · [Code signing policy](#code-signing-policy) ·
-[Confidentialité](#confidentialité-privacy-policy) · [Licence MIT](LICENSE) · outil non officiel, non affilié à NCSOFT
+[Télécharger](https://aion2-todo-7275.azurewebsites.net/api/downloads/builder/file) · [Confidentialité](#confidentialité-privacy-policy) · [Licence MIT](LICENSE) · outil non officiel, non affilié à NCSOFT
 
 Application locale (.NET 10) qui importe ton personnage AION 2 depuis le site officiel et te dit, **pour ta classe et
 en vue JcE (PvE) ou JcJ (PvP)** :
@@ -47,8 +46,9 @@ dans les [versions GitHub](https://github.com/Tomtoxi44/aion2-builder/releases) 
    le fait à la demande. La version en cours est affichée en bas à droite.
 
 Une compilation locale (`publier.cmd`) porte la version « build locale » et ne propose pas de mise à jour. Les exe
-publiés seront signés dès que la signature SignPath sera en place (voir [Code signing policy](#code-signing-policy)) ;
-d'ici là, Windows peut afficher « éditeur inconnu » au premier lancement, et Smart App Control les bloque.
+publiés ne sont pas signés : Windows peut afficher « éditeur inconnu » au premier lancement (clic droit → Propriétés →
+« Débloquer », ou « Exécuter quand même »), et Smart App Control les bloque. Les mises à jour faites depuis l'application
+n'affichent pas cet avertissement.
 
 ## Utilisation en ligne de commande
 
@@ -183,17 +183,6 @@ Aion 2 Builder n'envoie rien sans que tu le demandes, sauf la vérification des 
   statistique d'usage, rien n'est envoyé ailleurs.
 - Ce que l'application garde (personnages importés, préférences, clé des familiers) reste sur ton PC, dans
   `%APPDATA%\Aion2Builder` ; supprimer ce dossier efface tout.
-
-## Code signing policy
-
-Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
-[SignPath Foundation](https://signpath.org/).
-
-- Seuls les exe compilés par GitHub Actions depuis ce dépôt (workflow `Build`) sont signés, et chaque version est
-  approuvée à la main avant signature. Mise en place en cours : les versions publiées avant ne sont pas signées.
-- Auteurs (committers) et relecteurs (reviewers) : [Tomtoxi44](https://github.com/Tomtoxi44)
-- Approbateurs (approvers) : [Tomtoxi44](https://github.com/Tomtoxi44)
-- Confidentialité : voir [Confidentialité (privacy policy)](#confidentialité-privacy-policy).
 
 ## Licence
 
