@@ -165,7 +165,7 @@ public sealed class StatAnalyzer(GameDatabase db)
         // 1. Répartition Attaque / Défense / Survie / Utilité.
         var over = sp.Categories.Where(x => x.Gap > s.CategoryTolerance).OrderByDescending(x => x.Gap).ToList();
         var under = sp.Categories.Where(x => x.Gap < -s.CategoryTolerance).OrderBy(x => x.Gap).ToList();
-        string Line(CategoryShare x) => $"{GameDatabase.CategoryName(x.Category)} : {Fmt.Pct(x.Share)} de tes stats ajustables (≈ {Fmt.Pct(x.Target)} visé)";
+        string Line(CategoryShare x) => $"{GameDatabase.CategoryWithExamples(x.Category)} : {Fmt.Pct(x.Share)} de tes stats ajustables, pour environ {Fmt.Pct(x.Target)} conseillé";
         if (over.Count > 0 && under.Count > 0)
         {
             var o = over[0];
@@ -175,7 +175,7 @@ public sealed class StatAnalyzer(GameDatabase db)
             var big = Math.Max(o.Gap, -u.Gap) > 2 * s.CategoryTolerance;
             findings.Add(new Finding(Area.Stats, big ? Severity.Important : Severity.Advice,
                 $"Trop {GameDatabase.Of(o.Category)}, pas assez {GameDatabase.Of(u.Category)}",
-                $"{Line(o)}. {Line(u)}. Repères pour {who}.",
+                $"{Line(o)}. {Line(u)}. (Repères pour {who} ; « stats ajustables » = stats secondaires, Daevanion, titres et stats divines, hors stats fixes des pièces.)",
                 take is null
                     ? $"Lors des relances de stats secondaires et au prochain changement de pièce, abandonne « {give.Def.Name} »."
                     : $"Lors des relances de stats secondaires, des choix Daevanion et des changements de pièce, remplace « {give.Def.Name} » par « {take.Def.Name} » ({Where(take)}).",

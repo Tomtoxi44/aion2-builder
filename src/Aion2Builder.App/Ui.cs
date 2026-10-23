@@ -52,6 +52,13 @@ static class Ui
         return block;
     }
 
+    /// <summary>Ajoute une infobulle (au survol de la souris).</summary>
+    public static T Tip<T>(T control, string text) where T : Control
+    {
+        ToolTip.SetTip(control, text);
+        return control;
+    }
+
     public static Border Card(Control child, IBrush? accent = null, double bottom = 8) => new()
     {
         Background = CardBackground,

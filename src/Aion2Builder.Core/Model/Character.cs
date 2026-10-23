@@ -95,3 +95,22 @@ public sealed record CharacterSnapshot
 
     public string FileKey => $"{Region}-{ServerName}-{Name}".ToLowerInvariant();
 }
+
+/// <summary>
+/// Ce que le site officiel ne montre pas et que le joueur relève en jeu : les points pas encore dépensés.
+/// Les points déjà dépensés, eux, sont recalculés à partir de la fiche.
+/// </summary>
+public sealed record PlayerInputs
+{
+    public int UnspentSkillPoints { get; init; }
+    public int UnspentDaevanion { get; init; }
+    public int UnspentAriel { get; init; }
+    public int UnspentAzphel { get; init; }
+
+    public int UnspentFor(string pool) => pool switch
+    {
+        "PvE" => UnspentAriel,
+        "PvP" => UnspentAzphel,
+        _ => UnspentDaevanion,
+    };
+}

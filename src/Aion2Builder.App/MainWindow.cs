@@ -210,9 +210,11 @@ public sealed class MainWindow : Window
         var previousTab = (body.Content as TabControl)?.SelectedIndex ?? prefs.Tab;
         try
         {
-            var report = new Advisor(db).Analyze(current, Mode);
+            var inputs = store.LoadInputs(current);
+            var report = new Advisor(db).Analyze(current, Mode, inputs);
             header.Child = Header(report);
-            var tabs = new ReportView(db, report).Build(previousTab);
+            var snapshot = current;
+            var tabs = new ReportView(db, report, inputs, updated => { store.SaveInputs(snapshot, updated); Render(); }).Build(previousTab);
             tabs.SelectionChanged += (_, e) => { if (e.Source == tabs) { prefs = prefs with { Tab = tabs.SelectedIndex }; prefs.Save(); } };
             body.Content = tabs;
         }

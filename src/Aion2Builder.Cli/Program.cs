@@ -44,6 +44,7 @@ static int Help()
           import-raw <dossier> [--region eu]                  Réimporte des réponses brutes sauvegardées
           advise <nom|fichier.json> [--server <serveur>]      Analyse et conseils
                  [--mode pve|pvp|both] [--refresh] [--json]   (importe le personnage s'il n'est pas enregistré)
+                 [--sp N] [--dp N] [--ariel N] [--azphel N]  points non dépensés (compétences, Daevanion), gardés par personnage
           list                                                Personnages enregistrés
           data [export]                                       Fichiers de données (poids, paliers…) modifiables
 
@@ -120,8 +121,20 @@ static async Task<int> Advise(Args cli)
         "both" or "les2" => [GameMode.PvE, GameMode.PvP],
         _ => [GameMode.PvE],
     };
+    // Points non dépensés (relevés en jeu) : gardés par personnage, mis à jour par les options.
+    var inputs = store.LoadInputs(snapshot);
+    int Opt(string key, int current) => int.TryParse(cli.Get(key), out var v) ? Math.Max(0, v) : current;
+    var updated = inputs with
+    {
+        UnspentSkillPoints = Opt("sp", inputs.UnspentSkillPoints),
+        UnspentDaevanion = Opt("dp", inputs.UnspentDaevanion),
+        UnspentAriel = Opt("ariel", inputs.UnspentAriel),
+        UnspentAzphel = Opt("azphel", inputs.UnspentAzphel),
+    };
+    if (updated != inputs) store.SaveInputs(snapshot, inputs = updated);
+
     var advisor = new Advisor(db);
-    var reports = modes.Select(m => advisor.Analyze(snapshot, m)).ToList();
+    var reports = modes.Select(m => advisor.Analyze(snapshot, m, inputs)).ToList();
     if (cli.Has("json"))
     {
         Console.WriteLine(JsonSerializer.Serialize<object>(reports.Count == 1 ? reports[0] : reports, GameDataStore.Json));

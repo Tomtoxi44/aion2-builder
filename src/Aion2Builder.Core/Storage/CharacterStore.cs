@@ -48,5 +48,22 @@ public sealed class CharacterStore(string? dir = null)
         List().FirstOrDefault(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
                                    && (server is null || c.ServerName.Equals(server, StringComparison.OrdinalIgnoreCase)));
 
+    string InputsPath(CharacterSnapshot c) => Path.Combine(Directory, "inputs", $"{Sanitize(c.FileKey)}.json");
+
+    /// <summary>Points non dépensés déclarés pour ce personnage (zéro si rien n'a été saisi).</summary>
+    public PlayerInputs LoadInputs(CharacterSnapshot c)
+    {
+        var path = InputsPath(c);
+        try { return File.Exists(path) ? JsonSerializer.Deserialize<PlayerInputs>(File.ReadAllText(path), GameDataStore.Json) ?? new() : new(); }
+        catch (Exception ex) when (ex is JsonException or IOException) { return new(); }
+    }
+
+    public void SaveInputs(CharacterSnapshot c, PlayerInputs inputs)
+    {
+        var path = InputsPath(c);
+        System.IO.Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, JsonSerializer.Serialize(inputs, GameDataStore.Json));
+    }
+
     static string Sanitize(string key) => string.Concat(key.Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
 }

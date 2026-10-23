@@ -17,6 +17,8 @@ public sealed record StatDef
     public double PercentUnit { get; init; } = 1;
     public List<string> ApiIds { get; init; } = [];
     public List<string> Labels { get; init; } = [];
+    /// <summary>À quoi sert la stat en jeu (infobulles).</summary>
+    public string Desc { get; init; } = "";
     public List<string> Where { get; init; } = [];
 }
 
@@ -40,6 +42,21 @@ public sealed record ClassProfile
     public Dictionary<GameMode, Dictionary<string, double>> WeightOverrides { get; init; } = [];
     public Dictionary<GameMode, List<string>> CoreSkills { get; init; } = [];
     public List<string> Notes { get; init; } = [];
+    public string? SkillsSource { get; init; }
+    /// <summary>Rôle de chaque compétence de la classe (actives, passives, stigmas) ; vide = analyse générique.</summary>
+    public List<SkillKnowledge> Skills { get; init; } = [];
+}
+
+/// <summary>Ce que l'on sait d'une compétence : son rôle, sa priorité (0 = inutile, 1 = indispensable) et le niveau visé par mode.</summary>
+public sealed record SkillKnowledge
+{
+    public required string Name { get; init; }
+    public string Kind { get; init; } = "Active";
+    public string Role { get; init; } = "";
+    public Dictionary<GameMode, double> Priority { get; init; } = [];
+    public Dictionary<GameMode, int> Target { get; init; } = [];
+    public string Why { get; init; } = "";
+    public bool Unverified => Why.StartsWith("À valider", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed record ClassesFile(List<RoleProfile> Roles, List<ClassProfile> Classes);
@@ -78,9 +95,13 @@ public sealed record ProgressionFile
     public Dictionary<string, string> SlotNames { get; init; } = [];
     public List<string> RequiredSlots { get; init; } = [];
     public List<string> OptionalSlots { get; init; } = [];
+    public Dictionary<string, SlotRule> SlotRules { get; init; } = [];
     public required EnchantRules Enchant { get; init; }
     public List<ProgressionStage> Stages { get; init; } = [];
 }
+
+/// <summary>Règle propre à un emplacement (ex. la ceinture noble, qui évolue au lieu d'être remplacée).</summary>
+public sealed record SlotRule(bool Keep, int? EnchantTarget, string? Source, string? Why);
 
 public sealed record DaevanionSettings
 {
@@ -92,13 +113,39 @@ public sealed record DaevanionSettings
     public double UnequippedSkillNodeValue { get; init; } = 0.2;
     public int MaxPathLength { get; init; } = 5;
     public int PlanLength { get; init; } = 15;
+    public string PointSources { get; init; } = "";
+    /// <summary>Gain minimal (en part de la valeur actuelle) pour conseiller de réinitialiser un plateau.</summary>
+    public double RespecMinGain { get; init; } = 0.04;
 }
 
 public sealed record SkillSettings
 {
+    public int BaseMax { get; init; } = 10;
+    public int CostPerLevel { get; init; } = 1;
+    public List<int> SpecialtyLevels { get; init; } = [8, 12, 16, 20];
+    public string PointSources { get; init; } = "";
     public List<string> CommonPvpSkills { get; init; } = [];
-    public int LowLevelGap { get; init; } = 4;
-    public int WastedLevelThreshold { get; init; } = 5;
+    public double UnknownActivePriority { get; init; } = 0.7;
+    public double UnknownPassivePriority { get; init; } = 0.6;
+    public double UnknownStigmaPriority { get; init; } = 0.6;
+    /// <summary>Écart de priorité minimal pour conseiller de déplacer des points d'une compétence à une autre.</summary>
+    public double ChangeThreshold { get; init; } = 0.15;
+}
+
+public sealed record StigmaSettings
+{
+    public int Slots { get; init; } = 4;
+    public int MaxLevel { get; init; } = 20;
+    public List<int> ShardCostByLevel { get; init; } = [];
+    public string ShardSources { get; init; } = "";
+
+    /// <summary>Fragments nécessaires pour passer du niveau <paramref name="from"/> au niveau <paramref name="to"/>.</summary>
+    public int ShardCost(int from, int to)
+    {
+        var cost = 0;
+        for (var l = Math.Max(from, 0); l < to && l < ShardCostByLevel.Count; l++) cost += ShardCostByLevel[l];
+        return cost;
+    }
 }
 
 public sealed record StatSettings
@@ -117,6 +164,7 @@ public sealed record SettingsFile
 {
     public DaevanionSettings Daevanion { get; init; } = new();
     public SkillSettings Skills { get; init; } = new();
+    public StigmaSettings Stigmas { get; init; } = new();
     public StatSettings Stats { get; init; } = new();
     public GearSettings Gear { get; init; } = new();
 }
@@ -126,7 +174,13 @@ public sealed record ResolvedProfile(ClassProfile Class, RoleProfile Role, GameM
 {
     public double Weight(string statKey) => Weights.TryGetValue(statKey, out var w) ? w : Base.DefaultWeight;
     public double Target(StatCategory c) => Base.Targets.GetValueOrDefault(c);
-    public IReadOnlyList<string> CoreSkills => Class.CoreSkills.GetValueOrDefault(Mode) ?? [];
+    public IReadOnlyList<string> CoreSkills =>
+        Class.Skills.Count > 0
+            ? Class.Skills.Where(s => s.Priority.GetValueOrDefault(Mode) >= 0.85).Select(s => s.Name).ToList()
+            : Class.CoreSkills.GetValueOrDefault(Mode) ?? [];
+
+    public SkillKnowledge? Skill(string name) =>
+        Class.Skills.FirstOrDefault(s => GameDatabase.NormalizeLabel(s.Name) == GameDatabase.NormalizeLabel(name));
 }
 
 /// <summary>Toutes les données de jeu chargées, avec index de recherche.</summary>
@@ -200,6 +254,26 @@ public sealed class GameDatabase
 
     /// <summary>"d'Attaque", "de Défense"… pour les phrases.</summary>
     public static string Of(StatCategory c) => c is StatCategory.Offense or StatCategory.Utility ? $"d'{CategoryName(c)}" : $"de {CategoryName(c)}";
+
+    /// <summary>Ce que regroupe chaque famille de stats (infobulles et textes).</summary>
+    public static string CategoryDescription(StatCategory c) => c switch
+    {
+        StatCategory.Offense => "Stats qui augmentent tes dégâts : ATQ, CRIT, Précision, VIT de combat, Boost de DGT, Perforation…",
+        StatCategory.Defense => "Stats qui réduisent les dégâts reçus : DÉF, Esquive, Blocage, RÉS aux CRIT, Tolérance aux DGT…",
+        StatCategory.Sustain => "Stats qui te gardent en vie plus longtemps : PV, Restauration (soins reçus), régénération de PV, potions.",
+        StatCategory.Utility => "Confort et ressources : PM et régénération de PM, coût en PM, vitesse de déplacement, Envol.",
+        _ => "Force, Dextérité, Santé… : elles agissent via leurs bonus en %.",
+    };
+
+    /// <summary>Exemples courts, pour les phrases : "Survie (PV, soins reçus, régénération)".</summary>
+    public static string CategoryWithExamples(StatCategory c) => c switch
+    {
+        StatCategory.Offense => "Attaque (ATQ, CRIT, Précision, VIT de combat…)",
+        StatCategory.Defense => "Défense (DÉF, Esquive, Blocage, résistances…)",
+        StatCategory.Sustain => "Survie (PV, soins reçus, régénération)",
+        StatCategory.Utility => "Utilité (PM, déplacement, vol)",
+        _ => CategoryName(c),
+    };
 
     public static string ModeName(GameMode m) => m == GameMode.PvP ? "JcJ (PvP)" : "JcE (PvE)";
 

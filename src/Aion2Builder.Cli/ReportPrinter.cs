@@ -18,6 +18,7 @@ sealed class ReportPrinter(GameDatabase db)
         foreach (var f in r.ActionPlan.Take(10))
         {
             Colored(Color(f.Severity), $"{++i,2}. [{Fmt.Severity(f.Severity)}] {f.Title}");
+            foreach (var line in f.Detail.Split('\n')) Console.WriteLine($"    {line}");
             Console.WriteLine($"    → {f.Action}");
         }
 
@@ -44,29 +45,49 @@ sealed class ReportPrinter(GameDatabase db)
                 Console.WriteLine($"  {"",-19} → {s.NextSource}");
         }
 
-        Section("Compétences");
-        Console.WriteLine($"  Niveau moyen : actives équipées {Fmt.Num(r.Skills.AverageActiveLevel)} · passives {Fmt.Num(r.Skills.AveragePassiveLevel)}");
-        foreach (var a in r.Skills.Skills.Where(a => a.Status != SkillStatus.Ok || a.IsCore))
-            Colored(a.Status == SkillStatus.Ok ? ConsoleColor.Gray : a.Status == SkillStatus.Wasted ? ConsoleColor.DarkGray : ConsoleColor.Yellow,
-                $"  {(a.IsCore ? "★" : " ")} {a.Skill.Name,-34} niv. {a.Skill.Level,-3} {Fmt.Status(a.Status),-22} {a.Advice}");
+        Section($"Compétences — {r.Skills.SpentPoints} points investis + {r.Skills.UnspentPoints} non dépensés (niveau acheté max {db.Settings.Skills.BaseMax})");
+        Console.WriteLine($"  {"Compétence",-36} {"Rôle",-30} {"Acheté",6} {"Bonus",6} {"Conseil",8}");
+        foreach (var a in r.Skills.Skills)
+        {
+            var delta = a.Delta == 0 ? "=" : a.Delta > 0 ? $"+{a.Delta}" : a.Delta.ToString();
+            Colored(a.Delta < 0 ? ConsoleColor.Red : a.Delta > 0 ? ConsoleColor.Green : a.Skill.Acquired ? ConsoleColor.Gray : ConsoleColor.DarkGray,
+                $"  {(a.Kind == SkillKind.Passive ? "(P) " : "")}{a.Skill.Name,-32} {a.Role,-30} {a.Base,6} {"+" + a.Bonus,6} {delta,8}");
+            if (a.Delta != 0) Console.WriteLine($"      {a.Why}");
+        }
+        Console.WriteLine();
+        Console.WriteLine($"  Stigmas ({db.Settings.Stigmas.Slots} emplacements, fragments) :");
+        foreach (var s in r.Skills.Stigmas.Where(s => s.Recommended || s.Skill.Equipped))
+            Colored(s.Recommended == s.Skill.Equipped ? ConsoleColor.Gray : s.Recommended ? ConsoleColor.Green : ConsoleColor.Red,
+                $"   {(s.Recommended ? (s.Skill.Equipped ? "garder " : "mettre ") : "retirer")} {s.Skill.Name,-36} niv. {s.Skill.Level,2} → {s.Target,-2} {s.Role}");
 
-        Section("Daevanion — prochaines cases");
+        Section("Daevanion");
+        foreach (var b in r.Daevanion.Budgets.Where(b => DaevanionPlanner.Relevant(b.Pool, r.Mode)))
+            Console.WriteLine($"  {db.Settings.Daevanion.PoolNames.GetValueOrDefault(b.Pool, b.Pool)} : {b.Spent} dépensés + {b.Unspent} non dépensés (tout remplir : {b.FillCost})");
         foreach (var b in r.Daevanion.Boards.Where(b => b.Relevant))
-            Console.WriteLine($"  {b.Board.Name,-10} {b.Board.OpenNodes,3}/{b.Board.TotalNodes,-3} ouvertes ({b.Board.OpenPercent} %) · {b.Reachable} accessibles · rentabilité {Fmt.Num(b.ValuePerCost * 100)}");
+            Console.WriteLine($"  {b.Board.Name,-10} {b.Board.OpenNodes,3}/{b.Board.TotalNodes,-3} cases · {b.Spent,3}/{b.Total} points · {b.Reachable} accessibles");
+        foreach (var respec in r.Daevanion.Respecs.Where(x => x.Remove.Count > 0 && x.Gain >= db.Settings.Daevanion.RespecMinGain))
+        {
+            Console.WriteLine();
+            Colored(ConsoleColor.Yellow, $"  Réorganisation {db.Settings.Daevanion.PoolNames.GetValueOrDefault(respec.Pool, respec.Pool)} : +{Fmt.Pct(respec.Gain)} de valeur avec les mêmes {respec.Budget} points");
+            foreach (var x in respec.Remove)
+                Colored(ConsoleColor.Red, $"   retirer  {x.Board.Name,-9} ligne {x.Node.Row,2} col. {x.Node.Col,2}  {x.Effects}");
+            foreach (var x in respec.Add)
+                Colored(ConsoleColor.Green, $"   {x.Step,2}. prendre {x.Board.Name,-9} ligne {x.Node.Row,2} col. {x.Node.Col,2}  {x.Effects}");
+        }
         foreach (var pool in r.Daevanion.ByPool)
         {
             Console.WriteLine();
-            Console.WriteLine($"  {db.Settings.Daevanion.PoolNames.GetValueOrDefault(pool.Key, pool.Key)} :");
+            Console.WriteLine($"  Prochaines cases — {db.Settings.Daevanion.PoolNames.GetValueOrDefault(pool.Key, pool.Key)} :");
             foreach (var s in pool.Take(15))
                 Colored(s.IsPassage ? ConsoleColor.DarkGray : ConsoleColor.Gray,
-                    $"   {s.Step,2}. {s.Board.Name,-9} ligne {s.Node.Row,2} col. {s.Node.Col,2}  {s.Effects}{(s.IsPassage ? "  (passage)" : "")}");
+                    $"   {s.Step,2}. {s.Board.Name,-9} ligne {s.Node.Row,2} col. {s.Node.Col,2}  {s.Effects}{(s.IsPassage ? "  (passage)" : "")}{(s.Affordable ? "  [faisable maintenant]" : "")}");
         }
 
         Section("Détails et repères");
         foreach (var f in r.Findings.Where(f => f.Action is null || f.Severity == Severity.Info))
         {
             Colored(Color(f.Severity), $"  • {f.Title}");
-            Console.WriteLine($"    {f.Detail}");
+            Console.WriteLine("    " + f.Detail.Replace("\n", "\n    "));
         }
         Console.WriteLine();
     }

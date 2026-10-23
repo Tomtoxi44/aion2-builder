@@ -1,19 +1,36 @@
 {
-  "_note": "Réglages de l'algorithme. Les coûts Daevanion sont relatifs (le site officiel ne les donne pas) : seul leur rapport compte.",
+  "_note": "Réglages de l'algorithme. Les valeurs marquées « guides » viennent de guides communautaires (client Global) et peuvent changer avec les mises à jour.",
   "daevanion": {
     "boardPools": { "Ariel": "PvE", "Azphel": "PvP" },
     "poolNames": { "Normal": "Points Daevanion (plateaux communs)", "PvE": "Cristaux JcE (Ariel)", "PvP": "Cristaux JcJ (Azphel)" },
+    "_nodeCost": "Coût réel d'une case selon sa couleur (vérifié : Nezekan/Zikel/Vaizel = 134 points, Triniel = 168, Azphel = 232).",
     "nodeCost": { "Common": 1, "Rare": 2, "Legend": 3, "Unique": 4, "Epic": 5, "Mythic": 6 },
+    "pointSources": "Quêtes secondaires et quêtes régionales, cristaux des donjons scellés, boutique du festival Shugo (50 max, saisonnière). Ariel : Épreuve de l'ascension et quêtes JcE. Azphel : champs de bataille hebdomadaires, monolithe Abyssal, boutique JcJ (50 max). Aucun guide ne donne de total maximum par personnage.",
     "skillNodeValue": 2.0,
     "coreSkillMultiplier": 1.6,
     "unequippedSkillNodeValue": 0.2,
     "maxPathLength": 5,
-    "planLength": 15
+    "planLength": 15,
+    "respecMinGain": 0.04
   },
   "skills": {
+    "_points": "Guides : 1 point = +1 niveau, les points montent une compétence jusqu'au niveau 10 ; au-delà, seulement Daevanion, arcanes et équipement. Réinitialisation gratuite et illimitée.",
+    "baseMax": 10,
+    "costPerLevel": 1,
+    "specialtyLevels": [8, 12, 16, 20],
+    "pointSources": "≈ 203 points au niveau 45, jusqu'à 122 avec les 61 donjons scellés et 59 avec les quêtes régionales (≈ 384 au total d'après un guide antérieur au lancement Global).",
     "commonPvpSkills": ["Dissipation de choc"],
-    "lowLevelGap": 4,
-    "wastedLevelThreshold": 5
+    "unknownActivePriority": 0.7,
+    "unknownPassivePriority": 0.6,
+    "unknownStigmaPriority": 0.6,
+    "changeThreshold": 0.15
+  },
+  "stigmas": {
+    "_note": "Guides (client Global) : 4 emplacements (niveaux 22, 27, 32, 37), niveau max 20, montée avec des fragments de stigma, échange gratuit.",
+    "slots": 4,
+    "maxLevel": 20,
+    "shardCostByLevel": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4, 8, 8, 8, 8, 8],
+    "shardSources": "Ascension, montées de niveau, boutique d'échange Abyssale (points Abyssaux), boutique Cauchemar, boutique du festival Shugo."
   },
   "stats": {
     "categoryTolerance": 0.06,

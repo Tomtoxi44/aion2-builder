@@ -60,25 +60,69 @@ public sealed record GearPlan(ProgressionStage Stage, ProgressionStage? NextStag
 
 // ----- Compétences -----
 
-public enum SkillStatus { CoreMissing, CoreNotEquipped, LevelUp, Wasted, Ok }
+public enum SkillKind { Active, Passive, Stigma }
 
-public sealed record SkillAdvice(SkillInfo Skill, SkillStatus Status, bool IsCore, string Advice, int OpenableNodes, double Priority);
+/// <summary>
+/// Conseil pour une compétence active ou passive. <see cref="Base"/> = niveau acheté avec des points (1 à 10),
+/// <see cref="Bonus"/> = niveaux gratuits (Daevanion, équipement), <see cref="RecommendedBase"/> = répartition conseillée.
+/// </summary>
+public sealed record SkillAdvice(
+    SkillInfo Skill, SkillKind Kind, string Role, string Why, bool Known, bool Unverified, double Priority,
+    int Base, int Bonus, int Target, int RecommendedBase, int OpenableNodes)
+{
+    public int Delta => RecommendedBase - Base;
+    public int Total => Base + Bonus;
+    public int TotalAfter => RecommendedBase + Bonus;
+}
 
-public sealed record SkillPlan(List<SkillAdvice> Skills, double AverageActiveLevel, double AveragePassiveLevel);
+/// <summary>Stigma : niveau monté avec des fragments, 4 emplacements, échange gratuit.</summary>
+public sealed record StigmaAdvice(SkillInfo Skill, string Role, string Why, bool Known, bool Unverified, double Priority,
+    bool Recommended, int Target, int ShardsToTarget);
+
+public sealed record SkillPlan(List<SkillAdvice> Skills, List<StigmaAdvice> Stigmas, int SpentPoints, int UnspentPoints,
+    bool HasKnowledge, string? Source)
+{
+    public int Budget => SpentPoints + UnspentPoints;
+    public IEnumerable<SkillAdvice> ToRemove => Skills.Where(s => s.Delta < 0).OrderBy(s => s.Priority);
+    public IEnumerable<SkillAdvice> ToAdd => Skills.Where(s => s.Delta > 0).OrderByDescending(s => s.Priority);
+}
 
 // ----- Daevanion -----
 
-public sealed record PlannedNode(int Step, string Pool, DaevanionBoard Board, DaevanionNode Node, double Value, double Cost, bool IsPassage)
+/// <param name="Affordable">Faisable avec les points non dépensés déclarés (sinon : à prendre plus tard).</param>
+public sealed record PlannedNode(int Step, string Pool, DaevanionBoard Board, DaevanionNode Node, double Value, double Cost, bool IsPassage, bool Affordable = false)
 {
     public string Effects => Node.Effects.Count == 0 ? Node.Name : string.Join(", ", Node.Effects.Select(e => e.Raw));
 }
 
-public sealed record BoardSummary(DaevanionBoard Board, string Pool, bool Relevant, double RemainingValue, double RemainingCost, int Reachable)
+public sealed record NodeRef(DaevanionBoard Board, DaevanionNode Node, double Value, double Cost)
+{
+    public string Effects => Node.Effects.Count == 0 ? Node.Name : string.Join(", ", Node.Effects.Select(e => e.Raw));
+}
+
+public sealed record BoardSummary(DaevanionBoard Board, string Pool, bool Relevant, double RemainingValue, double RemainingCost, int Reachable,
+    int Spent, int Total)
 {
     public double ValuePerCost => RemainingCost <= 0 ? 0 : RemainingValue / RemainingCost;
 }
 
-public sealed record DaevanionPlan(List<PlannedNode> Steps, List<BoardSummary> Boards)
+/// <summary>Points d'une réserve : dépensés (cases ouvertes), non dépensés (déclarés), et coût pour tout remplir.</summary>
+public sealed record PoolBudget(string Pool, int Spent, int Unspent, int FillCost)
+{
+    public int Budget => Spent + Unspent;
+}
+
+/// <summary>
+/// Réorganisation : meilleure répartition des mêmes points en repartant du centre, comparée au placement actuel.
+/// <see cref="Remove"/> = cases ouvertes qui ne sont pas dans la répartition optimale, <see cref="Add"/> = cases à prendre à la place.
+/// </summary>
+public sealed record RespecPlan(string Pool, int Budget, double CurrentValue, double OptimalValue, List<NodeRef> Remove, List<PlannedNode> Add,
+    HashSet<long> OptimalNodes)
+{
+    public double Gain => CurrentValue <= 0 ? (OptimalValue > 0 ? 1 : 0) : OptimalValue / CurrentValue - 1;
+}
+
+public sealed record DaevanionPlan(List<PlannedNode> Steps, List<BoardSummary> Boards, List<PoolBudget> Budgets, List<RespecPlan> Respecs)
 {
     public IEnumerable<IGrouping<string, PlannedNode>> ByPool => Steps.GroupBy(s => s.Pool);
 }
@@ -130,15 +174,6 @@ public static class Fmt
         SlotStatus.Replace => "À remplacer",
         SlotStatus.Weak => "En retard",
         SlotStatus.Enchant => "À enchanter",
-        _ => "OK",
-    };
-
-    public static string Status(SkillStatus s) => s switch
-    {
-        SkillStatus.CoreMissing => "Clé non apprise",
-        SkillStatus.CoreNotEquipped => "Clé non équipée",
-        SkillStatus.LevelUp => "À monter",
-        SkillStatus.Wasted => "Investie, non équipée",
         _ => "OK",
     };
 }

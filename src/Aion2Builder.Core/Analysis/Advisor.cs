@@ -6,8 +6,9 @@ namespace Aion2Builder.Analysis;
 /// <summary>Point d'entrée : analyse complète d'un personnage pour un mode (JcE ou JcJ).</summary>
 public sealed class Advisor(GameDatabase db)
 {
-    public AdviceReport Analyze(CharacterSnapshot c, GameMode mode)
+    public AdviceReport Analyze(CharacterSnapshot c, GameMode mode, PlayerInputs? inputs = null)
     {
+        inputs ??= new PlayerInputs();
         var profile = db.Resolve(c.ClassCode, mode);
         var stats = new StatAnalyzer(db);
         var sp = stats.Profile(c, profile);
@@ -15,9 +16,9 @@ public sealed class Advisor(GameDatabase db)
         var gearAdvisor = new GearAdvisor(db, stats);
         var gear = gearAdvisor.Plan(c, profile, sp);
         var skillAdvisor = new SkillAdvisor(db);
-        var skills = skillAdvisor.Plan(c, profile);
+        var skills = skillAdvisor.Plan(c, profile, inputs);
         var planner = new DaevanionPlanner(db, stats);
-        var daevanion = planner.Plan(c, profile, sp);
+        var daevanion = planner.Plan(c, profile, sp, inputs);
 
         var findings = new List<Finding>();
         findings.AddRange(stats.Findings(sp, profile, c));
@@ -45,9 +46,10 @@ public sealed class Advisor(GameDatabase db)
             _ => 0.0,
         });
 
-        var skillScore = 100
-                         - 20 * skills.Skills.Count(a => a.Status is SkillStatus.CoreMissing or SkillStatus.CoreNotEquipped)
-                         - 7 * skills.Skills.Count(a => a.Status == SkillStatus.LevelUp);
+        // Part des niveaux visés atteints, pondérée par l'importance de chaque compétence.
+        var useful = skills.Skills.Where(a => a.Skill.Acquired && a.Priority > 0).ToList();
+        var skillScore = useful.Count == 0 ? 0 : 100 * useful.Sum(a => Math.Min(a.Base, a.Target) * a.Priority) / useful.Sum(a => a.Target * a.Priority)
+                         - 15 * skills.Skills.Count(a => a.Kind == SkillKind.Active && a.Priority >= 0.85 && a.Skill.Acquired && !a.Skill.Equipped);
 
         var boards = dae.Boards.Where(b => b.Relevant && b.Board.Unlocked && b.Board.TotalNodes > 0).ToList();
         var daeScore = boards.Count == 0 ? 0 : boards.Average(b => b.Board.OpenPercent);

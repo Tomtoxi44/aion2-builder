@@ -44,6 +44,8 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
             var sourceNow = stage.Gear.FirstOrDefault(g => g.Group == group)?.For(p.Mode);
             var sourceNext = next?.Gear.FirstOrDefault(g => g.Group == group)?.For(p.Mode);
             var name = db.SlotName(slot);
+            var rule = prog.SlotRules.GetValueOrDefault(slot);
+            if (rule?.Source is { } ruleSource) sourceNow = sourceNext = ruleSource;
 
             if (!bySlot.TryGetValue(slot, out var item))
             {
@@ -61,7 +63,26 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
             string? source;
             double priority;
 
-            if (rank > 0 && rank < targetRank)
+            if (rule is { Keep: true })
+            {
+                // Pièce unique qui évolue au lieu d'être remplacée (ex. ceinture noble) : seul l'enchantement compte.
+                var target = Math.Min(rule.EnchantTarget ?? prog.Enchant.SafeLevel, Math.Max(item.MaxEnchantLevel, rule.EnchantTarget ?? 0));
+                if (item.EnchantLevel < target)
+                {
+                    var cost = EnchantCost(item.EnchantLevel, target);
+                    status = SlotStatus.Enchant;
+                    advice = $"À garder : {rule.Why} Enchante +{item.EnchantLevel} → +{target}.";
+                    priority = (25 + 30.0 * (target - item.EnchantLevel) / (cost + 1)) * gw;
+                }
+                else
+                {
+                    status = SlotStatus.Ok;
+                    advice = $"À garder : {rule.Why} Déjà +{item.EnchantLevel} : passe au grade supérieur.";
+                    priority = 20;
+                }
+                source = rule.Source;
+            }
+            else if (rank > 0 && rank < targetRank)
             {
                 status = SlotStatus.Replace;
                 advice = $"Pièce de grade {db.Grade(item.Grade).Name.ToLowerInvariant()} : à ce palier, vise le {db.Grade(stage.TargetGrade).Name.ToLowerInvariant()}.";
@@ -103,6 +124,9 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
     /// <summary>Niveau d'enchantement rentable : sûr pour une pièce gardée, plafonné pour une pièce de transition.</summary>
     public int EnchantCap(EquippedItem item, int keepRank) =>
         db.Grade(item.Grade).Rank >= keepRank ? db.Progression.Enchant.SafeLevel : db.Progression.Enchant.TransitionalMax;
+
+    int EnchantGoal(string slot, EquippedItem item, int keepRank) =>
+        db.Progression.SlotRules.GetValueOrDefault(slot)?.EnchantTarget is { } t ? t : Math.Min(EnchantCap(item, keepRank), item.MaxEnchantLevel);
 
     public double EnchantCost(int from, int to)
     {
@@ -147,11 +171,11 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
         if (enchants.Count > 0)
             findings.Add(new Finding(Area.Enchant, Severity.Advice, $"Enchantements rentables ({enchants.Count} pièce(s))",
                 "Pièces sous leur niveau d'enchantement rentable (sûr pour celles à garder, plafonné pour celles de transition) : " +
-                string.Join(" · ", enchants.Take(6).Select(s => $"{s.SlotName} +{s.Item!.EnchantLevel} → +{Math.Min(EnchantCap(s.Item, keepRank), s.Item.MaxEnchantLevel)}")),
+                string.Join(" · ", enchants.Take(6).Select(s => $"{s.SlotName} +{s.Item!.EnchantLevel} → +{EnchantGoal(s.Slot, s.Item, keepRank)}")),
                 $"Enchante dans cet ordre (meilleur gain par ressource d'abord) : {string.Join(", ", enchants.Take(4).Select(s => s.SlotName))}.",
                 enchants[0].Priority));
 
-        var overInvested = plan.Slots.Where(s => s.Item is { } i && db.Grade(i.Grade).Rank < keepRank
+        var overInvested = plan.Slots.Where(s => s.Item is { } i && !db.Progression.SlotRules.ContainsKey(s.Slot) && db.Grade(i.Grade).Rank < keepRank
                                                  && i.EnchantLevel > db.Progression.Enchant.TransitionalMax).ToList();
         if (overInvested.Count > 0)
             findings.Add(new Finding(Area.Enchant, Severity.Info, "Pièces de transition déjà bien enchantées",

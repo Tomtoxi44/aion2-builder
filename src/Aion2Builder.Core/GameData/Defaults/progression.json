@@ -1,13 +1,13 @@
 {
   "_note": "Paliers de progression d'équipement. Un palier est atteint quand le niveau d'objet (gear score du site officiel) dépasse 'minItemLevel' et que le niveau du personnage dépasse 'minLevel'. 'targetGrade' = rareté visée à ce palier : les pièces en dessous sont de transition (ne pas trop les enchanter), celles à ce grade ou plus sont à garder. Seuils et sources indicatifs (guides communautaires) : ajuste-les à la saison en cours.",
   "grades": [
-    { "code": "Common", "name": "Blanc", "rank": 1, "color": "#EDEDED" },
-    { "code": "Rare", "name": "Vert", "rank": 2, "color": "#52B35C" },
-    { "code": "Legend", "name": "Bleu", "rank": 3, "color": "#3D94D8" },
-    { "code": "Unique", "name": "Jaune", "rank": 4, "color": "#FB9800" },
+    { "code": "Common", "name": "Commun (blanc)", "rank": 1, "color": "#EDEDED" },
+    { "code": "Rare", "name": "Rare (vert)", "rank": 2, "color": "#52B35C" },
+    { "code": "Legend", "name": "Épique (bleu)", "rank": 3, "color": "#3D94D8" },
+    { "code": "Unique", "name": "Unique (jaune)", "rank": 4, "color": "#FB9800" },
     { "code": "Epic", "name": "Orange", "rank": 5, "color": "#EE6C2A" },
     { "code": "Mythic", "name": "Rouge", "rank": 6, "color": "#D33939" },
-    { "code": "Special", "name": "Turquoise", "rank": 4, "color": "#34B798" }
+    { "code": "Special", "name": "Spécial (turquoise)", "rank": 4, "color": "#34B798" }
   ],
   "slotGroups": {
     "MainHand": "Weapon", "SubHand": "Weapon",
@@ -25,6 +25,14 @@
   },
   "requiredSlots": ["MainHand", "SubHand", "Helmet", "Shoulder", "Torso", "Pants", "Gloves", "Boots", "Cape", "Necklace", "Earring1", "Earring2", "Ring1", "Ring2", "Bracelet1", "Bracelet2", "Belt", "Rune1", "Amulet"],
   "optionalSlots": ["Rune2"],
+  "slotRules": {
+    "Belt": {
+      "keep": true,
+      "enchantTarget": 10,
+      "source": "Ceinture noble uniquement (quête « Visions dans la fumée », niv. 13) : il n'existe pas de ceinture de donjon sur les serveurs occidentaux. Monte-la à +10 avec les parchemins d'enchantement de ceinture noble (2 par fort ou garnison de ta région, 30 au total), puis transmute-la vers le grade supérieur (vert → bleu → jaune).",
+      "why": "La ceinture noble ne se remplace pas : elle évolue. Chaque grade exige d'abord la pièce à +10."
+    }
+  },
   "enchant": {
     "_note": "Coût relatif de chaque niveau d'enchantement (index 0 = passage +0 -> +1). Sert à comparer enchanter / changer de pièce.",
     "costByLevel": [1, 1, 1, 2, 2, 3, 4, 6, 9, 13, 18, 25, 35, 50, 70],
