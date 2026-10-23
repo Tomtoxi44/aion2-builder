@@ -21,7 +21,8 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
     public string PoolName(string pool) => db.Settings.Daevanion.PoolNames.GetValueOrDefault(pool, pool);
     public double NodeCost(DaevanionNode n) => n.IsStart ? 0 : Math.Max(0.1, db.Settings.Daevanion.NodeCost.GetValueOrDefault(n.Grade, 1));
 
-    sealed record Context(ResolvedProfile Profile, StatProfile Stats, Dictionary<string, SkillInfo> Skills, SkillAdvisor Skill);
+    sealed record Context(ResolvedProfile Profile, StatProfile Stats, Dictionary<string, SkillInfo> Skills, SkillAdvisor Skill,
+        Dictionary<StatCategory, double> Balance);
 
     double NodeValue(DaevanionNode n, Context ctx)
     {
@@ -29,7 +30,11 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
         var v = 0.0;
         foreach (var e in n.Effects)
         {
-            if (e.IsStat) v += stats.EffectValue(e, ctx.Stats, ctx.Profile);
+            if (e.IsStat)
+            {
+                var category = db.Stat(e.StatKey!)?.Category ?? StatCategory.Primary;
+                v += stats.EffectValue(e, ctx.Stats, ctx.Profile) * ctx.Balance.GetValueOrDefault(category, 1);
+            }
             else if (e.IsSkill && ctx.Skills.TryGetValue(GameDatabase.NormalizeLabel(e.SkillName!), out var skill) && skill.Acquired)
             {
                 // Un niveau de compétence vaut selon l'importance de la compétence dans la rotation de la classe.
@@ -44,7 +49,9 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
     {
         var ctx = new Context(p, sp,
             c.Skills.GroupBy(s => GameDatabase.NormalizeLabel(s.Name)).ToDictionary(g => g.Key, g => g.First()),
-            new SkillAdvisor(db));
+            new SkillAdvisor(db),
+            // Famille déjà au-dessus de sa cible : ses cases valent moins ; en dessous : plus (entre ×0,6 et ×1,4).
+            sp.Categories.ToDictionary(x => x.Category, x => x.Target > 0 ? Math.Clamp(1 - x.Gap / x.Target, 0.6, 1.4) : 1));
         var settings = db.Settings.Daevanion;
         var boards = c.Boards.Where(b => b.Nodes.Count > 0).ToList();
         var open = boards.ToDictionary(b => b.Id, b => b.Nodes.Where(n => n.Open || n.IsStart).Select(n => (n.Row, n.Col)).ToHashSet());
@@ -89,50 +96,69 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
         return new DaevanionPlan(steps, summaries, budgets, respecs);
     }
 
-    /// <summary>Meilleure répartition du budget en repartant du centre, puis comparaison avec le placement actuel.</summary>
+    /// <summary>
+    /// Réorganisation minimale : en partant du placement actuel, on retire une case en bout de chemin peu rentable
+    /// (sans couper le chemin), on réinvestit les points libérés au meilleur endroit, et on garde le changement
+    /// seulement s'il rapporte plus. On répète tant que ça progresse : seules les erreurs de parcours sont corrigées.
+    /// </summary>
     RespecPlan Respec(string pool, List<DaevanionBoard> boards, Dictionary<int, Dictionary<(int, int), DaevanionNode>> grids,
         Dictionary<long, double> values, PoolBudget budget)
     {
         var starts = boards.ToDictionary(b => b.Id, b => b.Nodes.Where(n => n.IsStart).Select(n => (n.Row, n.Col)).ToHashSet());
-        var chosen = boards.ToDictionary(b => b.Id, b => new HashSet<(int, int)>(starts[b.Id]));
+        var chosen = boards.ToDictionary(b => b.Id, b => b.Nodes.Where(n => n.Open || n.IsStart).Select(n => (n.Row, n.Col)).ToHashSet());
         var added = new List<(DaevanionBoard Board, DaevanionNode Node)>();
-        double Cost() => boards.Sum(b => chosen[b.Id].Sum(cell => NodeCost(grids[b.Id][cell])));
         double Value() => boards.Sum(b => chosen[b.Id].Sum(cell => values[grids[b.Id][cell].Id]));
+        var currentValue = Value();
+        var spent = (double)budget.Spent;
 
-        foreach (var (board, node, _) in Grow(boards, grids, chosen, values, budget.Budget, int.MaxValue))
-            added.Add((board, node));
-
-        // Amélioration locale : on retire la case la moins rentable qui ne coupe pas le chemin, on redépense, on garde si c'est mieux.
-        for (var iteration = 0; iteration < 40; iteration++)
+        for (var accepted = 0; accepted < 80;)
         {
             var before = Value();
-            var removable = boards.SelectMany(b => chosen[b.Id].Where(cell => !starts[b.Id].Contains(cell) && KeepsConnected(chosen[b.Id], starts[b.Id], cell))
+            var leaves = boards.SelectMany(b => chosen[b.Id]
+                    .Where(cell => !starts[b.Id].Contains(cell) && KeepsConnected(chosen[b.Id], starts[b.Id], cell))
                     .Select(cell => (Board: b, Cell: cell, Node: grids[b.Id][cell])))
-                .OrderBy(x => values[x.Node.Id] / NodeCost(x.Node)).FirstOrDefault();
-            if (removable.Node is null) break;
-            chosen[removable.Board.Id].Remove(removable.Cell);
-            var trial = Grow(boards, grids, chosen, values, budget.Budget - Cost(), int.MaxValue).ToList();
-            if (Value() > before + 1e-6 && trial.All(t => t.Node.Id != removable.Node.Id))
+                .OrderBy(x => values[x.Node.Id] / NodeCost(x.Node)).Take(8).ToList();
+            var improved = false;
+            foreach (var first in leaves)
             {
-                added.RemoveAll(a => a.Node.Id == removable.Node.Id);
-                added.AddRange(trial.Select(t => (t.Board, t.Node)));
-                continue;
+                // On libère jusqu'à 3 cases peu rentables en bout de chemin (une case chère peut demander plus d'un point).
+                var removed = new List<(DaevanionBoard Board, (int, int) Cell, DaevanionNode Node)> { first };
+                chosen[first.Board.Id].Remove(first.Cell);
+                while (true)
+                {
+                    var trial = Grow(boards, grids, chosen, values, removed.Sum(x => NodeCost(x.Node)), int.MaxValue).ToList();
+                    if (Value() > before + 1e-6 && trial.All(t => removed.All(x => x.Node.Id != t.Node.Id)))
+                    {
+                        added.RemoveAll(a => removed.Any(x => x.Node.Id == a.Node.Id));
+                        added.AddRange(trial.Select(t => (t.Board, t.Node)));
+                        improved = true;
+                        break;
+                    }
+                    foreach (var t in trial) chosen[t.Board.Id].Remove((t.Node.Row, t.Node.Col));
+                    if (removed.Count >= 3) break;
+                    var next = boards.SelectMany(b => chosen[b.Id]
+                            .Where(cell => !starts[b.Id].Contains(cell) && KeepsConnected(chosen[b.Id], starts[b.Id], cell))
+                            .Select(cell => (Board: b, Cell: cell, Node: grids[b.Id][cell])))
+                        .OrderBy(x => values[x.Node.Id] / NodeCost(x.Node)).FirstOrDefault();
+                    if (next.Node is null || values[next.Node.Id] / NodeCost(next.Node) > values[first.Node.Id] / NodeCost(first.Node) * 2 + 0.05) break;
+                    chosen[next.Board.Id].Remove(next.Cell);
+                    removed.Add(next);
+                }
+                if (improved) break;
+                // Pas mieux : on remet les cases retirées.
+                foreach (var x in removed) chosen[x.Board.Id].Add(x.Cell);
             }
-            // Pas mieux : on annule.
-            foreach (var t in trial) chosen[t.Board.Id].Remove((t.Node.Row, t.Node.Col));
-            chosen[removable.Board.Id].Add(removable.Cell);
-            break;
+            if (!improved) break;
+            accepted++;
         }
 
         var optimal = boards.SelectMany(b => chosen[b.Id].Select(cell => grids[b.Id][cell].Id)).ToHashSet();
-        var currentNodes = boards.SelectMany(b => b.Nodes.Where(n => n.Open && !n.IsStart).Select(n => (Board: b, Node: n))).ToList();
-        var currentValue = currentNodes.Sum(x => values[x.Node.Id]);
-        var remove = currentNodes.Where(x => !optimal.Contains(x.Node.Id))
+        var remove = boards.SelectMany(b => b.Nodes.Where(n => n.Open && !n.IsStart && !optimal.Contains(n.Id)).Select(n => (Board: b, Node: n)))
             .Select(x => new NodeRef(x.Board, x.Node, values[x.Node.Id], NodeCost(x.Node))).OrderBy(x => x.Value / x.Cost).ToList();
         var step = 0;
-        var add = added.Where(a => !a.Node.Open && optimal.Contains(a.Node.Id))
+        var add = added.Where(a => !a.Node.Open && optimal.Contains(a.Node.Id)).DistinctBy(a => a.Node.Id)
             .Select(a => new PlannedNode(++step, pool, a.Board, a.Node, values[a.Node.Id], NodeCost(a.Node), false, true)).ToList();
-        return new RespecPlan(pool, budget.Budget, currentValue, Value(), remove, add, optimal);
+        return new RespecPlan(pool, (int)spent, currentValue, Value(), remove, add, optimal);
     }
 
     static bool KeepsConnected(HashSet<(int R, int C)> set, HashSet<(int R, int C)> starts, (int R, int C) without)

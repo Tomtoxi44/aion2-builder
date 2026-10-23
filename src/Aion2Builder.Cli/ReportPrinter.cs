@@ -38,7 +38,7 @@ sealed class ReportPrinter(GameDatabase db)
         Section($"Équipement — palier « {r.Gear.Stage.Name} »" + (r.Gear.NextStage is null ? "" : $" → « {r.Gear.NextStage.Name} » à {r.Gear.NextStage.MinItemLevel}"));
         foreach (var s in r.Gear.Slots.OrderByDescending(s => s.Priority))
         {
-            var item = s.Item is null ? "—" : $"{s.Item.Name} ({db.Grade(s.Item.Grade).Name}, niv. {s.Power}, +{s.Item.EnchantLevel})";
+            var item = s.Item is null ? "—" : $"{s.Item.Name} — {db.Grade(s.Item.Grade).Name}, niv. {s.Power}, +{s.Item.EnchantLevel}";
             Colored(SlotColor(s.Status), $"  {s.SlotName,-19} {Fmt.Status(s.Status),-12} {item}");
             if (s.Status != SlotStatus.Ok || s.PoorStats.Count > 0) Console.WriteLine($"  {"",-19} {s.Advice}");
             if (s.Status is SlotStatus.Empty or SlotStatus.Replace or SlotStatus.Weak && s.NextSource is not null)

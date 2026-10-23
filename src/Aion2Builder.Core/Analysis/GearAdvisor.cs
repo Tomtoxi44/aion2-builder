@@ -163,7 +163,7 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
         foreach (var s in plan.Slots.Where(s => s.Status is SlotStatus.Replace or SlotStatus.Weak).OrderByDescending(s => s.Priority).Take(4))
             findings.Add(new Finding(Area.Gear, s.Priority >= 60 ? Severity.Important : Severity.Advice,
                 $"{s.SlotName} : {Fmt.Status(s.Status).ToLowerInvariant()}",
-                $"{s.Item!.Name} ({db.Grade(s.Item.Grade).Name}, niv. {s.Power}). {s.Advice}",
+                $"{s.Item!.Name} — {db.Grade(s.Item.Grade).Name}, niveau d'objet {s.Power}. {s.Advice}",
                 s.NextSource is null ? null : $"Va chercher : {s.NextSource}", s.Priority));
 
         var keepRank = db.Grade((plan.NextStage ?? stage).TargetGrade).Rank;

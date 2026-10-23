@@ -228,12 +228,17 @@ sealed class ReportView(GameDatabase db, AdviceReport r, PlayerInputs inputs, Ac
             {
                 card.Children.Add(Text($"Avec les mêmes {respec.Budget} points, ce chemin rapporte {Fmt.Pct(respec.Gain)} de plus pour ta classe en {GameDatabase.ModeName(r.Mode)}. " +
                                        "Sur les plateaux ci-dessous : contour rouge = case à retirer, chiffre vert = case à prendre (dans l'ordre).", 12, color: Muted));
-                card.Children.Add(Text($"À retirer ({respec.Remove.Count} cases, {Fmt.Num(respec.Remove.Sum(x => x.Cost))} points) :", 13, true, Bad));
+                var left = Stack(2, Text($"À retirer ({respec.Remove.Count} cases, {Fmt.Num(respec.Remove.Sum(x => x.Cost))} points)", 13, true, Bad));
                 foreach (var x in respec.Remove)
-                    card.Children.Add(Text($"✕ {x.Board.Name} (ligne {x.Node.Row}, col. {x.Node.Col}) — {x.Effects} · rapporte peu pour ta classe", 12));
-                card.Children.Add(Text($"À prendre à la place ({respec.Add.Count} cases) :", 13, true, Good));
+                    left.Children.Add(Text($"✕ {x.Board.Name} l.{x.Node.Row} c.{x.Node.Col} — {x.Effects} · {Reason(x.Node)}", 12));
+                var right = Stack(2, Text($"À prendre à la place ({respec.Add.Count} cases, dans l'ordre)", 13, true, Good));
                 foreach (var x in respec.Add)
-                    card.Children.Add(Text($"{x.Step,2}. {x.Board.Name} (ligne {x.Node.Row}, col. {x.Node.Col}) — {x.Effects}", 12));
+                    right.Children.Add(Text($"{x.Step,2}. {x.Board.Name} l.{x.Node.Row} c.{x.Node.Col} — {x.Effects} · {Reason(x.Node)}", 12, color: x.IsPassage ? Muted : null));
+                var columns = new Grid { ColumnDefinitions = new ColumnDefinitions("*,24,*") };
+                Grid.SetColumn(right, 2);
+                columns.Children.Add(left);
+                columns.Children.Add(right);
+                card.Children.Add(columns);
             }
             panel.Children.Add(Card(card));
         }
@@ -253,6 +258,21 @@ sealed class ReportView(GameDatabase db, AdviceReport r, PlayerInputs inputs, Ac
             panel.Children.Add(Card(list));
         }
         return panel;
+    }
+
+    /// <summary>Pourquoi une case vaut peu ou beaucoup : importance de sa stat ou de sa compétence pour ta classe dans ce mode.</summary>
+    string Reason(DaevanionNode n)
+    {
+        var parts = new List<string>();
+        foreach (var e in n.Effects)
+        {
+            if (e.IsSkill && r.Skills.Skills.FirstOrDefault(a => a.Skill.Name == e.SkillName) is { } a)
+                parts.Add($"{a.Role.ToLowerInvariant()}, importance {a.Priority:0.00}");
+            else if (e.IsStat)
+                parts.Add($"importance {r.Profile.Weight(e.StatKey!):0.00}" + (r.Stats.Categories.FirstOrDefault(c => c.Category == db.Stat(e.StatKey!)?.Category) is { Gap: > 0.06 } c
+                    ? $", {GameDatabase.CategoryName(c.Category).ToLowerInvariant()} déjà au-dessus de sa cible" : ""));
+        }
+        return parts.Count == 0 ? "passage" : string.Join(" ; ", parts.Distinct());
     }
 
     static int Value(Dictionary<string, NumericUpDown> boxes, string pool, int current) =>
