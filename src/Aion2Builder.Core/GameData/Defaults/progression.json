@@ -41,6 +41,17 @@
     "stonePool": ["Attack", "Defense", "HP", "MP", "Critical", "Accuracy", "Block", "Evasion", "CriticalResist"],
     "stoneGrades": ["Common", "Rare", "Legend", "Unique"]
   },
+  "pets": {
+    "_note": "Effets de possession : chaque familier obtenu donne ces stats selon son espèce et son niveau (1, 2, 3), cumulées sur toute la collection. Valeurs relevées par la communauté (aion2pets.net, oct. 2026), non officielles. Les stats principales (Force…) sont déjà dans les totaux du site officiel : affichées, pas recomptées. « other » : effets hors combat ou mal connus, affichés seulement.",
+    "tiers": [5, 30, 105],
+    "genera": {
+      "cogni": { "name": "Cogni", "effects": [ { "stat": "HP", "levels": [10, 20, 30] }, { "stat": "Critical", "levels": [0, 1, 2] }, { "stat": "STR", "levels": [0, 0, 1] } ] },
+      "fera": { "name": "Fera", "effects": [ { "stat": "Accuracy", "levels": [0, 1, 2] }, { "stat": "DEX", "levels": [0, 0, 1] } ], "other": "Vitesse de monture au sol +1 / +2 / +3" },
+      "natura": { "name": "Natura", "effects": [ { "stat": "CriticalResist", "levels": [0, 1, 2] }, { "stat": "AGI", "levels": [0, 0, 1] } ], "other": "Endurance +3 / +6 / +9 (effet mal connu, non compté)" },
+      "varian": { "name": "Varian", "effects": [ { "stat": "Evasion", "levels": [0, 1, 2] }, { "stat": "CON", "levels": [0, 0, 1] } ], "other": "Endurance du sprint de monture −0,1 / −0,2 / −0,3 %" },
+      "special": { "name": "Spécial", "effects": [], "other": "Pas d'effet de possession : apparence et paliers de collection." }
+    }
+  },
   "groupNames": { "Weapon": "Arme", "Armor": "Armure", "Accessory": "Accessoire", "Special": "Rune / amulette" },
   "slotNames": {
     "MainHand": "Arme", "SubHand": "Main secondaire", "Helmet": "Casque", "Shoulder": "Épaulettes", "Torso": "Torse", "Pants": "Jambières",

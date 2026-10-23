@@ -21,6 +21,7 @@ try
         "advise" or "conseils" => await Advise(cli),
         "list" => List(),
         "data" => Data(cli),
+        "pets" or "familiers" => await Pets(cli),
         _ => Help(),
     };
 }
@@ -47,6 +48,8 @@ static int Help()
                  [--sp N] [--dp N] [--ariel N] [--azphel N]  points non dépensés (compétences, Daevanion), gardés par personnage
           list                                                Personnages enregistrés
           data [export]                                       Fichiers de données (poids, paliers…) modifiables
+          pets [--key <clé>] [--refresh] [--forget]            Familiers du Pet Meter, lus sur Aion 2 Todo (clé : onglet
+                                                              Familiers → Pet Meter) ; comptés ensuite par « advise »
 
         Régions : eu, naw, nae, la, as. Données : %APPDATA%\Aion2Builder
         """);
@@ -134,7 +137,8 @@ static async Task<int> Advise(Args cli)
     if (updated != inputs) store.SaveInputs(snapshot, inputs = updated);
 
     var advisor = new Advisor(db);
-    var reports = modes.Select(m => advisor.Analyze(snapshot, m, inputs)).ToList();
+    var pets = new PetStore().Load().Collection;
+    var reports = modes.Select(m => advisor.Analyze(snapshot, m, inputs, pets)).ToList();
     if (cli.Has("json"))
     {
         Console.WriteLine(JsonSerializer.Serialize<object>(reports.Count == 1 ? reports[0] : reports, GameDataStore.Json));
@@ -165,6 +169,26 @@ static int Data(Args cli)
     foreach (var (file, overridden) in GameDataStore.Sources())
         Console.WriteLine($"  {file,-18} {(overridden ? "personnalisé" : "par défaut (intégré)")}");
     Console.WriteLine("Un fichier présent dans ce dossier remplace la version intégrée. « data export » y copie les valeurs par défaut.");
+    return 0;
+}
+
+static async Task<int> Pets(Args cli)
+{
+    var store = new PetStore();
+    if (cli.Has("forget")) { store.Forget(); Console.WriteLine("Clé et collection de familiers oubliées."); return 0; }
+    var saved = store.Load();
+    var collection = cli.Get("key") is not null || cli.Has("refresh") || saved.Collection is null
+        ? await store.Refresh(cli.Get("key"))
+        : saved.Collection;
+    var db = GameDataStore.Load();
+    var plan = new PetAdvisor(db).Plan(collection);
+    var genera = plan.Genera.Where(g => g.Total > 0).ToList();
+    Console.WriteLine($"Familiers (Aion 2 Todo{(store.Load().KeyHint is { } hint ? $", clé {hint}" : "")}, lus le {collection.FetchedAtUtc.ToLocalTime():dd/MM HH:mm}) : " +
+                      $"{genera.Sum(g => g.Owned)}/{genera.Sum(g => g.Total)} obtenus, {genera.Sum(g => g.Maxed)} au niveau 3");
+    foreach (var g in genera)
+        Console.WriteLine($"  {g.Name,-8} {g.Owned,3}/{g.Total,-4} niv. 1/2/3 : {g.Counts[1],2}/{g.Counts[2],2}/{g.Counts[3],2}   " +
+                          string.Join(", ", g.Stats.Where(s => s.Now > 0).Select(s => $"{s.Name} +{Fmt.Num(s.Now)}")));
+    Console.WriteLine("Les conseils (espèce à farmer, familiers les plus proches) sont dans « advise ».");
     return 0;
 }
 

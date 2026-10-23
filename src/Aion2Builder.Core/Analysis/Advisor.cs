@@ -6,11 +6,13 @@ namespace Aion2Builder.Analysis;
 /// <summary>Point d'entrée : analyse complète d'un personnage pour un mode (JcE ou JcJ).</summary>
 public sealed class Advisor(GameDatabase db)
 {
-    public AdviceReport Analyze(CharacterSnapshot c, GameMode mode, PlayerInputs? inputs = null)
+    /// <param name="pets">Collection de familiers (Pet Meter via Aion 2 Todo), liée au compte et non au personnage ; null si non reliée.</param>
+    public AdviceReport Analyze(CharacterSnapshot c, GameMode mode, PlayerInputs? inputs = null, PetCollection? pets = null)
     {
         inputs ??= new PlayerInputs();
         var profile = db.Resolve(c.ClassCode, mode);
-        var stats = new StatAnalyzer(db);
+        var petAdvisor = new PetAdvisor(db);
+        var stats = new StatAnalyzer(db, petAdvisor.Sources(pets));
         var sp = stats.Profile(c, profile);
 
         var gearAdvisor = new GearAdvisor(db, stats);
@@ -21,6 +23,7 @@ public sealed class Advisor(GameDatabase db)
         var daevanion = planner.Plan(c, profile, sp, inputs);
         var engravingAdvisor = new EngravingAdvisor(db);
         var engravings = engravingAdvisor.Plan(c, profile, gear, sp);
+        var petPlan = petAdvisor.Plan(pets, profile, sp);
 
         var findings = new List<Finding>();
         findings.AddRange(stats.Findings(sp, profile, c));
@@ -28,11 +31,12 @@ public sealed class Advisor(GameDatabase db)
         findings.AddRange(skillAdvisor.Findings(skills, c, profile));
         findings.AddRange(planner.Findings(daevanion, c, profile));
         findings.AddRange(engravingAdvisor.Findings(engravings, profile));
+        findings.AddRange(petAdvisor.Findings(petPlan, profile));
         if (profile.Class.Notes.Count > 0)
             findings.Add(new Finding(Area.General, Severity.Info, $"Repères {profile.Class.Name} ({profile.Role.Name})", string.Join(" ", profile.Class.Notes)));
 
         var ordered = findings.OrderBy(f => f.Severity).ThenByDescending(f => f.Priority).ToList();
-        return new AdviceReport(c, profile, mode, sp, gear, skills, daevanion, engravings, ordered, Scores(sp, gear, skills, daevanion, c, mode));
+        return new AdviceReport(c, profile, mode, sp, gear, skills, daevanion, engravings, petPlan, ordered, Scores(sp, gear, skills, daevanion, c, mode));
     }
 
     static AreaScores Scores(StatProfile sp, GearPlan gear, SkillPlan skills, DaevanionPlan dae, CharacterSnapshot c, GameMode mode)

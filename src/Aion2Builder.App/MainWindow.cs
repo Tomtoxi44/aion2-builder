@@ -49,11 +49,13 @@ public sealed class MainWindow : Window
 {
     readonly CharacterStore store = new();
     readonly ServerCache serverCache = new();
+    readonly PetStore petStore = new();
     readonly UiState state = new();
     GameDatabase db;
     UiPrefs prefs = UiPrefs.Load();
     CharacterSnapshot? current;
     PlayerInputs inputs = new();
+    PetStore.Saved pets = new(null, null);
     AdviceReport? report;
     string status = "";
     bool statusError;
@@ -95,6 +97,7 @@ public sealed class MainWindow : Window
         AddBareTextBoxStyles();
 
         db = LoadData();
+        pets = petStore.Load();
         region.SelectedItem = ArmoryClient.Regions.Contains(prefs.Region) ? prefs.Region : "eu";
         server.Text = prefs.Server;
         search.Text = prefs.Name;
@@ -190,7 +193,7 @@ public sealed class MainWindow : Window
     void Recompute()
     {
         if (current is null) { Render(); return; }
-        try { report = new Advisor(db).Analyze(current, prefs.Mode, inputs); }
+        try { report = new Advisor(db).Analyze(current, prefs.Mode, inputs, pets.Collection); }
         catch (InvalidOperationException ex) { report = null; SetStatus(ex.Message, error: true); state.Screen = Screen.Import; }
         Render();
     }
@@ -283,7 +286,7 @@ public sealed class MainWindow : Window
                 T("Aion 2 Builder", 13, Tok.Text, FontWeight.SemiBold),
                 Menu("Fichier", ("Importer un personnage…  Ctrl+K", ShowImport), ("Quitter", Close)),
                 Menu("Personnage", ("Actualiser depuis le site officiel", () => _ = RefreshAsync()), ("Changer de personnage", ShowImport)),
-                Menu("Données", ("Recharger les données", ReloadData), ("Ouvrir le dossier des données", OpenDataFolder)),
+                Menu("Données", ("Recharger les données", ReloadData), ("Actualiser les familiers (Aion 2 Todo)", () => _ = PetsAsync(null)), ("Ouvrir le dossier des données", OpenDataFolder)),
                 Menu("Aide", ("Comment c'est calculé ?", () => Update(st => { st.Screen = report is null ? Screen.Import : Screen.Home; st.HomeHow = true; }))),
             },
         };
@@ -412,7 +415,7 @@ public sealed class MainWindow : Window
 
         var grid = new Grid { RowDefinitions = new RowDefinitions("36,*") };
         grid.Children.Add(Breadcrumb(report));
-        var (content, inspector) = new ScreenViews(db, report, inputs, state, Update, OnInputs).Build();
+        var (content, inspector) = new ScreenViews(db, report, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key)).Build();
         var body = new Grid { ColumnDefinitions = new ColumnDefinitions(inspector is null ? "*" : "*,340") };
         body.Children.Add(Scroll(content));
         if (inspector is not null)
@@ -701,6 +704,28 @@ public sealed class MainWindow : Window
             prefs.Save();
             SetStatus($"importé depuis le site officiel");
             Open(snapshot, path);
+        }
+        catch (ArmoryException ex) { SetStatus(ex.Message, error: true); }
+    }
+
+    /// <summary>Familiers : null = relire avec la clé enregistrée, "" = oublier la clé, sinon relier avec cette clé.</summary>
+    async Task PetsAsync(string? key)
+    {
+        if (key is "")
+        {
+            petStore.Forget();
+            pets = petStore.Load();
+            SetStatus("clé Aion 2 Todo oubliée");
+            Recompute();
+            return;
+        }
+        SetStatus("Lecture des familiers sur Aion 2 Todo… (le site peut mettre une minute à se réveiller)");
+        try
+        {
+            await petStore.Refresh(key);
+            pets = petStore.Load();
+            SetStatus("familiers à jour");
+            Recompute();
         }
         catch (ArmoryException ex) { SetStatus(ex.Message, error: true); }
     }

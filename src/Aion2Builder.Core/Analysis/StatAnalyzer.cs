@@ -5,10 +5,11 @@ namespace Aion2Builder.Analysis;
 
 /// <summary>
 /// Additionne les stats que le joueur contrôle (équipement, Daevanion, titres, stats principales et divines)
+/// (plus les sources ajoutées hors fiche : familiers)
 /// et les ramène à un "budget" commun pour comparer la répartition à celle visée par la classe.
 /// Les stats de base de la classe ne sont pas exposées par le site officiel : elles sont hors calcul.
 /// </summary>
-public sealed class StatAnalyzer(GameDatabase db)
+public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? extra = null)
 {
     public static bool Applies(Effect e, GameMode mode) =>
         e.Scope == StatScope.All || (e.Scope == StatScope.PvE) == (mode == GameMode.PvE);
@@ -38,7 +39,7 @@ public sealed class StatAnalyzer(GameDatabase db)
 
     public StatProfile Profile(CharacterSnapshot c, ResolvedProfile profile)
     {
-        var all = Sources(c, db).ToList();
+        var all = Sources(c, db).Concat(extra ?? []).ToList();
         var unrecognized = all.Where(s => !s.Effect.IsStat && !s.Effect.IsSkill && s.Effect.Raw.Length > 0)
             .Select(s => s.Effect.Raw).Distinct().ToList();
         var byKey = all.Where(s => s.Effect.IsStat && Applies(s.Effect, profile.Mode))

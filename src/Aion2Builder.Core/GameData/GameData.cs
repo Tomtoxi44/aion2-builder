@@ -97,6 +97,7 @@ public sealed record EnchantRules(List<double> CostByLevel, int SafeLevel, int T
 
 public sealed record ProgressionFile
 {
+    public PetRules Pets { get; init; } = new();
     public EngravingRules Engraving { get; init; } = new();
     public List<GradeDef> Grades { get; init; } = [];
     public Dictionary<string, string> SlotGroups { get; init; } = [];
@@ -108,6 +109,24 @@ public sealed record ProgressionFile
     public required EnchantRules Enchant { get; init; }
     public List<ProgressionStage> Stages { get; init; } = [];
 }
+
+/// <summary>Effets de possession des familiers : chaque familier obtenu donne des stats selon son espèce et son niveau (1 à 3).</summary>
+public sealed record PetRules
+{
+    public List<int> Tiers { get; init; } = [5, 30, 105];
+    public Dictionary<string, PetGenus> Genera { get; init; } = [];
+}
+
+public sealed record PetGenus
+{
+    public string Name { get; init; } = "";
+    public List<PetEffect> Effects { get; init; } = [];
+    /// <summary>Effets hors combat ou mal connus : affichés, non comptés.</summary>
+    public string? Other { get; init; }
+}
+
+/// <summary>Stat donnée par un familier de l'espèce, aux niveaux 1, 2 et 3.</summary>
+public sealed record PetEffect(string Stat, List<double> Levels);
 
 /// <summary>Gravures d'âme et pierres gravées : seuils de verdict et options possibles par type de pièce.</summary>
 public sealed record EngravingRules

@@ -7,6 +7,7 @@ en vue JcE (PvE) ou JcJ (PvP)** :
 - quelle pièce aller chercher **au palier suivant** (on ne saute pas directement au dernier stuff), pièce la plus faible d'abord,
 - quoi enchanter et quoi ne plus enchanter (pièces de transition),
 - quelles **gravures d'âme** et pierres revoir pièce par pièce (lien d'âme, options inutiles, pierres à changer), et dans quel ordre,
+- quelle espèce de **familiers** farmer en premier (collection lue par le Pet Meter, via Aion 2 Todo),
 - quelles compétences monter, équiper, ou arrêter de monter,
 - quelles cases **Daevanion** ouvrir et dans quel ordre (chemins compris), par réserve de points (plateaux communs, Ariel en JcE, Azphel en JcJ),
 - un plan d'action classé par **rentabilité** (gain attendu / ressources dépensées).
@@ -45,6 +46,7 @@ Commandes du CLI :
 | `advise <nom ou fichier.json> [--mode pve\|pvp\|both] [--refresh] [--json]` | Analyse et conseils |
 | `list` | Personnages enregistrés |
 | `data [export] [--force]` | Montre / copie les fichiers de données modifiables |
+| `pets [--key <clé>] [--refresh] [--forget]` | Relie / relit la collection de familiers (Aion 2 Todo) ; « advise » la compte ensuite |
 
 Interface graphique :
 
@@ -104,6 +106,13 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    celles possibles sur ce type de pièce (`progression.json` → `engraving`, complété par celles vues sur tes pièces),
    classées par importance et relevées si leur famille de stats est en manque. Les pierres comptent dans ta répartition
    de stats. Écran Équipement : code **G** sur une pièce à revoir, tableau des gravures sous la silhouette.
+7. **Familiers.** Chaque familier obtenu donne des stats selon son espèce et son niveau 1 à 3 (« effets de possession »,
+   `progression.json` → `pets`, valeurs communautaires) : Cogni = PV, CRIT ; Fera = Précision ; Natura = RÉS aux CRIT ;
+   Varian = Esquive (+ une stat principale au niveau 3, déjà dans les totaux du site officiel, donc pas recomptée). La
+   collection vient du [Pet Meter](https://github.com/Tomtoxi44/aion2-pet-meter), qui l'envoie à Aion 2 Todo :
+   l'application la relit avec la même clé de synchro (écran **Familiers**, ou `pets --key`). Les stats sont ajoutées à
+   ta répartition ; l'espèce conseillée est celle dont un familier au niveau 3 sert le plus ta classe (relevée si sa
+   famille de stats est en manque), avec les familiers les plus proches du niveau suivant.
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par
@@ -133,8 +142,8 @@ pas remplie.
 - Les adresses du site officiel ne sont pas documentées et peuvent changer sans préavis. En cas de souci,
   `import --raw <dossier>` garde les réponses pour diagnostic.
 - Le site n'expose pas les stats de base de la classe : l'analyse porte sur ce qui est visible et contrôlable.
-- Les **familiers** ne sont pas encore pris en compte (le site officiel ne les montre pas) : leurs stats manquent à la
-  répartition.
+- Familiers : seuls les effets de possession sont comptés. Les stats tirées par l'analyse de perception d'espèce ne sont
+  lisibles ni sur le site officiel ni par le Pet Meter. Le site Aion 2 Todo (offre gratuite) peut mettre une minute à répondre.
 - Les options possibles par type de pièce sont relevées sur des pièces réelles : la liste peut être incomplète.
 
 ## Compiler sous Windows avec Smart App Control

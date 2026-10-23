@@ -5,7 +5,7 @@ using Aion2Builder.Model;
 namespace Aion2Builder.Analysis;
 
 public enum Severity { Critical, Important, Advice, Info }
-public enum Area { Stats, Gear, Enchant, Skills, Daevanion, General }
+public enum Area { Stats, Gear, Enchant, Skills, Daevanion, Pets, General }
 
 /// <summary>
 /// Un conseil. <see cref="Priority"/> mesure le gain attendu rapporté au coût en ressources :
@@ -136,7 +136,7 @@ public sealed record AreaScores(int Stats, int Gear, int Skills, int Daevanion)
 
 public sealed record AdviceReport(
     CharacterSnapshot Character, ResolvedProfile Profile, GameMode Mode,
-    StatProfile Stats, GearPlan Gear, SkillPlan Skills, DaevanionPlan Daevanion, EngravingPlan Engravings,
+    StatProfile Stats, GearPlan Gear, SkillPlan Skills, DaevanionPlan Daevanion, EngravingPlan Engravings, PetPlan Pets,
     List<Finding> Findings, AreaScores Scores)
 {
     /// <summary>Les conseils actionnables, du plus rentable au moins rentable.</summary>
@@ -165,6 +165,7 @@ public static class Fmt
         Analysis.Area.Enchant => "Enchantement",
         Analysis.Area.Skills => "Compétences",
         Analysis.Area.Daevanion => "Daevanion",
+        Analysis.Area.Pets => "Familiers",
         _ => "Général",
     };
 

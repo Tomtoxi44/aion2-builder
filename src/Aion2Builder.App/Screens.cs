@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Aion2Builder.Analysis;
 using Aion2Builder.GameData;
 using Aion2Builder.Model;
+using Aion2Builder.Storage;
 using Avalonia;
 using Avalonia.Collections;
 using Avalonia.Controls;
@@ -13,7 +14,7 @@ using static Aion2Builder.App.Ui;
 
 namespace Aion2Builder.App;
 
-enum Screen { Import, Home, Stats, Gear, Skills, Daeva, Details }
+enum Screen { Import, Home, Stats, Gear, Skills, Daeva, Pets, Details }
 
 /// <summary>État de l'interface : écran, sélections et blocs repliés (hors rapport).</summary>
 sealed class UiState
@@ -23,6 +24,7 @@ sealed class UiState
     public string? Stat { get; set; }
     public string? Skill { get; set; }
     public int? Board { get; set; }
+    public string? Genus { get; set; }
     public bool HomeHow { get; set; }
     public bool StatsHow { get; set; }
     public HashSet<Area> Collapsed { get; } = [];
@@ -33,12 +35,13 @@ sealed class UiState
 /// Le rapport (<see cref="AdviceReport"/>) ne change pas ; seuls la présentation et la navigation changent.
 /// </summary>
 sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, UiState s,
-    Action<Action<UiState>> update, Action<PlayerInputs> onInputs)
+    Action<Action<UiState>> update, Action<PlayerInputs> onInputs, string? petKeyHint, Action<string?> onPets)
 {
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
         (Screen.Home, "Accueil", "Accueil"), (Screen.Stats, "Stats", "Stats"), (Screen.Gear, "Équipement", "Équip."),
-        (Screen.Skills, "Compétences", "Compét."), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Details, "Détails", "Détails"),
+        (Screen.Skills, "Compétences", "Compét."), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Pets, "Familiers", "Famil."),
+        (Screen.Details, "Détails", "Détails"),
     ];
 
     public const string HowText = "Score global = moyenne pondérée des quatre notes. Stats : part de tes stats ajustables placée dans des stats " +
@@ -54,6 +57,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         Screen.Gear => r.Scores.Gear,
         Screen.Skills => r.Scores.Skills,
         Screen.Daeva => r.Scores.Daevanion,
+        Screen.Pets => r.Pets.Progress,
         _ => null,
     };
 
@@ -69,6 +73,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         Screen.Stats => (Stats(), StatInspector()),
         Screen.Skills => (Skills(), SkillInspector()),
         Screen.Daeva => (Daeva(), DaevaInspector()),
+        Screen.Pets => (Pets(), PetInspector()),
         _ => (Details(), null),
     };
 
@@ -107,6 +112,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             Area.Stats => Screen.Stats,
             Area.Skills => Screen.Skills,
             Area.Daevanion => Screen.Daeva,
+            Area.Pets => Screen.Pets,
             _ => Screen.Details,
         };
         var text = $"{f.Title} {f.Action} {f.Detail}";
@@ -126,6 +132,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 break;
             case Screen.Daeva:
                 st.Board = Named(text, r.Daevanion.Boards.Select(x => (x.Board.Id.ToString(), x.Board.Name))) is { } id ? int.Parse(id) : st.Board;
+                break;
+            case Screen.Pets:
+                st.Genus = Named(text, r.Pets.Genera.Select(x => (x.Key, x.Name))) ?? st.Genus;
                 break;
         }
     });
@@ -911,6 +920,155 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         block.LineHeight = 12 * 1.45;
         if (color is not null) block.Foreground = color;
         return block;
+    }
+
+    // ----- Familiers -----
+
+    GenusPlan? SelectedGenus => r.Pets.For(s.Genus ?? "") ?? r.Pets.Best ?? r.Pets.Genera.FirstOrDefault();
+
+    Control Pets()
+    {
+        var panel = new StackPanel();
+        if (r.Pets.Collection is not { } c)
+        {
+            panel.Children.Add(SectionHeader("Familiers · non reliés", padX: 20));
+            panel.Children.Add(PetLink());
+            return panel;
+        }
+
+        var genera = r.Pets.Genera.Where(g => g.Total > 0).ToList();
+        var actions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 14,
+            Children =
+            {
+                Clickable(T("actualiser", 11, Accent.Main), () => onPets(null)),
+                Tip(Clickable(T("oublier la clé", 11, Tok.Muted), () => onPets("")), $"Retire la clé Aion 2 Todo {petKeyHint} de ce PC."),
+            },
+        };
+        panel.Children.Add(SectionHeader($"Familiers · {genera.Sum(g => g.Owned)}/{genera.Sum(g => g.Total)} obtenus · lus le {c.FetchedAtUtc.ToLocalTime():dd/MM HH:mm}", actions, 20));
+        panel.Children.Add(T("Chaque familier obtenu donne des stats selon son espèce et son niveau (effets de possession), cumulées sur toute la collection. " +
+            "Les stats secondaires comptent dans ta répartition ; les stats principales sont déjà dans les totaux du site officiel.",
+            12, Tok.Text2, wrap: true).WithLineHeight(1.45).WithMargin(20, 10, 20, 8));
+
+        const string cols = "100,80,110,*,150";
+        panel.Children.Add(TableHeader(cols, "Espèce", "Obtenus", "Niv. 1 · 2 · 3", "Stats données", "Intérêt"));
+        var selected = SelectedGenus?.Key;
+        var best = r.Pets.Best;
+        var maxValue = Math.Max(0.01, genera.Max(g => g.PetValue));
+        foreach (var g in genera)
+        {
+            var now = string.Join(", ", g.Stats.Where(x => x.Now > 0).Select(x => $"{x.Name} +{Fmt.Num(x.Now)}"));
+            var interest = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 8,
+                Children =
+                {
+                    new Border { Width = 70, Child = Bar(g.PetValue / maxValue, g == best ? Accent.Main : Tok.Text2, 3) },
+                    T(g == best ? "à farmer" : g.PetValue.ToString("0.00"), 12, g == best ? Accent.Main : Tok.Muted, mono: true),
+                },
+            };
+            panel.Children.Add(TableRow(Columns(cols, T(g.Name, 13), T($"{g.Owned}/{g.Total}", 13, mono: true),
+                    T($"{g.Counts[1]} · {g.Counts[2]} · {g.Counts[3]}", 13, Tok.Text2, mono: true), T(now.Length > 0 ? now : "—", 12, Tok.Text2), interest),
+                g.Key == selected, () => update(st => st.Genus = g.Key)));
+        }
+
+        if (best is not null)
+        {
+            panel.Children.Add(SectionHeader($"À farmer en premier · {best.Name} · les plus proches du niveau suivant", padX: 20, topBorder: true));
+            const string pcols = "240,100,*";
+            panel.Children.Add(TableHeader(pcols, "Familier", "Niveau", "Âmes manquantes"));
+            foreach (var x in best.Next.Take(12))
+                panel.Children.Add(TableRow(Columns(pcols, T(x.Pet.Name, 13),
+                        T(x.Level == 0 ? "à obtenir" : $"{x.Level} → {x.Level + 1}", 12, x.Level == 0 ? Tok.Warn : Tok.Text2, mono: true),
+                        T($"{x.Missing}  ({x.Souls}/{c.Tiers[x.Level]})", 12, Tok.Text2, mono: true)),
+                    false, () => update(st => st.Genus = best.Key)));
+        }
+        panel.Children.Add(T("Non compté : les stats tirées par l'analyse de perception d'espèce (ni le site officiel ni le Pet Meter ne les lisent).",
+            11, Tok.Faint, wrap: true).WithMargin(20, 12, 20, 16));
+        return panel;
+    }
+
+    /// <summary>Relier la collection : clé de synchro Aion 2 Todo (celle du Pet Meter).</summary>
+    Control PetLink()
+    {
+        var box = new TextBox { PasswordChar = '•', PlaceholderText = "a2t_…", FontFamily = Fonts.Mono, FontSize = 13, Width = 320 };
+        void Submit() { if (!string.IsNullOrWhiteSpace(box.Text)) onPets(box.Text.Trim()); }
+        box.KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Enter) { e.Handled = true; Submit(); } };
+        var link = Clickable(T("Relier", 12, Tok.OnAccent, FontWeight.SemiBold), Submit, Accent.Main, padding: new Thickness(14, 6));
+        link.CornerRadius = new CornerRadius(4);
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { box, link } };
+
+        var panel = new StackPanel
+        {
+            Spacing = 12, Margin = new Thickness(20, 16),
+            Children =
+            {
+                T("Les stats de tes familiers ne sont pas encore comptées. Le Pet Meter les lit en jeu et les envoie à Aion 2 Todo : " +
+                  "l'application les y relit avec ta clé de synchro.", 13, Tok.Text2, wrap: true).WithLineHeight(1.5),
+                T("1. Sur Aion 2 Todo : onglet Familiers → Pet Meter → « Créer ma clé ». Elle n'est affichée qu'une fois et remplace l'ancienne : " +
+                  "recolle-la aussi dans le Pet Meter (menu ⋯ → Clé de synchro).\n2. Colle-la ici, puis « Relier ». Elle reste sur ce PC (%APPDATA%\\Aion2Builder\\pets.json).",
+                    12, Tok.Muted, wrap: true).WithLineHeight(1.5),
+                row,
+            },
+        };
+        if (PetStore.PetMeterKey() is { } meterKey)
+            panel.Children.Add(Clickable(T($"Utiliser la clé du Pet Meter de ce PC (…{meterKey[^4..]})", 12, Accent.Main), () => onPets(meterKey)));
+        return panel;
+    }
+
+    /// <summary>Effets d'une espèce par niveau : « PV +10 / +20 / +30 ».</summary>
+    string PerLevel(PetEffect e) => $"{db.StatName(e.Stat)} " + string.Join(" / ", e.Levels.Select(v => v == 0 ? "—" : $"+{Fmt.Num(v)}"));
+
+    Control PetInspector()
+    {
+        var panel = new StackPanel { Children = { SectionHeader("Inspecteur · espèce") } };
+        var body = new StackPanel { Spacing = 14, Margin = new Thickness(14) };
+        panel.Children.Add(body);
+        var rules = db.Progression.Pets.Genera;
+        if (!r.Pets.Linked)
+        {
+            body.Children.Add(T("Ce que donne chaque familier obtenu, au niveau 1 / 2 / 3 :", 12, Tok.Text2, wrap: true));
+            foreach (var genus in rules.Values.Where(x => x.Effects.Count > 0))
+            {
+                var block = new StackPanel { Spacing = 3, Children = { Label(genus.Name) } };
+                foreach (var e in genus.Effects) block.Children.Add(T(PerLevel(e), 12, Tok.Text2, mono: true, wrap: true));
+                body.Children.Add(block);
+            }
+            return panel;
+        }
+        if (SelectedGenus is not { } g) return panel;
+
+        body.Children.Add(new StackPanel { Spacing = 4, Children = { T("espèce de familiers", 12, Tok.Muted), T(g.Name, 17, weight: FontWeight.SemiBold) } });
+        body.Children.Add(KeyValue(
+        [
+            ("obtenus", $"{g.Owned} / {g.Total}", null),
+            ("niveau 3", g.Maxed.ToString(), null),
+            ("à obtenir", g.Counts[0].ToString(), g.Counts[0] > 0 ? Tok.Warn : null),
+            ("intérêt", g.PetValue.ToString("0.00"), g == r.Pets.Best ? Accent.Main : null),
+        ]));
+        if (rules.GetValueOrDefault(g.Key) is { } rule)
+        {
+            var effects = new StackPanel { Spacing = 3, Children = { Label("Par familier · niv. 1 / 2 / 3") } };
+            foreach (var e in rule.Effects) effects.Children.Add(T(PerLevel(e), 12, Tok.Text2, mono: true, wrap: true));
+            if (rule.Other is { } other) effects.Children.Add(T(other, 11, Tok.Faint, wrap: true));
+            body.Children.Add(effects);
+        }
+        var totals = new StackPanel { Spacing = 3, Children = { Label("Ta collection · au maximum") } };
+        foreach (var x in g.Stats)
+            totals.Children.Add(Tip(T($"{x.Name} +{Fmt.Num(x.Now)}  ·  +{Fmt.Num(x.Max)}{(x.Counted ? "" : "  (déjà dans tes stats principales)")}", 12,
+                x.Counted ? Tok.Text2 : Tok.Muted, mono: true, wrap: true), x.Counted ? "Compté dans ta répartition de stats." : "Stat principale : déjà comprise dans les totaux du site officiel."));
+        body.Children.Add(totals);
+        if (g == r.Pets.Best)
+            body.Children.Add(Callout($"Espèce la plus utile pour un {r.Profile.Class.Name} en {GameDatabase.ModeName(r.Mode)} : farme-la en premier, " +
+                "en commençant par les familiers les plus proches du niveau suivant.", Accent.Main));
+        if (g.Next.Count > 0)
+        {
+            var next = new StackPanel { Spacing = 3, Children = { Label("Les plus proches") } };
+            foreach (var x in g.Next.Take(8)) next.Children.Add(T(PetAdvisor.Missing(x), 12, x.Level == 0 ? Tok.Warn : Tok.Text2, wrap: true));
+            body.Children.Add(next);
+        }
+        return panel;
     }
 
     // ----- Détails -----

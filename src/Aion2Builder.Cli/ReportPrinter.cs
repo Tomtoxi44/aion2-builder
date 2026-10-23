@@ -99,6 +99,24 @@ sealed class ReportPrinter(GameDatabase db)
                     $"   {s.Step,2}. {s.Board.Name,-9} ligne {s.Node.Row,2} col. {s.Node.Col,2}  {s.Effects}{(s.IsPassage ? "  (passage)" : "")}{(s.Affordable ? "  [faisable maintenant]" : "")}");
         }
 
+        Section("Familiers — effets de possession (Pet Meter via Aion 2 Todo)");
+        if (!r.Pets.Linked) Console.WriteLine("  Non reliés : « pets --key <clé> » (clé : Aion 2 Todo, onglet Familiers → Pet Meter).");
+        else
+        {
+            var best = r.Pets.Best;
+            foreach (var g in r.Pets.Genera.Where(g => g.Total > 0))
+            {
+                var now = string.Join(", ", g.Stats.Where(s => s.Now > 0).Select(s => $"{s.Name} +{Fmt.Num(s.Now)}"));
+                Colored(g == best ? ConsoleColor.Green : ConsoleColor.Gray,
+                    $"  {g.Name,-8} {g.Owned,3}/{g.Total,-4} niv. 3 : {g.Maxed,-3} intérêt {g.PetValue,5:0.00}  {now}{(g == best ? "  ← à farmer" : "")}");
+            }
+            foreach (var f in r.Findings.Where(f => f.Area == Area.Pets && f.Severity == Severity.Advice))
+            {
+                foreach (var line in f.Detail.Split('\n')) Console.WriteLine($"  {line}");
+                Console.WriteLine($"  → {f.Action}");
+            }
+        }
+
         Section("Détails et repères");
         foreach (var f in r.Findings.Where(f => f.Action is null || f.Severity == Severity.Info))
         {
