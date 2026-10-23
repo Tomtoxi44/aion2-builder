@@ -6,12 +6,14 @@
     "_nodeCost": "Coût réel d'une case selon sa couleur (vérifié : Nezekan/Zikel/Vaizel = 134 points, Triniel = 168, Azphel = 232).",
     "nodeCost": { "Common": 1, "Rare": 2, "Legend": 3, "Unique": 4, "Epic": 5, "Mythic": 6 },
     "pointSources": "Quêtes secondaires et quêtes régionales, cristaux des donjons scellés, boutique du festival Shugo (50 max, saisonnière). Ariel : Épreuve de l'ascension et quêtes JcE. Azphel : champs de bataille hebdomadaires, monolithe Abyssal, boutique JcJ (50 max). Aucun guide ne donne de total maximum par personnage.",
-    "skillNodeValue": 2.0,
+    "skillNodeValue": 3.0,
     "coreSkillMultiplier": 1.6,
     "unequippedSkillNodeValue": 0.2,
     "maxPathLength": 5,
     "planLength": 15,
-    "respecMinGain": 0.04
+    "respecMinGain": 0.04,
+    "_respecMaxImportance": "Une case ne peut être conseillée au retrait que si sa stat ou sa compétence a une importance inférieure à ce seuil (0 = inutile, 1 = indispensable).",
+    "respecMaxImportance": 0.4
   },
   "skills": {
     "_points": "Guides : 1 point = +1 niveau, les points montent une compétence jusqu'au niveau 10 ; au-delà, seulement Daevanion, arcanes et équipement. Réinitialisation gratuite et illimitée.",

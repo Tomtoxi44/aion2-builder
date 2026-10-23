@@ -45,6 +45,12 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
         return v;
     }
 
+    /// <summary>Importance de la case pour la classe : la plus haute entre ses stats (poids × équilibre) et ses compétences (priorité).</summary>
+    double Importance(DaevanionNode n, Context ctx) => n.Effects.Select(e =>
+            e.IsStat ? ctx.Profile.Weight(e.StatKey!) * ctx.Balance.GetValueOrDefault(db.Stat(e.StatKey!)?.Category ?? StatCategory.Primary, 1)
+            : e.IsSkill && ctx.Skills.TryGetValue(GameDatabase.NormalizeLabel(e.SkillName!), out var s) ? ctx.Skill.Priority(s, ctx.Profile) : 0)
+        .DefaultIfEmpty(0).Max();
+
     public DaevanionPlan Plan(CharacterSnapshot c, ResolvedProfile p, StatProfile sp, PlayerInputs inputs)
     {
         var ctx = new Context(p, sp,
@@ -91,7 +97,7 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
                 steps.Add(new PlannedNode(++order, pool, board, node, values[node.Id], NodeCost(node), passage, cumulative <= budget.Unspent));
             }
 
-            respecs.Add(Respec(pool, poolBoards, grids, values, budget));
+            respecs.Add(Respec(pool, poolBoards, grids, values, budget, n => Importance(n, ctx)));
         }
         return new DaevanionPlan(steps, summaries, budgets, respecs);
     }
@@ -102,7 +108,7 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
     /// seulement s'il rapporte plus. On répète tant que ça progresse : seules les erreurs de parcours sont corrigées.
     /// </summary>
     RespecPlan Respec(string pool, List<DaevanionBoard> boards, Dictionary<int, Dictionary<(int, int), DaevanionNode>> grids,
-        Dictionary<long, double> values, PoolBudget budget)
+        Dictionary<long, double> values, PoolBudget budget, Func<DaevanionNode, double> importance)
     {
         var starts = boards.ToDictionary(b => b.Id, b => b.Nodes.Where(n => n.IsStart).Select(n => (n.Row, n.Col)).ToHashSet());
         var chosen = boards.ToDictionary(b => b.Id, b => b.Nodes.Where(n => n.Open || n.IsStart).Select(n => (n.Row, n.Col)).ToHashSet());
@@ -115,7 +121,8 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
         {
             var before = Value();
             var leaves = boards.SelectMany(b => chosen[b.Id]
-                    .Where(cell => !starts[b.Id].Contains(cell) && KeepsConnected(chosen[b.Id], starts[b.Id], cell))
+                    .Where(cell => !starts[b.Id].Contains(cell) && importance(grids[b.Id][cell]) < db.Settings.Daevanion.RespecMaxImportance
+                        && KeepsConnected(chosen[b.Id], starts[b.Id], cell))
                     .Select(cell => (Board: b, Cell: cell, Node: grids[b.Id][cell])))
                 .OrderBy(x => values[x.Node.Id] / NodeCost(x.Node)).Take(8).ToList();
             var improved = false;
@@ -137,7 +144,8 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
                     foreach (var t in trial) chosen[t.Board.Id].Remove((t.Node.Row, t.Node.Col));
                     if (removed.Count >= 3) break;
                     var next = boards.SelectMany(b => chosen[b.Id]
-                            .Where(cell => !starts[b.Id].Contains(cell) && KeepsConnected(chosen[b.Id], starts[b.Id], cell))
+                            .Where(cell => !starts[b.Id].Contains(cell) && importance(grids[b.Id][cell]) < db.Settings.Daevanion.RespecMaxImportance
+                        && KeepsConnected(chosen[b.Id], starts[b.Id], cell))
                             .Select(cell => (Board: b, Cell: cell, Node: grids[b.Id][cell])))
                         .OrderBy(x => values[x.Node.Id] / NodeCost(x.Node)).FirstOrDefault();
                     if (next.Node is null || values[next.Node.Id] / NodeCost(next.Node) > values[first.Node.Id] / NodeCost(first.Node) * 2 + 0.05) break;

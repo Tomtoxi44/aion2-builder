@@ -116,6 +116,7 @@ public sealed record DaevanionSettings
     public string PointSources { get; init; } = "";
     /// <summary>Gain minimal (en part de la valeur actuelle) pour conseiller de réinitialiser un plateau.</summary>
     public double RespecMinGain { get; init; } = 0.04;
+    public double RespecMaxImportance { get; init; } = 0.4;
 }
 
 public sealed record SkillSettings
