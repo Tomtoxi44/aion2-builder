@@ -6,6 +6,7 @@ using Aion2Builder.Model;
 using Aion2Builder.Storage;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -39,7 +40,13 @@ public sealed class MainWindow : Window
 {
     readonly CharacterStore store = new();
     readonly ComboBox region = new() { ItemsSource = ArmoryClient.Regions, MinWidth = 80 };
-    readonly TextBox server = new() { PlaceholderText = "Serveur (ex. Azphel)", Width = 170 };
+    readonly ServerCache serverCache = new();
+    // Liste filtrable : on tape "az" et Azphel ressort ; vide = recherche sur tous les serveurs.
+    readonly AutoCompleteBox server = new()
+    {
+        PlaceholderText = "Serveur (vide = tous)", Width = 210, MinimumPrefixLength = 0, MaxDropDownHeight = 380,
+        FilterMode = AutoCompleteFilterMode.Contains, ItemTemplate = new FuncDataTemplate<ServerInfo>((s, _) => ServerItem(s)),
+    };
     readonly TextBox name = new() { PlaceholderText = "Nom du personnage", Width = 190 };
     readonly Button importButton = new() { Content = "Importer depuis le site officiel" };
     readonly ComboBox saved = new() { PlaceholderText = "Personnages enregistrés", MinWidth = 260 };
@@ -70,13 +77,17 @@ public sealed class MainWindow : Window
         server.Text = prefs.Server;
         name.Text = prefs.Name;
         mode.SelectedIndex = prefs.Mode == GameMode.PvP ? 1 : 0;
+        server.ItemsSource = serverCache.Load((string?)region.SelectedItem ?? "eu");
 
         importButton.Click += async (_, _) => await ImportAsync(name.Text, server.Text);
         name.KeyDown += async (_, e) => { if (e.Key == Key.Enter) await ImportAsync(name.Text, server.Text); };
         refresh.Click += async (_, _) => { if (current is not null) await ImportAsync(current.Name, current.ServerName, current.Region); };
         saved.SelectionChanged += (_, _) => { if (!loadingSaved && saved.SelectedIndex >= 0) OpenSaved(savedList[saved.SelectedIndex]); };
         mode.SelectionChanged += (_, _) => { SavePrefs(); Render(); };
-        reloadData.Click += (_, _) => { db = LoadData(); Render(); };
+        reloadData.Click += async (_, _) => { db = LoadData(); Render(); await LoadServersAsync(force: true); };
+        region.SelectionChanged += async (_, _) => { server.Text = ""; SavePrefs(); await LoadServersAsync(force: false); };
+        server.GotFocus += (_, _) => server.IsDropDownOpen = true;
+        Opened += async (_, _) => await LoadServersAsync(force: false);
 
         var toolbar = new WrapPanel { Orientation = Orientation.Horizontal };
         foreach (var c in new Control[] { region, server, name, importButton, saved, refresh, mode, reloadData })
@@ -97,6 +108,31 @@ public sealed class MainWindow : Window
         if (last >= 0) saved.SelectedIndex = last;
         else Welcome();
     }
+
+    /// <summary>Liste du cache tout de suite, relue sur le site si elle date de plus d'une semaine (ou sur demande).</summary>
+    async Task LoadServersAsync(bool force)
+    {
+        var code = (string?)region.SelectedItem ?? "eu";
+        server.ItemsSource = serverCache.Load(code);
+        if (!force && !serverCache.IsStale(code)) return;
+        try
+        {
+            using var client = ArmoryClient.Create();
+            var list = await serverCache.Get(client, code, force);
+            if (((string?)region.SelectedItem ?? "eu") == code) server.ItemsSource = list;
+        }
+        catch (ArmoryException ex) { SetStatus($"Liste des serveurs indisponible : {ex.Message}", error: true); }
+    }
+
+    static Control ServerItem(ServerInfo? s) => new DockPanel
+    {
+        Children =
+        {
+            new TextBlock { Text = s?.Race ?? "", FontSize = 11, Foreground = Muted, Margin = new Thickness(16, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center, [DockPanel.DockProperty] = Dock.Right },
+            new TextBlock { Text = s?.Name ?? "", VerticalAlignment = VerticalAlignment.Center },
+        },
+    };
 
     GameDatabase LoadData()
     {

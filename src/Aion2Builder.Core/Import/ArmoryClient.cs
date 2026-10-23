@@ -7,7 +7,14 @@ namespace Aion2Builder.Import;
 
 public class ArmoryException(string message) : Exception(message);
 
-public sealed record ServerInfo(int Id, string Name);
+/// <summary>Serveur officiel. Chaque serveur appartient à une race (1 = Élyséens, 2 = Asmodiens).</summary>
+public sealed record ServerInfo(int Id, string Name, int RaceId)
+{
+    public string Race => RaceId switch { 1 => "Élyséens", 2 => "Asmodiens", _ => "" };
+
+    /// <summary>Texte utilisé par les listes et la recherche : le nom seul.</summary>
+    public override string ToString() => Name;
+}
 
 public sealed record SearchHit(string CharacterId, string Name, int Level, int ServerId, string ServerName, string? ClassCode, string Race);
 
@@ -35,7 +42,8 @@ public sealed class ArmoryClient(HttpClient http) : IDisposable
     {
         using var doc = JsonDocument.Parse(await Get($"{Site}/en-us/api/gameinfo/servers?lang=en-US&region={Region(region)}", ct));
         return doc.RootElement.GetProperty("serverList").EnumerateArray()
-            .Select(s => new ServerInfo(s.GetProperty("serverId").GetInt32(), s.GetProperty("serverName").GetString() ?? ""))
+            .Select(s => new ServerInfo(s.GetProperty("serverId").GetInt32(), s.GetProperty("serverName").GetString() ?? "",
+                s.TryGetProperty("raceId", out var race) && race.ValueKind == JsonValueKind.Number ? race.GetInt32() : 0))
             .OrderBy(s => s.Name)
             .ToList();
     }

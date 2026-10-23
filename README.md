@@ -28,6 +28,7 @@ Commandes du CLI :
 
 | Commande | Effet |
 |---|---|
+| `servers [texte] [--region eu] [--refresh]` | Liste des serveurs de la région par race, filtrable (« servers az ») |
 | `search <nom> [--server S] [--region eu]` | Cherche un personnage |
 | `import <nom> --server S [--raw <dossier>]` | Importe et enregistre (et garde les réponses brutes si `--raw`) |
 | `import-raw <dossier>` | Réimporte des réponses brutes sauvegardées (diagnostic) |
@@ -41,7 +42,9 @@ Interface graphique :
 dotnet run --project src/Aion2Builder.App
 ```
 
-Région, serveur, nom → « Importer depuis le site officiel ». Les personnages importés sont gardés dans
+Région, serveur, nom → « Importer depuis le site officiel ». Le champ serveur est une liste filtrable : tape quelques
+lettres (« az ») pour retrouver ton serveur ; vide, la recherche porte sur tous les serveurs de la région. La liste est
+gardée en cache une semaine dans `%APPDATA%\Aion2Builder\servers` (« Recharger les données » la relit). Les personnages importés sont gardés dans
 `%APPDATA%\Aion2Builder\characters` et rouverts sans connexion ; « Actualiser » relit le site.
 
 ## Comment l'algorithme raisonne

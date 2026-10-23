@@ -14,6 +14,7 @@ try
 {
     return cli.Command switch
     {
+        "servers" or "serveurs" => await Servers(cli),
         "search" => await Search(cli),
         "import" => await Import(cli),
         "import-raw" => ImportRaw(cli),
@@ -36,6 +37,7 @@ static int Help()
     Console.WriteLine("""
         Aion 2 Builder — conseils de build par personnage (JcE / JcJ)
 
+          servers [--region eu] [--filter <texte>] [--refresh] Liste des serveurs (gardée en cache une semaine)
           search <nom> [--server <serveur>] [--region eu]     Cherche un personnage sur le site officiel
           import <nom> [--server <serveur>] [--region eu]     Importe et enregistre le personnage
                  [--raw <dossier>]                            (garde aussi les réponses brutes du site)
@@ -47,6 +49,21 @@ static int Help()
 
         Régions : eu, naw, nae, la, as. Données : %APPDATA%\Aion2Builder
         """);
+    return 0;
+}
+
+static async Task<int> Servers(Args cli)
+{
+    using var client = ArmoryClient.Create();
+    var servers = await new ServerCache().Get(client, cli.Region, cli.Has("refresh"));
+    var filter = cli.Get("filter") ?? cli.Positional(0);
+    var shown = servers.Where(s => filter is null || s.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
+    foreach (var race in shown.GroupBy(s => s.Race).OrderBy(g => g.Key))
+    {
+        Console.WriteLine($"{(race.Key.Length == 0 ? "Race inconnue" : race.Key)} ({race.Count()}) :");
+        Console.WriteLine("  " + string.Join(", ", race.Select(s => s.Name).Order()));
+    }
+    if (shown.Count == 0) Console.WriteLine($"Aucun serveur ne contient « {filter} » en région {cli.Region}.");
     return 0;
 }
 
