@@ -51,6 +51,40 @@ public sealed record ClassProfile
     public string? SkillsSource { get; init; }
     /// <summary>Rôle de chaque compétence de la classe (actives, passives, stigmas) ; vide = analyse générique.</summary>
     public List<SkillKnowledge> Skills { get; init; } = [];
+    /// <summary>Rotation et façon de jouer du build des joueurs (guides et profils observés), par mode.</summary>
+    public Dictionary<GameMode, PlayGuide> Play { get; init; } = [];
+    /// <summary>Build « conçu » à partir des seules données des sorts ; null tant qu'il n'est pas rédigé.</summary>
+    public DesignedBuild? Designed { get; init; }
+}
+
+/// <summary>Une phase de rotation (ouverture, burst, boucle…) : compétences dans l'ordre et consigne.</summary>
+public sealed record RotationPhase
+{
+    public string Name { get; init; } = "";
+    public List<string> Steps { get; init; } = [];
+    public string Note { get; init; } = "";
+}
+
+/// <summary>Façon de jouer un build dans un mode : rotation en phases et conseils de jeu.</summary>
+public sealed record PlayGuide
+{
+    public List<RotationPhase> Rotation { get; init; } = [];
+    public List<string> Tips { get; init; } = [];
+}
+
+/// <summary>
+/// Build « conçu » : construit à partir des seules données des sorts (coefficients d'ATQ, recharges, conditions,
+/// spécialisations), sans guide ni profil de joueur. Ses fiches remplacent celles des joueurs compétence par compétence ;
+/// les compétences absentes gardent la fiche des joueurs.
+/// </summary>
+public sealed record DesignedBuild
+{
+    public string Summary { get; init; } = "";
+    public string Method { get; init; } = "";
+    public List<SkillKnowledge> Skills { get; init; } = [];
+    public Dictionary<GameMode, PlayGuide> Play { get; init; } = [];
+    /// <summary>Écarts avec le build des joueurs, et pourquoi.</summary>
+    public List<string> Differences { get; init; } = [];
 }
 
 /// <summary>Ce que l'on sait d'une compétence : son rôle, sa priorité (0 = inutile, 1 = indispensable) et le niveau visé par mode.</summary>
@@ -212,13 +246,27 @@ public sealed record SettingsFile
 }
 
 /// <summary>Poids et cibles d'une classe pour un mode, rôle et surcharges fusionnés.</summary>
-public sealed record ResolvedProfile(ClassProfile Class, RoleProfile Role, GameMode Mode, ModeProfile Base, IReadOnlyDictionary<string, double> Weights)
+/// <param name="UsesDesigned">Les conseils suivent le build conçu (sinon celui des joueurs).</param>
+public sealed record ResolvedProfile(ClassProfile Class, RoleProfile Role, GameMode Mode, ModeProfile Base, IReadOnlyDictionary<string, double> Weights,
+    bool UsesDesigned = false)
 {
     public double Weight(string statKey) => Weights.TryGetValue(statKey, out var w) ? w : Base.DefaultWeight;
     public double Target(StatCategory c) => Base.Targets.GetValueOrDefault(c);
+
+    /// <summary>Fiches en vigueur : celles du build conçu remplacent celles des joueurs, compétence par compétence.</summary>
+    public IReadOnlyList<SkillKnowledge> Skills => UsesDesigned && Class.Designed is { Skills.Count: > 0 } d
+        ? Class.Skills.Select(k => d.Skills.FirstOrDefault(o => Same(o, k)) ?? k).Concat(d.Skills.Where(o => !Class.Skills.Any(k => Same(o, k)))).ToList()
+        : Class.Skills;
+
+    static bool Same(SkillKnowledge a, SkillKnowledge b) =>
+        GameDatabase.NormalizeLabel(a.Name) == GameDatabase.NormalizeLabel(b.Name) && a.Kind.Equals(b.Kind, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Rotation et façon de jouer du build en vigueur, pour le mode.</summary>
+    public PlayGuide? Play => (UsesDesigned ? Class.Designed?.Play.GetValueOrDefault(Mode) : null) ?? Class.Play.GetValueOrDefault(Mode);
+
     public IReadOnlyList<string> CoreSkills =>
-        Class.Skills.Count > 0
-            ? Class.Skills.Where(s => s.Priority.GetValueOrDefault(Mode) >= 0.85).Select(s => s.Name).ToList()
+        Skills.Count > 0
+            ? Skills.Where(s => s.Priority.GetValueOrDefault(Mode) >= 0.85).Select(s => s.Name).ToList()
             : Class.CoreSkills.GetValueOrDefault(Mode) ?? [];
 
     /// <summary>
@@ -227,7 +275,7 @@ public sealed record ResolvedProfile(ClassProfile Class, RoleProfile Role, GameM
     /// </summary>
     public SkillKnowledge? Skill(string name, string? kind = null)
     {
-        var matches = Class.Skills.Where(s => GameDatabase.NormalizeLabel(s.Name) == GameDatabase.NormalizeLabel(name)).ToList();
+        var matches = Skills.Where(s => GameDatabase.NormalizeLabel(s.Name) == GameDatabase.NormalizeLabel(name)).ToList();
         return kind is null || matches.Count <= 1
             ? matches.FirstOrDefault()
             : matches.FirstOrDefault(s => s.Kind.Equals(kind, StringComparison.OrdinalIgnoreCase)) ?? matches[0];
@@ -275,7 +323,8 @@ public sealed class GameDatabase
                                     || c.Name.Equals(codeOrName, StringComparison.OrdinalIgnoreCase)
                                     || c.Aliases.Any(a => a.Equals(codeOrName, StringComparison.OrdinalIgnoreCase)));
 
-    public ResolvedProfile Resolve(string classCode, GameMode mode)
+    /// <param name="designed">Suivre le build conçu (s'il existe pour la classe) plutôt que celui des joueurs.</param>
+    public ResolvedProfile Resolve(string classCode, GameMode mode, bool designed = false)
     {
         var cls = FindClass(classCode) ?? throw new InvalidOperationException($"Classe inconnue : {classCode}");
         var role = Roles.FirstOrDefault(r => r.Key == cls.Role) ?? throw new InvalidOperationException($"Rôle inconnu : {cls.Role}");
@@ -293,7 +342,7 @@ public sealed class GameDatabase
             foreach (var (k, v) in targetOver) targets[k] = v;
             baseProfile = baseProfile with { Targets = targets };
         }
-        return new ResolvedProfile(cls, role, mode, baseProfile, weights);
+        return new ResolvedProfile(cls, role, mode, baseProfile, weights, designed && cls.Designed is not null);
     }
 
     public GradeDef Grade(string code) =>

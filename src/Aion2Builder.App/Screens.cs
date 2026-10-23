@@ -14,7 +14,7 @@ using static Aion2Builder.App.Ui;
 
 namespace Aion2Builder.App;
 
-enum Screen { Import, Home, Stats, Gear, Skills, Daeva, Pets, Details }
+enum Screen { Import, Home, Stats, Gear, Skills, Build, Daeva, Pets, Details }
 
 /// <summary>État de l'interface : écran, sélections et blocs repliés (hors rapport).</summary>
 sealed class UiState
@@ -40,7 +40,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
         (Screen.Home, "Accueil", "Accueil"), (Screen.Stats, "Stats", "Stats"), (Screen.Gear, "Équipement", "Équip."),
-        (Screen.Skills, "Compétences", "Compét."), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Pets, "Familiers", "Famil."),
+        (Screen.Skills, "Compétences", "Compét."), (Screen.Build, "Build et rotation", "Build"), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Pets, "Familiers", "Famil."),
         (Screen.Details, "Détails", "Détails"),
     ];
 
@@ -72,6 +72,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         Screen.Gear => (GearScreen(), GearInspector()),
         Screen.Stats => (Stats(), StatInspector()),
         Screen.Skills => (Skills(), SkillInspector()),
+        Screen.Build => (BuildScreen(), BuildInspector()),
         Screen.Daeva => (Daeva(), DaevaInspector()),
         Screen.Pets => (Pets(), PetInspector()),
         _ => (Details(), null),
@@ -824,6 +825,156 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             ]));
             body.Children.Add(Field("Pourquoi", g.Why, g.Unverified ? Tok.Warn : null));
         }
+        panel.Children.Add(body);
+        return panel;
+    }
+
+    // ----- Build : version des joueurs et version conçue, côte à côte -----
+
+    Control BuildScreen()
+    {
+        var cls = r.Profile.Class;
+        var panel = new StackPanel();
+        var designed = r.Profile.UsesDesigned;
+
+        Border Segment(string text, bool on, bool enabled, string build)
+        {
+            var seg = Clickable(T(text, 12, on ? Tok.OnAccent : enabled ? Tok.Muted : Tok.Faint, FontWeight.SemiBold, mono: true),
+                () => { if (enabled && !on) onInputs(inputs with { Build = build }); }, on ? Accent.Main : null, padding: new Thickness(12, 3));
+            seg.CornerRadius = new CornerRadius(3);
+            return seg;
+        }
+        var choice = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 8,
+            Children =
+            {
+                T("conseils selon", 11, Tok.Muted, mono: true),
+                new Border
+                {
+                    Background = Tok.Window, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Padding = new Thickness(2),
+                    Child = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Children = { Segment("Joueurs", !designed, true, "players"), Segment("Conçue", designed, cls.Designed is not null, "designed") },
+                    },
+                },
+            },
+        };
+        panel.Children.Add(SectionHeader($"Build · {cls.Name} · {Mode}", choice, 20));
+
+        var players = r.Profile with { UsesDesigned = false };
+        var mine = r.Profile with { UsesDesigned = true };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*") };
+        var left = BuildColumn("Build des joueurs", cls.SkillsSource ?? "Analyse générique (pas de fiche pour cette classe).", players.Skills, null,
+            cls.Play.GetValueOrDefault(r.Mode), !designed);
+        var right = cls.Designed is { } d
+            ? BuildColumn("Build conçu", d.Summary, mine.Skills, players.Skills, d.Play.GetValueOrDefault(r.Mode), designed)
+            : new StackPanel { Margin = new Thickness(20, 16), Children = { Label("Build conçu"), T("Pas encore rédigé pour cette classe.", 13, Tok.Muted, wrap: true).WithMargin(0, 8, 0, 0) } };
+        Grid.SetColumn(right, 1);
+        grid.Children.Add(new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 1, 0), Child = left });
+        grid.Children.Add(right);
+        panel.Children.Add(grid);
+
+        if (cls.Designed is { Differences.Count: > 0 } diff)
+        {
+            panel.Children.Add(SectionHeader("Différences entre les deux builds, et pourquoi", padX: 20, topBorder: true));
+            var list = new StackPanel { Spacing = 6, Margin = new Thickness(20, 10, 20, 16) };
+            foreach (var x in diff.Differences) list.Children.Add(ColumnsSpaced("14,*", 6, T("•", 13, Accent.Main), T(x, 13, Tok.Text2, wrap: true).WithLineHeight(1.45)));
+            panel.Children.Add(list);
+        }
+        return panel;
+    }
+
+    /// <summary>Une colonne de build : priorités du mode (niveaux visés), rotation en phases, façon de jouer.</summary>
+    Control BuildColumn(string title, string summary, IReadOnlyList<SkillKnowledge> skills, IReadOnlyList<SkillKnowledge>? reference, PlayGuide? play, bool active)
+    {
+        var col = new StackPanel { Spacing = 12, Margin = new Thickness(20, 14) };
+        var head = new DockPanel();
+        if (active)
+        {
+            var tag = Pill("suivi par les conseils", Accent.Main);
+            DockPanel.SetDock(tag, Dock.Right);
+            head.Children.Add(tag);
+        }
+        head.Children.Add(T(title, 15, weight: FontWeight.SemiBold));
+        col.Children.Add(head);
+        col.Children.Add(T(summary, 12, Tok.Muted, wrap: true).WithLineHeight(1.45));
+
+        // Ce qui diffère du build des joueurs est marqué « ≠ ».
+        bool Differs(SkillKnowledge k) => reference?.FirstOrDefault(x => x.Name == k.Name && x.Kind == k.Kind) is { } o &&
+            (Math.Abs(o.Priority.GetValueOrDefault(r.Mode) - k.Priority.GetValueOrDefault(r.Mode)) >= 0.1 || o.Target.GetValueOrDefault(r.Mode) != k.Target.GetValueOrDefault(r.Mode));
+        void Group(string label, string kind, int take)
+        {
+            var list = skills.Where(k => k.Kind == kind).OrderByDescending(k => k.Priority.GetValueOrDefault(r.Mode)).Take(take).ToList();
+            if (list.Count == 0) return;
+            var box = new StackPanel { Spacing = 2, Children = { Label(label) } };
+            foreach (var k in list)
+            {
+                var p = k.Priority.GetValueOrDefault(r.Mode);
+                var differs = Differs(k);
+                box.Children.Add(Tip(ColumnsSpaced("36,*,Auto,14", 6,
+                    T(p.ToString("0.00"), 11, p >= 0.85 ? Accent.Main : p >= 0.5 ? Tok.Text2 : Tok.Faint, mono: true),
+                    T(k.Name, 12, p >= 0.5 ? Tok.Text : Tok.Muted),
+                    T($"→ {k.Target.GetValueOrDefault(r.Mode)}", 11, Tok.Muted, mono: true),
+                    T(differs ? "≠" : "", 12, Accent.Main, FontWeight.Bold)), $"{k.Role} — {k.Why}"));
+            }
+            col.Children.Add(box);
+        }
+        Group("Actives (importance · niveau visé)", "Active", 12);
+        Group("Passifs", "Passive", 10);
+        Group("Stigmas (les 4 premiers sont équipés)", "Stigma", 6);
+
+        if (play is null)
+        {
+            col.Children.Add(T("Rotation pas encore rédigée pour ce mode.", 12, Tok.Muted, wrap: true));
+            return col;
+        }
+        var rotation = new StackPanel { Spacing = 10, Children = { Label("Rotation") } };
+        foreach (var phase in play.Rotation)
+        {
+            var chips = new WrapPanel { Orientation = Orientation.Horizontal };
+            for (var i = 0; i < phase.Steps.Count; i++)
+            {
+                if (i > 0) chips.Children.Add(T("→", 12, Tok.Muted).WithMargin(4, 2));
+                var chip = new Border
+                {
+                    Background = Tok.Frame, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3),
+                    Padding = new Thickness(7, 2), Margin = new Thickness(0, 2), Child = T(phase.Steps[i], 12),
+                };
+                chips.Children.Add(chip);
+            }
+            var block = new StackPanel { Spacing = 4, Children = { T(phase.Name, 12, Accent.Main, FontWeight.SemiBold), chips } };
+            if (phase.Note.Length > 0) block.Children.Add(T(phase.Note, 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+            rotation.Children.Add(block);
+        }
+        col.Children.Add(rotation);
+        if (play.Tips.Count > 0)
+        {
+            var tips = new StackPanel { Spacing = 4, Children = { Label("Façon de jouer") } };
+            foreach (var x in play.Tips) tips.Children.Add(ColumnsSpaced("14,*", 6, T("•", 12, Accent.Main), T(x, 12, Tok.Text2, wrap: true).WithLineHeight(1.4)));
+            col.Children.Add(tips);
+        }
+        return col;
+    }
+
+    Control BuildInspector()
+    {
+        var panel = new StackPanel { Children = { SectionHeader("Inspecteur · build") } };
+        var cls = r.Profile.Class;
+        var body = new StackPanel { Spacing = 14, Margin = new Thickness(14) };
+        body.Children.Add(T("Deux versions du build", 15, weight: FontWeight.SemiBold));
+        body.Children.Add(T("Joueurs : guides communautaires croisés avec les compétences réellement montées par des joueurs niveau 45 des serveurs EU.",
+            12, Tok.Text2, wrap: true).WithLineHeight(1.45));
+        body.Children.Add(T("Conçue : construite à partir des seules données des sorts (dégâts en % d'ATQ, temps de recharge, conditions, spécialisations), " +
+            "sans guide ni profil de joueur. Ses rotations et priorités viennent du calcul, pas de l'expérience en jeu : à tester.",
+            12, Tok.Text2, wrap: true).WithLineHeight(1.45));
+        if (cls.Designed is { } d) body.Children.Add(Field("Méthode", d.Method, Tok.Text2));
+        body.Children.Add(Callout(r.Profile.UsesDesigned
+            ? "Les conseils de compétences de ce personnage suivent le build conçu. « Joueurs » pour revenir au build des joueurs."
+            : "Les conseils de compétences de ce personnage suivent le build des joueurs." + (cls.Designed is null ? "" : " « Conçue » pour suivre le build conçu."),
+            Accent.Main));
+        body.Children.Add(T("≠ : priorité ou niveau visé différent du build des joueurs. Survole une compétence pour sa raison.", 12, Tok.Muted, wrap: true));
         panel.Children.Add(body);
         return panel;
     }

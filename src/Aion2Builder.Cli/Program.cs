@@ -46,6 +46,7 @@ static int Help()
           advise <nom|fichier.json> [--server <serveur>]      Analyse et conseils
                  [--mode pve|pvp|both] [--refresh] [--json]   (importe le personnage s'il n'est pas enregistré)
                  [--sp N] [--dp N] [--ariel N] [--azphel N]  points non dépensés (compétences, Daevanion), gardés par personnage
+                 [--build joueurs|concu]                      build qui guide les conseils (joueurs ou conçu), gardé par personnage
           list                                                Personnages enregistrés
           data [export]                                       Fichiers de données (poids, paliers…) modifiables
           pets [--key <clé>] [--refresh] [--forget]            Familiers du Pet Meter, lus sur Aion 2 Todo (clé : onglet
@@ -133,6 +134,12 @@ static async Task<int> Advise(Args cli)
         UnspentDaevanion = Opt("dp", inputs.UnspentDaevanion),
         UnspentAriel = Opt("ariel", inputs.UnspentAriel),
         UnspentAzphel = Opt("azphel", inputs.UnspentAzphel),
+        Build = cli.Get("build")?.ToLowerInvariant() switch
+        {
+            "designed" or "concu" or "conçu" => "designed",
+            "players" or "joueurs" => "players",
+            _ => inputs.Build,
+        },
     };
     if (updated != inputs) store.SaveInputs(snapshot, inputs = updated);
 

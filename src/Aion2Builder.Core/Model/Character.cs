@@ -119,6 +119,9 @@ public sealed record PlayerInputs
     public int UnspentDaevanion { get; init; }
     public int UnspentAriel { get; init; }
     public int UnspentAzphel { get; init; }
+    /// <summary>Build suivi par les conseils : « players » (guides et joueurs observés) ou « designed » (build conçu).</summary>
+    public string Build { get; init; } = "players";
+    [System.Text.Json.Serialization.JsonIgnore] public bool UsesDesigned => Build == "designed";
 
     public int UnspentFor(string pool) => pool switch
     {

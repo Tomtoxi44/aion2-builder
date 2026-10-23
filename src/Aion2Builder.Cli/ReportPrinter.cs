@@ -93,6 +93,26 @@ sealed class ReportPrinter(GameDatabase db)
         if (r.Skills.NextShards.Count > 0)
             Console.WriteLine("  Prochains fragments : " + string.Join(" · ", r.Skills.NextShards.Select(x => $"{x.Stigma.Skill.Name} {x.From} → {x.To} ({x.Shards})")));
 
+        if (r.Profile.Play is { } play)
+        {
+            var designed = r.Profile.UsesDesigned ? r.Profile.Class.Designed : null;
+            Section($"Rotation et façon de jouer — {(designed is null ? "build des joueurs" : "build conçu")} ({GameDatabase.ModeName(r.Mode)})");
+            if (designed is not null) Console.WriteLine($"  {designed.Summary}");
+            foreach (var phase in play.Rotation)
+            {
+                Console.WriteLine($"  {phase.Name} : {string.Join(" → ", phase.Steps)}");
+                if (phase.Note.Length > 0) Console.WriteLine($"      {phase.Note}");
+            }
+            foreach (var tip in play.Tips) Console.WriteLine($"  • {tip}");
+            if (designed is not null && designed.Differences.Count > 0)
+            {
+                Console.WriteLine("  Différences avec le build des joueurs :");
+                foreach (var d in designed.Differences) Console.WriteLine($"   - {d}");
+            }
+            else if (designed is null && r.Profile.Class.Designed is not null)
+                Console.WriteLine("  Un build conçu à partir des données des sorts existe aussi : advise <nom> --build concu");
+        }
+
         Section("Daevanion");
         foreach (var b in r.Daevanion.Budgets.Where(b => DaevanionPlanner.Relevant(b.Pool, r.Mode)))
             Console.WriteLine($"  {db.Settings.Daevanion.PoolNames.GetValueOrDefault(b.Pool, b.Pool)} : {b.Spent} dépensés + {b.Unspent} non dépensés (tout remplir : {b.FillCost})");

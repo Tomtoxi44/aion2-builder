@@ -13,6 +13,8 @@ en vue JcE (PvE) ou JcJ (PvP)** :
 - quelles **gravures d'âme** et pierres revoir pièce par pièce (lien d'âme, options inutiles, pierres à changer), et dans quel ordre,
 - quelle espèce de **familiers** farmer en premier (collection lue par le Pet Meter, via Aion 2 Todo),
 - quelles compétences monter, équiper, ou arrêter de monter,
+- **deux builds par classe, côte à côte** : celui des joueurs (guides et joueurs observés) et un build **conçu** à partir
+  des seules données des sorts, chacun avec sa rotation et sa façon de jouer ; tu choisis lequel guide les conseils,
 - quelles cases **Daevanion** ouvrir et dans quel ordre (chemins compris), par réserve de points (plateaux communs, Ariel en JcE, Azphel en JcJ),
 - un plan d'action classé par **rentabilité** (gain attendu / ressources dépensées).
 
@@ -64,7 +66,8 @@ Commandes du CLI :
 | `search <nom> [--server S] [--region eu]` | Cherche un personnage |
 | `import <nom> --server S [--raw <dossier>]` | Importe et enregistre (et garde les réponses brutes si `--raw`) |
 | `import-raw <dossier>` | Réimporte des réponses brutes sauvegardées (diagnostic) |
-| `advise <nom ou fichier.json> [--mode pve\|pvp\|both] [--refresh] [--json]` | Analyse et conseils |
+| `advise <nom ou fichier.json> [--mode pve\|pvp\|both] [--refresh] [--json]` | Analyse et conseils, avec la rotation du build suivi |
+| `advise <nom> --build joueurs\|concu` | Choisit le build qui guide les conseils (gardé par personnage) |
 | `list` | Personnages enregistrés |
 | `data [export] [--force]` | Montre / copie les fichiers de données modifiables |
 | `pets [--key <clé>] [--refresh] [--forget]` | Relie / relit la collection de familiers (Aion 2 Todo) ; « advise » la compte ensuite |
@@ -80,7 +83,9 @@ L'interface est organisée comme un éditeur :
 - **Import** (avatar du rail ou **Ctrl+K**) : tape le nom, les résultats du site officiel s'affichent au fil de la saisie ;
   Entrée importe le meilleur résultat. L'étiquette « eu · tous serveurs » choisit la région et le serveur (liste
   filtrable, noms français). Les personnages déjà importés sont dans « Récents » et se rouvrent sans connexion.
-- **Rail à gauche** : Accueil, Stats, Équipement, Compétences, Daevanion, Détails, chacun avec sa note.
+- **Rail à gauche** : Accueil, Stats, Équipement, Compétences, Build, Daevanion, Familiers, Détails, chacun avec sa note.
+- **Build et rotation** : le build des joueurs et le build conçu côte à côte (priorités, niveaux visés, ≠ là où ils
+  diffèrent, rotation par phases et conseils de jeu) ; « Joueurs | Conçue » choisit celui que suivent les conseils.
 - **Bascule JcE | JcJ** toujours visible en haut ; **thème** : 8 couleurs secondaires au choix.
 - **Inspecteur à droite** : clique une pièce, une stat, une compétence ou un plateau pour son détail. Les compteurs
   « − N + » (points non dépensés) recalculent tout de suite.
@@ -138,6 +143,12 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    l'application la relit avec la même clé de synchro (écran **Familiers**, ou `pets --key`). Les stats sont ajoutées à
    ta répartition ; l'espèce conseillée est celle dont un familier au niveau 3 sert le plus ta classe (relevée si sa
    famille de stats est en manque), avec les familiers les plus proches du niveau suivant.
+8. **Build conçu.** Pour chaque classe, un second build est construit sans guide ni profil de joueur, à partir des
+   données des sorts au niveau 1 (metabot.gg) : dégâts par seconde = % d'ATQ ÷ temps de recharge (× nombre de cibles),
+   pondérés par leurs conditions (cible renversée, ralentie, déséquilibrée, sous dégâts sur la durée…), buffs et
+   affaiblissements comptés par leur temps actif (durée ÷ recharge). Il ne remplace que les compétences où le calcul
+   diverge des joueurs (`classes.json` → `designed` : priorités, niveaux visés, raison chiffrée), avec sa propre
+   rotation et la liste des différences. C'est un calcul, pas de l'expérience en jeu : à tester.
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par
@@ -162,6 +173,7 @@ détaillée (12 actives, 10 passifs, 13 stigmas). Hors Spiritualiste, elles croi
 montées par des joueurs niveau 45 des serveurs EU (8 Templiers, 24 joueurs pour chacune des autres classes) (`classes.json` → `skills` : rôle, priorité et niveau visé par mode, et la raison affichée ; les entrées « à valider »
 ne sont pas documentées par les guides). Le Rôdeur n'a pas de guide JcJ : ses priorités JcJ sont déduites des effets
 des sorts. Deux compétences de l'Aède s'appellent « Coup fracassant » (attaque de base et stigma) : le type les départage.
+Les rotations des joueurs (`classes.json` → `play`) viennent des mêmes guides ; celles du build conçu, du calcul.
 
 ## Limites
 

@@ -174,7 +174,7 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         }
         var nextShards = shardSteps.OrderBy(x => x.To).ThenByDescending(x => x.Stigma.Priority).Take(8).ToList();
 
-        return new SkillPlan(skills, stigmas, spent, inputs.UnspentSkillPoints, p.Class.Skills.Count > 0, p.Class.SkillsSource,
+        return new SkillPlan(skills, stigmas, spent, inputs.UnspentSkillPoints, p.Class.Skills.Count > 0, p.UsesDesigned ? $"Build conçu : {p.Class.Designed!.Method}" : p.Class.SkillsSource,
             moves, nextPoints, nextShards);
     }
 

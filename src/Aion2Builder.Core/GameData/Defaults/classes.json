@@ -126,6 +126,63 @@
       "coreSkills": { "PvE": [], "PvP": [] },
       "notes": ["Gravures d'arme et de garde-bras : Boost de DGT arme, VIT de combat, Boost de DGT, Force ; ailleurs CRIT et Boost de DGT, avec un peu de Précision. Coup puissant (chance de double dégâts) par la Sagesse. Si les PM manquent : PM max, régénération de PM et cases Daevanion « PM +50 ».", "Ouverture de boss : Position de charge + Bénédiction de Zikel, Frappe bondissante, Coup féroce anéantissant, puis la boucle Fracas / Explosion de fureur avec Coup féroce lacérant entre les deux ; Blocage ciblé sur la première attaque du boss. Coup féroce lacérant et Fracas sur deux lignes séparées pour les entrelacer.", "Daevanion JcE : +4 à Fracas, Coup féroce lacérant, Coup féroce anéantissant et Préparation d'attaque. JcJ : +4 à Contrainte aérienne, Fracas, Dissipation de choc et Épée dévastatrice."],
       "skillsSource": "Guide Gladiateur aion2-guides.info (tests de joueurs : Arthars, Ulfhednar, aLuckyRO), noms et effets français de metabot.gg, et compétences réellement montées par 24 Gladiateurs niveau 45 (serveurs EU, niveau d'objet 659 à 2550). Les entrées « à valider » ne sont pas décrites par les guides.",
+      "play": {
+        "PvE": {
+          "rotation": [
+            { "name": "Ouverture", "steps": ["Position de charge", "Bénédiction de Zikel", "Frappe bondissante", "Coup féroce anéantissant", "Blocage ciblé"], "note": "Les deux buffs, le saut, puis Coup féroce anéantissant pour Prêt au combat ; Blocage ciblé sur la première attaque du boss." },
+            { "name": "Ligne principale", "steps": ["Explosion de fureur", "Fracas"], "note": "Explosion de fureur en bas de la ligne (priorité la plus haute), Fracas à chaque recharge." },
+            { "name": "Ligne Coup féroce anéantissant", "steps": ["Coup féroce anéantissant", "Lame déferlante", "Coup féroce lacérant"], "note": "Sur une autre ligne que Fracas, pour entrelacer les deux. Lame déferlante seulement sur une cible déséquilibrée." },
+            { "name": "Remplissage", "steps": ["Coup acéré"], "note": "Tenu pendant la montée de niveau pour les PM." }
+          ],
+          "tips": ["Coup féroce lacérant et Fracas sur deux lignes séparées pour les entrelacer.", "Blocage ciblé sur la première attaque du boss : il déclenche Riposte habile pour le groupe.", "Épée vampirique au niveau 20 dans un groupe organisé, Armure d'onde seulement sans Templier."]
+        },
+        "PvP": {
+          "rotation": [
+            { "name": "Engagement à distance", "steps": ["Lancer de lame", "Coup de ruée"], "note": "Lancer de lame d'abord contre un soigneur (−50 % de soins reçus)." },
+            { "name": "Punition du renversement", "steps": ["Épée dévastatrice", "Fracas", "Contrainte aérienne", "Fracas"], "note": "Renversement garanti de 3 s, puis Fracas et Contrainte aérienne dans la fenêtre." }
+          ],
+          "tips": ["Dissipation de choc sur le premier contrôle dur, Persévérance pour le suivant.", "Armure d'équilibre avant d'engager.", "Contre un soigneur : Lancer de lame, puis Onde broyeuse pour l'attirer."]
+        }
+      },
+      "designed": {
+        "summary": "Le cœur reste Fracas (164 % toutes les 5 s, 33 % d'ATQ par seconde) et Coup féroce anéantissant, dont Prêt au combat (+20 % de dégâts pendant 20 s toutes les 45 s) vaut à lui seul environ +9 % de dégâts. Lancer de lame prend la place d'Explosion de fureur : −30 % de DÉF sur le boss la moitié du temps, alors qu'ouvrir Fracas ne sert à rien sur un boss.",
+        "method": "Données des sorts au niveau 1 (metabot.gg) : dégâts par seconde = % d'ATQ ÷ temps de recharge (× nombre de cibles), pondérés par leurs conditions (renversement pour Fracas et Contrainte aérienne hors boss, déséquilibre pour Lame déferlante, blocage pour Riposte habile) ; buffs et affaiblissements comptés par leur temps actif (durée ÷ recharge). Sans guide ni profil de joueur.",
+        "skills": [
+          { "name": "Coup féroce anéantissant", "kind": "Active", "role": "Burst + Prêt au combat", "priority": { "PvE": 1.0, "PvP": 0.6 }, "target": { "PvE": 10, "PvP": 8 },
+            "why": "689 % d'ATQ sur 4 cibles toutes les 45 s (15 % d'ATQ par seconde) et Prêt au combat : +20 % de dégâts JcE pendant 20 s, actif 44 % du temps, soit environ +9 % sur tous tes dégâts. La compétence qui rapporte le plus au Gladiateur." },
+          { "name": "Lame déferlante", "kind": "Active", "role": "Dégâts sur cible déséquilibrée", "priority": { "PvE": 0.4, "PvP": 0.2 }, "target": { "PvE": 5, "PvP": 1 },
+            "why": "82,5 % d'ATQ, et seulement sur une cible déséquilibrée : quelques secondes par combat. Moins que Coup féroce lacérant (74 % sur 4 cibles, sans condition)." },
+          { "name": "Lancer de lame", "kind": "Stigma", "role": "Baisse de DÉF du boss", "priority": { "PvE": 0.85, "PvP": 0.8 }, "target": { "PvE": 5, "PvP": 5 },
+            "why": "88 % d'ATQ à 20 m, −30 % de DÉF et −50 % de soins reçus pendant 10 s, recharge 20 s : le boss passe la moitié du combat à −30 % de DÉF, pour tout le groupe. Ses paliers suivants ne rajoutent pas de dégâts en JcE : le niveau 5 suffit." },
+          { "name": "Blocage ciblé", "kind": "Stigma", "role": "Blocage garanti (Riposte habile)", "priority": { "PvE": 0.9, "PvP": 0.7 }, "target": { "PvE": 5, "PvP": 5 },
+            "why": "Blocage garanti toutes les 20 s : Riposte habile donne +5,4 % de Boost de DGT JcE pendant 20 s à toi et au groupe, donc en permanence si tu bloques à chaque recharge. Rend aussi PM et endurance." },
+          { "name": "Explosion de fureur", "kind": "Stigma", "role": "Ouvre Fracas sans renversement", "priority": { "PvE": 0.5, "PvP": 0.5 }, "target": { "PvE": 5, "PvP": 5 },
+            "why": "218 % d'ATQ toutes les 45 s (4,8 % par seconde) et Contusion (−10 % d'ATQ de la cible). Rendre Fracas utilisable sans renversement ne sert à rien sur un boss, que Fracas touche déjà : Lancer de lame rapporte plus." }
+        ],
+        "play": {
+          "PvE": {
+            "rotation": [
+              { "name": "Ouverture", "steps": ["Position de charge", "Bénédiction de Zikel", "Lancer de lame", "Frappe bondissante", "Coup féroce anéantissant", "Blocage ciblé"], "note": "Lancer de lame à 20 m avant d'engager : Coup féroce anéantissant (689 % × 4) tombe sur −30 % de DÉF et sous +20 % d'ATQ, puis Prêt au combat couvre les 20 s suivantes." },
+              { "name": "Boucle", "steps": ["Fracas", "Coup féroce lacérant", "Fracas", "Lancer de lame", "Blocage ciblé", "Épée dévastatrice"], "note": "Fracas à chaque recharge, Coup féroce lacérant entre deux ; Lancer de lame et Blocage ciblé toutes les 20 s pour garder −30 % de DÉF et Riposte habile." },
+              { "name": "Toutes les 45 s", "steps": ["Coup féroce anéantissant", "Contrainte aérienne"], "note": "Relance Coup féroce anéantissant dès qu'il revient : Prêt au combat couvre 20 s sur 45. Contrainte aérienne (182 %) touche les boss sans renversement." }
+            ],
+            "tips": ["Bloque toutes les 20 s, même sans danger : c'est ce blocage qui garde Riposte habile pour le groupe.", "Garde Bénédiction de Zikel (+20 % d'ATQ, 10 s) pour Coup féroce anéantissant.", "Position de charge au niveau 20 : 50 % de chance de −1 s sur toutes les recharges à chaque critique."]
+          },
+          "PvP": {
+            "rotation": [
+              { "name": "Engagement", "steps": ["Lancer de lame", "Frappe bondissante", "Épée dévastatrice"], "note": "−30 % de DÉF et −50 % de soins reçus avant le renversement de 3 s." },
+              { "name": "Burst", "steps": ["Fracas", "Contrainte aérienne", "Fracas", "Coup féroce anéantissant"], "note": "Contrainte aérienne : 50 % de chance d'entrave aérienne 3 s, qui prolonge la fenêtre." }
+            ],
+            "tips": ["Dissipation de choc sur le premier contrôle dur, Persévérance pour le suivant.", "Armure d'équilibre (+50 % de RÉS au choc) avant d'engager."]
+          }
+        },
+        "differences": [
+          "Lancer de lame remplace Explosion de fureur dans le set JcE : −30 % de DÉF pendant 10 s toutes les 20 s (la moitié du temps) pour tout le groupe, alors qu'Explosion de fureur sert surtout à ouvrir Fracas, déjà utilisable sur les boss.",
+          "Coup féroce anéantissant passe premier (1,0 contre 0,95) : Prêt au combat (+20 % pendant 20 s toutes les 45 s) vaut environ +9 % de dégâts en moyenne.",
+          "Blocage ciblé monte (0,90 contre 0,80) : un blocage garanti toutes les 20 s garde Riposte habile (+5,4 % au groupe pendant 20 s) actif en permanence.",
+          "Lame déferlante baisse (0,40 contre 0,60) : seulement pendant le déséquilibre."
+        ]
+      },
       "skills": [
         { "name": "Fracas", "kind": "Active", "role": "Dégâts principaux (cible renversée)", "priority": { "PvE": 1.0, "PvP": 1.0 }, "target": { "PvE": 10, "PvP": 10 },
           "why": "164 % d'ATQ sur une cible renversée (sur les boss, sans renversement), recharge 5 s : les dégâts principaux du Gladiateur. Spécialisations : 8 enchaînement de frappe ascendante, 12 critique, 16 plus de temps de recharge. +4 niveaux par le Daevanion JcE et JcJ ; la première compétence à pousser au niveau 20." },
@@ -214,6 +271,67 @@
       "coreSkills": { "PvE": [], "PvP": [] },
       "notes": ["Tank qui frappe : PV, DÉF et Tolérance aux DGT pour tenir, mais les guides poussent aussi Coup puissant (chance de double dégâts), Boost de DGT arme et la Précision (≈ 900 en Conquête, 1300 en Sanctuaire).", "Daevanion : Nezekan puis Zikel d'abord (ATQ, VIT de combat, DÉF, Précision, +1 Châtiment / Annihilation / Coup puissant au bouclier / Frappe d'égide), sans éparpiller les points."],
       "skillsSource": "Guide Templier games.gg + compétences réellement montées par 8 Templiers niveau 45 (serveurs EU, niveau d'objet 1027 à 2582). Les entrées « à valider » ne sont pas décrites par le guide.",
+      "play": {
+        "PvE": {
+          "rotation": [
+            { "name": "Ouverture", "steps": ["Armure de noblesse", "Charge au bouclier", "Provocation", "Coup puissant au bouclier", "Jugement"], "note": "Prends l'aggro tout de suite : Provocation, puis le premier coup de bouclier qui ouvre Jugement." },
+            { "name": "Ligne principale", "steps": ["Coup puissant au bouclier", "Jugement", "Frappe d'égide", "Jugement", "Annihilation"], "note": "Jugement juste après chaque compétence de bouclier ; Annihilation dans les deux lignes de macro." },
+            { "name": "Ligne Bouclier de l'anéantissement", "steps": ["Bouclier de l'anéantissement", "Épée d'exécution", "Annihilation"], "note": "Ligne de macro dédiée selon le guide." },
+            { "name": "Remplissage", "steps": ["Frappe féroce", "Frappes successives"], "note": "En attaque automatique : Frappe féroce rend des PM, Frappes successives rend des PV." }
+          ],
+          "tips": ["Châtiment chargé au maximum dès qu'il est prêt (+7,5 % de Boost de DGT JcE).", "Coup puissant (chance de double dégâts), Boost de DGT arme et Précision (≈ 900 en Conquête, 1 300 en Sanctuaire) selon le guide.", "Rugissement d'outrage et Provocation gardent l'aggro ; Exaltation donne un buff de groupe sur blocage."]
+        },
+        "PvP": {
+          "rotation": [
+            { "name": "Engagement", "steps": ["Capture", "Coup puissant au bouclier", "Jugement"], "note": "Ramène la cible et étourdis-la." },
+            { "name": "Burst", "steps": ["Châtiment", "Annihilation", "Jugement"], "note": "Châtiment chargé : +15 % de Boost de DGT JcJ." }
+          ],
+          "tips": ["Dissipation de choc en réaction aux chaînes de contrôles.", "Armure de noblesse à l'ouverture, Armure double quand le burst adverse arrive."]
+        }
+      },
+      "designed": {
+        "summary": "Un tank qui bloque à heure fixe : Bouclier de protection garantit un blocage toutes les 20 s, ce qui entretient Exaltation (+5,5 % de dégâts JcE au groupe), déclenche Coup féroce fragilisant (−25 % de DÉF sur le boss) et le soin de Défense d'égide. Douleur obstruée monte, parce qu'un tank est touché sans arrêt.",
+        "method": "Données des sorts au niveau 1 (metabot.gg) : dégâts par seconde = % d'ATQ ÷ temps de recharge (× nombre de cibles), pondérés par leurs conditions (bouclier avant Jugement, cible étourdie ou renversée pour Annihilation, blocage pour Coup féroce fragilisant) ; buffs comptés par leur temps actif (durée ÷ recharge). Sans guide ni profil de joueur.",
+        "skills": [
+          { "name": "Coup féroce fragilisant", "kind": "Active", "role": "Baisse de DÉF du boss (sur blocage)", "priority": { "PvE": 0.85, "PvP": 0.75 }, "target": { "PvE": 10, "PvP": 8 },
+            "why": "184 % d'ATQ sur 4 cibles et Fragilité (−25 % de DÉF pendant 5 s), recharge 10 s, après un blocage. Avec Bouclier de protection (blocage garanti toutes les 20 s), la cible passe au moins un quart du temps à −25 % de DÉF : tout le groupe frappe plus fort." },
+          { "name": "Frappe d'égide", "kind": "Active", "role": "Coup de bouclier + soin", "priority": { "PvE": 0.7, "PvP": 0.65 }, "target": { "PvE": 8, "PvP": 8 },
+            "why": "212 % d'ATQ toutes les 30 s, soit environ 7 % d'ATQ par seconde contre 46 % pour Jugement : sert surtout à ouvrir Jugement et à se soigner. Coup puissant au bouclier (176 %, 10 s, 60 % d'étourdissement) l'ouvre plus souvent." },
+          { "name": "Douleur obstruée", "kind": "Passive", "role": "Boost de DGT quand tu es touché", "priority": { "PvE": 0.8, "PvP": 0.6 }, "target": { "PvE": 10, "PvP": 6 },
+            "why": "Chaque coup reçu donne +11 % de Boost de DGT JcE pendant 10 s (recharge 20 s) : un tank est touché en permanence, donc actif la moitié du temps, environ +5,5 % de dégâts en moyenne. Le build des joueurs le laisse au niveau 2." },
+          { "name": "Bouclier de protection", "kind": "Stigma", "role": "Blocage garanti toutes les 20 s", "priority": { "PvE": 0.9, "PvP": 0.5 }, "target": { "PvE": 5, "PvP": 5 },
+            "why": "Blocage garanti, recharge 20 s : déclenche Exaltation (+5,5 % de dégâts JcE au groupe pendant 20 s, donc en continu), Coup féroce fragilisant (−25 % de DÉF) et le soin de Défense d'égide, et rend PM et endurance. Le stigma qui fait tourner tout le build." },
+          { "name": "Bannière de champ de bataille", "kind": "Stigma", "role": "Buff d'ATQ selon la DÉF", "priority": { "PvE": 0.45, "PvP": 0.45 }, "target": { "PvE": 1, "PvP": 1 },
+            "why": "ATQ selon la DÉF pendant 10 s, recharge 90 s : actif 11 % du temps. Moins rentable qu'un blocage garanti toutes les 20 s." },
+          { "name": "Épée d'exécution", "kind": "Stigma", "role": "Dégâts + baisse de DÉF", "priority": { "PvE": 0.55, "PvP": 0.8 }, "target": { "PvE": 5, "PvP": 5 },
+            "why": "233 % d'ATQ sur 4 cibles et −30 % de DÉF pendant 5 s (recharge 45 s). En JcJ, c'est la meilleure fenêtre de burst sur une cible renversée par Bouclier de l'anéantissement." }
+        ],
+        "play": {
+          "PvE": {
+            "rotation": [
+              { "name": "Ouverture", "steps": ["Armure de noblesse", "Charge au bouclier", "Provocation", "Bouclier de protection", "Coup féroce fragilisant", "Coup puissant au bouclier", "Jugement"], "note": "Le premier blocage garanti pose −25 % de DÉF dès l'ouverture et lance Exaltation pour le groupe." },
+              { "name": "Boucle de 20 s", "steps": ["Bouclier de protection", "Coup féroce fragilisant", "Coup puissant au bouclier", "Jugement", "Bouclier de l'anéantissement", "Annihilation", "Jugement"], "note": "Jugement après chaque compétence de bouclier (46 % d'ATQ par seconde, ta meilleure valeur) ; Annihilation dès que le boss est étourdi ou renversé." },
+              { "name": "Burst", "steps": ["Châtiment"], "note": "Charge Châtiment au maximum pendant les 5 s de Fragilité : 1 292 % d'ATQ sur 4 cibles sur une DÉF réduite de 25 %." },
+              { "name": "Remplissage", "steps": ["Frappes successives", "Frappe féroce"], "note": "Frappes successives (120 %) tant que les PM suivent, Frappe féroce (95 %, +100 PM) pour les recharger." }
+            ],
+            "tips": ["Reste face au boss : Rugissement d'outrage donne +5,5 % d'ATQ sur les attaques de face (recharge 5 s, donc presque en continu).", "Bloque toutes les 20 s avec Bouclier de protection, même sans danger : c'est ce blocage qui entretient Exaltation pour le groupe.", "Garde Châtiment pour la fenêtre −25 % de DÉF plutôt que de le lancer à la recharge."]
+          },
+          "PvP": {
+            "rotation": [
+              { "name": "Engagement", "steps": ["Capture", "Coup puissant au bouclier", "Annihilation", "Jugement"], "note": "Capture ramène et entrave ; Coup puissant au bouclier étourdit 60 % du temps, ce qui ouvre Annihilation (322 %)." },
+              { "name": "Second contrôle", "steps": ["Bouclier de l'anéantissement", "Épée d'exécution", "Châtiment", "Jugement"], "note": "Renversement 3 s (75 %) puis −30 % de DÉF : place Châtiment chargé dans cette fenêtre." }
+            ],
+            "tips": ["Dissipation de choc sur le premier contrôle dur.", "Armure double (+15 % de Tolérance JcJ) quand le burst adverse arrive."]
+          }
+        },
+        "differences": [
+          "Bouclier de protection entre dans le set JcE à la place de Bannière de champ de bataille : un blocage garanti toutes les 20 s entretient Exaltation pour le groupe et Coup féroce fragilisant, alors que la Bannière n'est active que 11 % du temps.",
+          "Coup féroce fragilisant monte (0,85 contre 0,65) : −25 % de DÉF sur le boss profite à tout le groupe.",
+          "Douleur obstruée monte au niveau 10 (contre 2) : un tank est touché en permanence, donc le buff de +11 % est actif la moitié du temps.",
+          "Frappe d'égide baisse un peu (0,70 contre 0,80) : 7 % d'ATQ par seconde, c'est surtout une ouverture de Jugement et un soin.",
+          "En JcJ, Épée d'exécution passe avant Bannière de champ de bataille : −30 % de DÉF sur la cible renversée."
+        ]
+      },
       "skills": [
         { "name": "Jugement", "kind": "Active", "role": "Dégâts principaux (après un coup de bouclier)", "priority": { "PvE": 1.0, "PvP": 0.95 }, "target": { "PvE": 10, "PvP": 10 },
           "why": "Cœur de la rotation : utilisable quelques secondes après Coup puissant au bouclier, Frappe d'égide ou Charge au bouclier ; dégâts bonus sur les boss et rend 1 % des PV. Sa spécialisation du niveau 16 retire son temps de recharge selon un guide." },
@@ -248,8 +366,8 @@
           "why": "50 % de chances d'infliger des dégâts supplémentaires à chaque coup ; profite du Boost de DGT CRIT." },
         { "name": "Exaltation", "kind": "Passive", "role": "Buff de groupe sur blocage", "priority": { "PvE": 0.85, "PvP": 0.35 }, "target": { "PvE": 10, "PvP": 1 },
           "why": "Quand tu bloques, donne un Boost de DGT JcE à ton groupe (à activer à la main entre deux macros). Sans effet en JcJ." },
-        { "name": "Douleur obstruée", "kind": "Passive", "role": "Tolérance aux DGT", "priority": { "PvE": 0.4, "PvP": 0.3 }, "target": { "PvE": 2, "PvP": 2 },
-          "why": "Ajoute de la Tolérance aux DGT JcE quand tu es frappé ; le guide le laisse au niveau 2." },
+        { "name": "Douleur obstruée", "kind": "Passive", "role": "Boost de DGT quand tu es touché", "priority": { "PvE": 0.4, "PvP": 0.3 }, "target": { "PvE": 2, "PvP": 2 },
+          "why": "Quand tu es frappé : +11 % de Boost de DGT JcE (+5,5 % JcJ) pendant 10 s, recharge 20 s. Le guide le laisse au niveau 2." },
         { "name": "Blindage inébranlable", "kind": "Passive", "role": "Défense", "priority": { "PvE": 0.4, "PvP": 0.45 }, "target": { "PvE": 1, "PvP": 2 },
           "why": "À valider : effet non décrit ; le guide le laisse au niveau 1, mais les Templiers observés le montent souvent haut. N'y mets des points qu'une fois les passifs prioritaires au maximum." },
         { "name": "Volonté de survie", "kind": "Passive", "role": "Survie", "priority": { "PvE": 0.3, "PvP": 0.45 }, "target": { "PvE": 2, "PvP": 2 },
@@ -295,6 +413,61 @@
       "coreSkills": { "PvE": [], "PvP": [] },
       "notes": ["CRIT avant tout (≈ 1 300 pour 50 % de critiques, ≈ 1 900 pour 95 % selon un guide) : Coup au cœur ne se déclenche et ne se recharge que sur un critique. Ensuite Multi-coups, VIT de combat, Coup puissant, Boost de DGT CRIT et de dos.", "Toujours frapper de dos. Burst : Clone illusoire + Pacte de célérité, Embuscade, Croc sauvage, Dague de Triniel, puis Explosion de glyphe → Coup au cœur ; Entaille rapide entre les deux.", "Daevanion JcE : Nezekan (VIT de combat, recharge), Zikel, Vaizel (Boost de DGT CRIT), Triniel (Multi-coups), Ariel ; +4 niveaux à Coup au cœur, Tempête déferlante, Entaille rapide, Attaque surprise et Explosion de glyphe. JcJ : Azphel, +4 à Chute de l'ombre, Embuscade et Entaille tourbillonnante."],
       "skillsSource": "Guides Assassin (games.gg, aion2-guides.info), noms et effets français de metabot.gg, et compétences réellement montées par 24 Assassins niveau 45 (serveurs EU, niveau d'objet 805 à 2719). Les entrées « à valider » ne sont pas décrites par les guides.",
+      "play": {
+        "PvE": {
+          "rotation": [
+            { "name": "Ouverture", "steps": ["Pacte de célérité", "Clone illusoire", "Embuscade", "Croc sauvage", "Dague de Triniel", "Attaque surprise"], "note": "Les deux buffs ensemble, Embuscade pour passer dans le dos (+20 % de Boost de DGT CRIT avec la spécialisation 8), puis les stigmas de dégâts." },
+            { "name": "Burst", "steps": ["Embuscade", "Explosion de glyphe", "Coup au cœur", "Clone illusoire"], "note": "Explosion de glyphe seulement avec assez de glyphes ; Coup au cœur à chaque critique." },
+            { "name": "Boucle", "steps": ["Entaille rapide", "Rugissement bestial", "Attaque surprise", "Coup au cœur"], "note": "Macro courte Entaille rapide → Rugissement bestial ; Coup au cœur, Explosion de glyphe et Clone illusoire à la main." }
+          ],
+          "tips": ["Toujours dans le dos du boss.", "CRIT avant tout (≈ 1 300 pour 50 %, ≈ 1 900 pour 95 %).", "Ne pas lancer Clone illusoire quand le boss devient inciblable."]
+        },
+        "PvP": {
+          "rotation": [
+            { "name": "Approche", "steps": ["Marche de l'ombre", "Embuscade"], "note": "Furtivité, puis Embuscade dans le dos pour étourdir." },
+            { "name": "Combo dans l'étourdissement", "steps": ["Clone illusoire", "Entaille rapide", "Attaque surprise", "Chute de l'ombre"], "note": "Chute de l'ombre sur la cible étourdie (renversement 3 s)." },
+            { "name": "Sortie", "steps": ["Pas de l'ombre"], "note": "Recul et 3 s de furtivité." }
+          ],
+          "tips": ["Enchaîner les étourdissements vers Chute de l'ombre.", "Pas de l'ombre pour fuir ou repositionner."]
+        }
+      },
+      "designed": {
+        "summary": "Même cœur que les joueurs (Coup au cœur, Explosion de glyphe, Clone illusoire) : le calcul le confirme. Il ajoute deux choses : Entaille éclair comme remplissage de zone qui te remet dans le dos, et Chute de l'ombre en donjon, puisque Explosion de glyphe étourdit les packs 3 s.",
+        "method": "Données des sorts au niveau 1 (metabot.gg) : dégâts par seconde = % d'ATQ ÷ temps de recharge (× nombre de cibles), pondérés par leurs conditions (critique pour Coup au cœur, glyphes pour Explosion de glyphe, cible étourdie pour Chute de l'ombre, attaque de dos) ; buffs comptés par leur temps actif. Sans guide ni profil de joueur.",
+        "skills": [
+          { "name": "Entaille éclair", "kind": "Active", "role": "Zone + retour dans le dos", "priority": { "PvE": 0.65, "PvP": 0.6 }, "target": { "PvE": 8, "PvP": 8 },
+            "why": "107 % d'ATQ sur 4 cibles toutes les 10 s pour 50 PM, et te fait passer de l'autre côté de la cible : tu restes dans le dos, là où Coup puissant arrière et Attaque surprise comptent. Sur 4 cibles, environ 43 % d'ATQ par seconde." },
+          { "name": "Chute de l'ombre", "kind": "Active", "role": "Gros coup sur cible étourdie", "priority": { "PvE": 0.4, "PvP": 0.9 }, "target": { "PvE": 5, "PvP": 10 },
+            "why": "204 % d'ATQ et renversement 3 s sur une cible étourdie, recharge 20 s. Explosion de glyphe étourdit 3 s : en donjon, sur les packs qui ne sont pas immunisés, c'est un coup gratuit. Inutile sur les boss immunisés." },
+          { "name": "Brèche de défense", "kind": "Passive", "role": "Affaiblit les cibles en état de choc", "priority": { "PvE": 0.45, "PvP": 0.85 }, "target": { "PvE": 5, "PvP": 10 },
+            "why": "Ne joue que sur une cible en état de choc, dont la chance vient surtout de Coup de choc (+11 %). En JcE, c'est un effet occasionnel ; mieux vaut finir les passifs de dégâts directs d'abord." },
+          { "name": "Infiltration", "kind": "Active", "role": "Repositionnement après esquive", "priority": { "PvE": 0.3, "PvP": 0.55 }, "target": { "PvE": 3, "PvP": 6 },
+            "why": "105 % d'ATQ toutes les 20 s (environ 5 % par seconde), et seulement après une esquive d'urgence : Entaille éclair fait mieux le même travail de repositionnement." }
+        ],
+        "play": {
+          "PvE": {
+            "rotation": [
+              { "name": "Ouverture", "steps": ["Pacte de célérité", "Clone illusoire", "Embuscade", "Croc sauvage", "Explosion de glyphe", "Coup au cœur"], "note": "Croc sauvage pose 5 glyphes d'un coup : Explosion de glyphe pleine dès l'ouverture, pendant que Clone illusoire retire la recharge de Coup au cœur." },
+              { "name": "Boucle", "steps": ["Rugissement bestial", "Attaque surprise", "Entaille rapide", "Coup au cœur", "Entaille éclair"], "note": "Rugissement bestial pour les glyphes, Attaque surprise de dos (179 %), Entaille rapide jusqu'au critique, Coup au cœur dès qu'il part ; Entaille éclair pour revenir dans le dos." },
+              { "name": "Packs (donjon)", "steps": ["Explosion de glyphe", "Chute de l'ombre", "Entaille éclair"], "note": "Explosion de glyphe étourdit 3 s : Chute de l'ombre frappe à 204 % et renverse." }
+            ],
+            "tips": ["Coup au cœur se déclenche et se recharge sur un critique : le CRIT est ta première stat.", "Explosion de glyphe seulement glyphes pleins : Rugissement bestial et Attaque surprise de dos les remplissent.", "Reste dans le dos : Coup puissant arrière et Attaque surprise y gagnent 30 %."]
+          },
+          "PvP": {
+            "rotation": [
+              { "name": "Ouverture", "steps": ["Embuscade", "Explosion de glyphe", "Chute de l'ombre"], "note": "Deux étourdissements puis un renversement : 7 à 9 s de contrôle." },
+              { "name": "Burst", "steps": ["Clone illusoire", "Coup au cœur", "Attaque surprise", "Spirale tranchante"], "note": "Spirale tranchante retire un buff (bouclier)." }
+            ],
+            "tips": ["Garde Pas de l'ombre pour sortir après le burst.", "Dissipation de choc sur le premier contrôle reçu."]
+          }
+        },
+        "differences": [
+          "Entaille éclair monte (0,65 contre 0,45) : 107 % d'ATQ sur 4 cibles toutes les 10 s, et elle te remet dans le dos.",
+          "Chute de l'ombre gagne un peu de place en JcE (0,40 contre 0,20) : Explosion de glyphe étourdit les packs, ce qui l'ouvre.",
+          "Brèche de défense baisse en JcE (0,45 contre 0,60) : elle ne joue que sur les cibles en état de choc.",
+          "Pour le reste (Coup au cœur, Explosion de glyphe, Clone illusoire, Pacte de célérité), le calcul arrive au même résultat que les joueurs."
+        ]
+      },
       "skills": [
         { "name": "Coup au cœur", "kind": "Active", "role": "Dégâts principaux (sur critique)", "priority": { "PvE": 1.0, "PvP": 0.95 }, "target": { "PvE": 10, "PvP": 10 },
           "why": "Se déclenche sur un coup critique (recharge 5 s), touche 4 cibles et rend 100 PM. Spécialisations : 12 multi-coups, 16 un critique remet sa recharge à zéro (le palier clé), 20 encore du multi-coups. Avec Clone illusoire il n'a plus de recharge : c'est pour lui que le CRIT passe avant tout." },
@@ -379,6 +552,66 @@
       "coreSkills": { "PvE": [], "PvP": [] },
       "notes": ["Précision d'abord : environ 1 100 à 1 200 selon un guide (si tu rates des tirs, rien d'autre ne compte). Le CRIT plafonne à 50 % sur les serveurs occidentaux : inutile d'en empiler. Gravures d'arme et de garde-bras : VIT de combat, Boost de DGT arme, Boost de DGT, Force ; casque et cape : Coup puissant et ATQ.", "Rotation : Flèche à marque (Minutie : +300 CRIT, +35 % pour Visée de flèche), buffs Pouvoir de Vaizel + Arc de bénédiction + Tir de soutien, Flèche à traquenard puis Flèche déchirante, Flèche de tempête, Flèche perçante et Tir rapide ; Visée de flèche toujours chargée au maximum, sous Minutie. Tir précis tenu sur le clic gauche. Relancer Flèche à marque une seconde avant la fin de Minutie.", "Daevanion JcE : +4 à Visée de flèche, Flèche perçante, Tir précis et Flèche déchirante. JcJ : +4 à Flèche oppressive, Flèche à traquenard, Dissipation de choc, Flèche à marque et Visée de flèche."],
       "skillsSource": "Guide Rôdeur aion2-guides.info (sets de joueurs : JOHNPAL, Fubgun, Card), noms et effets français de metabot.gg, et compétences réellement montées par 24 Rôdeurs niveau 45 (serveurs EU, niveau d'objet 770 à 2731). Pas de guide JcJ pour cette classe : les priorités JcJ sont déduites des effets et du chemin Daevanion JcJ. Les entrées « à valider » ne sont pas décrites par les guides.",
+      "play": {
+        "PvE": {
+          "rotation": [
+            { "name": "Ouverture", "steps": ["Flèche à marque", "Pouvoir de Vaizel", "Arc de bénédiction", "Tir de soutien", "Visée de flèche"], "note": "Minutie d'abord (+300 CRIT, +35 % pour Visée de flèche), les trois buffs ensemble, puis Visée chargée au maximum." },
+            { "name": "Ligne Flèche de tempête", "steps": ["Flèche de tempête", "Flèche du Griffon", "Flèche à traquenard", "Flèche déchirante"], "note": "Flèche déchirante en bas de la ligne, juste après le ralentissement de Flèche à traquenard." },
+            { "name": "Ligne Flèche perçante", "steps": ["Flèche perçante", "Tir rapide"], "note": "Macro : ligne Flèche de tempête puis deux fois cette ligne." },
+            { "name": "Remplissage", "steps": ["Tir précis"], "note": "Tenu sur le clic gauche (PM)." }
+          ],
+          "tips": ["Visée de flèche toujours chargée au maximum, sous Minutie.", "Relance Flèche à marque une seconde avant la fin de Minutie.", "Précision d'abord (≈ 1 100 à 1 200) ; le CRIT plafonne à 50 % sur les serveurs occidentaux."]
+        },
+        "PvP": {
+          "rotation": [
+            { "name": "Contrôle", "steps": ["Flèche à marque", "Flèche oppressive", "Flèche à traquenard"], "note": "Déduit des effets (pas de guide JcJ) : Flèche oppressive sous Minutie, 40 % de chance d'étourdir 3 s." },
+            { "name": "Burst", "steps": ["Pouvoir de Vaizel", "Visée de flèche", "Flèche déchirante"], "note": "Visée de flèche chargée pendant l'étourdissement." }
+          ],
+          "tips": ["Flèche de scellage contre les lanceurs de sorts (75 % de silence 5 s).", "Dissipation de choc sur le premier contrôle."]
+        }
+      },
+      "designed": {
+        "summary": "Minutie est active en permanence (Flèche à marque : 10 s de recharge pour 10 s de durée) : le build s'appuie dessus avec Flèche oppressive, 150 % par lancer. Flèche explosive remplace Arc de bénédiction, dont les +200 CRIT ne durent que 8 % du temps alors que le CRIT plafonne à 50 %. Tirs concentrés et Œil d'entrave montent, parce que la cible saigne et reste ralentie presque tout le temps.",
+        "method": "Données des sorts au niveau 1 (metabot.gg) : dégâts par seconde = % d'ATQ ÷ temps de recharge (× nombre de cibles), pondérés par leurs conditions (Minutie pour Flèche oppressive et Visée de flèche, ralentissement pour Flèche déchirante et Œil d'entrave, dégâts sur la durée pour Tirs concentrés) ; buffs comptés par leur temps actif (durée ÷ recharge). Sans guide ni profil de joueur.",
+        "skills": [
+          { "name": "Flèche à marque", "kind": "Active", "role": "Minutie en permanence", "priority": { "PvE": 1.0, "PvP": 0.95 }, "target": { "PvE": 10, "PvP": 10 },
+            "why": "146 % d'ATQ toutes les 10 s (15 % par seconde) et Minutie pendant 10 s : actif 100 % du temps si tu la relances à chaque recharge. Minutie donne +35 % à Visée de flèche (565 % chargée) et ouvre Flèche oppressive." },
+          { "name": "Flèche oppressive", "kind": "Active", "role": "Coup sous Minutie", "priority": { "PvE": 0.6, "PvP": 0.9 }, "target": { "PvE": 8, "PvP": 10 },
+            "why": "150 % d'ATQ toutes les 20 s, sans PM, sous Minutie, qui est active en permanence. Par lancer, c'est 2,6 fois Tir rapide (57 %) : à placer dès qu'elle est prête. L'étourdissement ne prend pas sur les boss, mais les dégâts restent." },
+          { "name": "Tirs concentrés", "kind": "Passive", "role": "Dégâts sur cible qui saigne / brûle", "priority": { "PvE": 0.85, "PvP": 0.5 }, "target": { "PvE": 10, "PvP": 5 },
+            "why": "50 % de chance de 31 % d'ATQ en plus par coup (une fois par seconde) sur une cible qui subit des dégâts sur la durée. Flèche perçante fait saigner toutes les 5 s et Flèche du Griffon brûle 10 s : la condition est presque toujours remplie, soit jusqu'à 15 % d'ATQ par seconde." },
+          { "name": "Œil d'entrave", "kind": "Passive", "role": "Dégâts sur cible ralentie", "priority": { "PvE": 0.8, "PvP": 0.65 }, "target": { "PvE": 10, "PvP": 6 },
+            "why": "50 % de chance de 35 % d'ATQ en plus par coup (une fois par seconde) sur une cible ralentie : Flèche à traquenard ralentit toutes les 15 s, ce qui ouvre aussi Flèche déchirante." },
+          { "name": "Arc de bénédiction", "kind": "Stigma", "role": "Buff de CRIT (8 % du temps)", "priority": { "PvE": 0.7, "PvP": 0.85 }, "target": { "PvE": 10, "PvP": 10 },
+            "why": "+200 CRIT et +100 Précision pendant 10 s, recharge 2 min : actif 8 % du temps. Le CRIT plafonne à 50 % sur les serveurs occidentaux : un Rôdeur équipé y est souvent déjà, et les +200 CRIT ne servent plus à rien." },
+          { "name": "Flèche explosive", "kind": "Stigma", "role": "Dégâts de zone", "priority": { "PvE": 0.8, "PvP": 0.5 }, "target": { "PvE": 10, "PvP": 5 },
+            "why": "253 % d'ATQ sur 4 cibles ; au niveau 5, recharge 30 s (8,4 % d'ATQ par seconde sur une cible) ; au niveau 10, +10 % sur une cible ralentie, ce qui est presque toujours le cas avec Flèche à traquenard." }
+        ],
+        "play": {
+          "PvE": {
+            "rotation": [
+              { "name": "Ouverture", "steps": ["Flèche à marque", "Pouvoir de Vaizel", "Tir de soutien", "Flèche à traquenard", "Flèche déchirante", "Visée de flèche"], "note": "Minutie, puis le ralentissement qui ouvre Flèche déchirante (226 %) et Œil d'entrave ; Visée de flèche chargée à 3 sous Pouvoir de Vaizel (+20 % d'ATQ)." },
+              { "name": "Boucle de 5 à 10 s", "steps": ["Flèche perçante", "Flèche à marque", "Flèche oppressive", "Tir rapide", "Tir précis"], "note": "Flèche perçante à chaque recharge (116 % sur 4 cibles toutes les 5 s, 23 % d'ATQ par seconde) : son saignement garde Tirs concentrés actif. Flèche à marque à chaque recharge pour ne jamais perdre Minutie." },
+              { "name": "Toutes les 15 à 30 s", "steps": ["Flèche à traquenard", "Flèche déchirante", "Flèche explosive", "Flèche de tempête", "Visée de flèche"], "note": "Le ralentissement d'abord : Flèche déchirante et Flèche explosive (niveau 10) frappent plus fort sur une cible ralentie." },
+              { "name": "Toutes les 45 s", "steps": ["Flèche du Griffon"], "note": "Flamme écarlate pendant 10 s : un second dégât sur la durée pour Tirs concentrés." }
+            ],
+            "tips": ["Ne laisse jamais tomber Minutie : Flèche à marque a la même recharge que la durée de Minutie.", "Visée de flèche toujours chargée à 3 : de 188 % à 565 % d'ATQ, +35 % sous Minutie.", "Flèche oppressive dès qu'elle est prête : 150 % par lancer, sans PM."]
+          },
+          "PvP": {
+            "rotation": [
+              { "name": "Contrôle", "steps": ["Flèche à marque", "Flèche oppressive", "Flèche à traquenard"], "note": "Minutie ouvre Flèche oppressive (40 % d'étourdissement 3 s) ; le ralentissement empêche la cible de revenir au contact." },
+              { "name": "Burst", "steps": ["Pouvoir de Vaizel", "Visée de flèche", "Flèche déchirante", "Flèche perçante"], "note": "Visée de flèche chargée pendant l'étourdissement." }
+            ],
+            "tips": ["Flèche de scellage (silence 5 s) contre les lanceurs de sorts.", "Souffle de mère nature (+10 % de Tolérance JcJ, +200 RÉS aux CRIT pendant 6 s) quand le burst adverse arrive."]
+          }
+        },
+        "differences": [
+          "Flèche explosive remplace Arc de bénédiction dans le set JcE : 253 % d'ATQ sur 4 cibles toutes les 30 s, contre +200 CRIT 10 s toutes les 2 min (8 % du temps), alors que le CRIT plafonne à 50 %.",
+          "Flèche oppressive monte (0,60 contre 0,25) : Minutie est active en permanence, et 150 % par lancer bat Tir rapide (57 %).",
+          "Flèche à marque passe premier (1,0 contre 0,90) : elle porte Minutie, donc +35 % sur Visée de flèche et l'accès à Flèche oppressive.",
+          "Tirs concentrés et Œil d'entrave montent au niveau 10 (contre 8) : la cible saigne toutes les 5 s (Flèche perçante) et reste ralentie (Flèche à traquenard toutes les 15 s)."
+        ]
+      },
       "skills": [
         { "name": "Visée de flèche", "kind": "Active", "role": "Tir chargé (plus gros dégâts)", "priority": { "PvE": 1.0, "PvP": 0.95 }, "target": { "PvE": 10, "PvP": 10 },
           "why": "Se charge jusqu'à 3 niveaux : de 188 % à 565 % d'ATQ (recharge 20 s), +35 % sous Minutie (Flèche à marque). Toujours chargée au maximum. Spécialisations : 8 +30 % de vitesse de compétence, 12 ignore Blocage et Esquive et touche en multi-coups, 16 dégâts en plus. +4 niveaux par le Daevanion JcE et JcJ ; à pousser au niveau 20." },
@@ -463,6 +696,61 @@
       "coreSkills": { "PvE": [], "PvP": [] },
       "notes": ["ATQ, VIT de combat et réduction de recharge d'abord, puis Précision, CRIT, Coup puissant et Coup parfait. Garde tes PM au-dessus de 50 % : Robe de la terre (CRIT) et Grâce d'amélioration (Boost de DGT) en dépendent.", "Rotation : Vœu de concentration, Amélioration des éléments, Explosion à retardement puis Entrave d'hiver (+20 % de Boost de DGT JcE pendant 5 s), Feu de l'enfer chargé à 3 dans cette fenêtre, Rideau de feu + Tempête de givre, puis Vent glacial, Flamme explosive, Harpon de feu ; Flèche de feu quand tout est en recharge. Feu de l'enfer à la main, hors macro.", "Daevanion JcE : Nezekan (VIT de combat, recharge), puis ATQ et Boost de DGT, puis Boost de DGT CRIT ; pas de Multi-coups ni de nœuds défensifs. +4 niveaux à Vœu de concentration, Flamme explosive, Harpon de feu, Flèche de feu, Vent glacial, Entrave d'hiver, Rafale de flammes, Feu de l'enfer, Marque de feu, Robe de la terre et Grâce d'amélioration. JcJ : +4 à Harpon de feu, Entrave d'hiver et Gel."],
       "skillsSource": "Guide Sorcier aion2-guides.info (tests de joueurs : EUTOPIA, Krix Domi, aLuckyRO), set d'arène de games.gg, noms et effets français de metabot.gg, et compétences réellement montées par 24 Sorciers niveau 45 (serveurs EU, niveau d'objet 798 à 2383). Les entrées « à valider » ne sont pas décrites par les guides.",
+      "play": {
+        "PvE": {
+          "rotation": [
+            { "name": "Ouverture", "steps": ["Vœu de concentration", "Amélioration des éléments", "Explosion à retardement", "Entrave d'hiver", "Feu de l'enfer"], "note": "Entrave d'hiver donne +20 % de Boost de DGT JcE pendant 5 s : charge Feu de l'enfer à 3 dans cette fenêtre." },
+            { "name": "Zones", "steps": ["Rideau de feu", "Tempête de givre"], "note": "Les deux zones de stigmas à la suite." },
+            { "name": "Boucle", "steps": ["Vent glacial", "Flamme explosive", "Harpon de feu", "Flèche de feu"], "note": "Ligne principale de la macro ; Flèche de feu quand tout est en recharge." }
+          ],
+          "tips": ["Feu de l'enfer à la main, hors macro.", "Garde tes PM au-dessus de 50 % (Robe de la terre, Grâce d'amélioration).", "Lignes empilées plutôt qu'une seule macro : environ 10 % de dégâts en plus selon un test de joueur."]
+        },
+        "PvP": {
+          "rotation": [
+            { "name": "Contrôle", "steps": ["Âme immobilisée", "Gel", "Gel explosif"], "note": "Silence puis gel." },
+            { "name": "Burst", "steps": ["Amélioration des éléments", "Entrave d'hiver", "Feu de l'enfer", "Harpon de feu"], "note": "Set d'arène : Amélioration des éléments, Bouclier protecteur en acier, Âme immobilisée, Hibernation." }
+          ],
+          "tips": ["Hibernation et Bouclier protecteur en acier pour survivre au burst adverse.", "Dissipation de choc sur le premier contrôle."]
+        }
+      },
+      "designed": {
+        "summary": "Le calcul confirme le cœur des joueurs : Flamme explosive et Harpon de feu font chacun environ 38 % d'ATQ par seconde, et Feu de l'enfer le burst. Il remonte Chaîne de glace pour les packs (92,5 % d'ATQ sur 4 cibles sans recharge) et baisse un peu Vœu de concentration, actif seulement 17 % du temps.",
+        "method": "Données des sorts au niveau 1 (metabot.gg) : dégâts par seconde = % d'ATQ ÷ temps de recharge (× nombre de cibles), pondérés par leurs conditions (marque de feu pour Flamme explosive, cible gelée pour Gel explosif, cible déséquilibrée) ; buffs comptés par leur temps actif ; coût en PM pris en compte (Robe de la terre et Grâce d'amélioration demandent des PM hauts). Sans guide ni profil de joueur.",
+        "skills": [
+          { "name": "Chaîne de glace", "kind": "Active", "role": "Zone sans recharge (packs)", "priority": { "PvE": 0.6, "PvP": 0.55 }, "target": { "PvE": 8, "PvP": 6 },
+            "why": "92,5 % d'ATQ sur 4 cibles, sans recharge, pour 120 PM : sur un pack, 3,7 fois les dégâts de Flèche de feu (63 % sur une cible). À alterner avec Flèche de feu, qui rend 100 PM, pour garder tes PM au-dessus de 50 %." },
+          { "name": "Vœu de concentration", "kind": "Active", "role": "Buff d'ATQ (17 % du temps)", "priority": { "PvE": 0.85, "PvP": 0.85 }, "target": { "PvE": 10, "PvP": 10 },
+            "why": "+10 % d'ATQ pendant 10 s toutes les 60 s : en moyenne environ +1,7 % d'ATQ. Il reste au niveau 10 pour sa spécialisation 16 (−10 s sur toutes les recharges), mais il passe derrière Flamme explosive et Harpon de feu." },
+          { "name": "Rafale de flammes", "kind": "Active", "role": "Dégâts sur cible déséquilibrée", "priority": { "PvE": 0.45, "PvP": 0.3 }, "target": { "PvE": 5, "PvP": 3 },
+            "why": "82,5 % d'ATQ, et seulement sur une cible déséquilibrée : quelques secondes par combat de boss. Les points servent plus à Chaîne de glace." },
+          { "name": "Vent glacial", "kind": "Active", "role": "Zone + immobilisation", "priority": { "PvE": 0.9, "PvP": 0.8 }, "target": { "PvE": 10, "PvP": 10 },
+            "why": "232 % d'ATQ sur 4 cibles toutes les 15 s : environ 62 % d'ATQ par seconde sur un pack, le meilleur sort de zone du Sorcier après Feu de l'enfer." }
+        ],
+        "play": {
+          "PvE": {
+            "rotation": [
+              { "name": "Ouverture", "steps": ["Amélioration des éléments", "Vœu de concentration", "Entrave d'hiver", "Feu de l'enfer", "Explosion à retardement"], "note": "Feu de l'enfer chargé pendant les 5 s de +20 % d'Entrave d'hiver : 1 018 % d'ATQ sur 4 cibles." },
+              { "name": "Boucle de 5 s", "steps": ["Flamme explosive", "Harpon de feu", "Flèche de feu"], "note": "Les deux sorts à 5 s de recharge font l'essentiel : 193 % et 192,5 % d'ATQ, soit environ 38 % par seconde chacun." },
+              { "name": "Packs", "steps": ["Vent glacial", "Rideau de feu", "Tempête de givre", "Chaîne de glace"], "note": "Vent glacial (232 % × 4) puis les zones de stigmas ; Chaîne de glace tant que les PM restent au-dessus de 50 %." }
+            ],
+            "tips": ["PM au-dessus de 50 % : Robe de la terre donne +105 CRIT, Grâce d'amélioration +20 % de dégâts JcE (sous 25 % de PM, plus rien).", "Flèche de feu rend 100 PM : à placer dès que les PM baissent.", "Feu de l'enfer toujours chargé à 3, dans la fenêtre d'Entrave d'hiver."]
+          },
+          "PvP": {
+            "rotation": [
+              { "name": "Contrôle", "steps": ["Âme immobilisée", "Entrave d'hiver", "Gel"], "note": "Silence, ralentissement, gel." },
+              { "name": "Burst", "steps": ["Amélioration des éléments", "Feu de l'enfer", "Flamme explosive", "Harpon de feu"], "note": "Feu de l'enfer pendant que la cible est contrôlée." }
+            ],
+            "tips": ["Hibernation pour encaisser un burst, Bouclier protecteur en acier en début de combat.", "Harpon de feu (spécialisation 8) réduit les soins reçus de la cible de 60 %."]
+          }
+        },
+        "differences": [
+          "Chaîne de glace monte (0,60 contre 0,45) : 92,5 % d'ATQ sur 4 cibles sans recharge, nettement mieux que Flèche de feu sur un pack.",
+          "Vœu de concentration baisse un peu (0,85 contre 0,95) : +10 % d'ATQ actif 17 % du temps ; il reste au niveau 10 pour sa spécialisation 16.",
+          "Rafale de flammes baisse (0,45 contre 0,60) : seulement pendant le déséquilibre.",
+          "Vent glacial monte un peu (0,90 contre 0,85) : 232 % sur 4 cibles toutes les 15 s, le meilleur sort de zone après Feu de l'enfer.",
+          "Stigmas : même set que les joueurs, le calcul arrive au même ordre."
+        ]
+      },
       "skills": [
         { "name": "Feu de l'enfer", "kind": "Active", "role": "Burst chargé (plus gros dégâts)", "priority": { "PvE": 1.0, "PvP": 0.95 }, "target": { "PvE": 10, "PvP": 10 },
           "why": "Les plus gros dégâts des relevés de boss : se charge jusqu'à 3 (recharge 45 s), 4 cibles. Spécialisations : 8 +30 % de vitesse de compétence, 12 ignore Blocage et Esquive et touche en multi-coups, 16 −15 s de recharge. À charger pendant les 5 s d'Entrave d'hiver, à la main et hors macro." },
@@ -546,6 +834,71 @@
         "PvP": ["Combustion", "Fusion des éléments", "Protection d'esprit", "Communion d'esprit"]
       },
       "skillsSource": "Guides communautaires Spiritmaster (Mmoexp, Vortex Gaming, GamesFuze ; données KR/TW traduites). Les entrées « à valider » ne sont pas documentées par ces guides.",
+      "play": {
+        "PvE": {
+          "rotation": [
+            { "name": "Ouverture", "steps": ["Attaque conjointe : Malédiction", "Invocation : Esprit de l'eau", "Domination spatiale", "Invocation : Esprit ancien", "Fusion des éléments"], "note": "Malédiction d'abord (combo avec Esprit ancien), Domination spatiale juste après une invocation, Fusion des éléments dès les 4 éléments réunis." },
+            { "name": "Boucle", "steps": ["Combustion", "Choc de givre", "Attaque conjointe : Malédiction", "Invocation : Esprit du vent"], "note": "Combustion en dégâts principaux (clic droit), Choc de givre (clic gauche) pour les buffs et les PM ; Malédiction gardée active." },
+            { "name": "Avant le burst", "steps": ["Attaque conjointe : Corrosion", "Fusion des éléments"], "note": "Corrosion baisse toutes les résistances de la cible." }
+          ],
+          "tips": ["Évite d'enchaîner Combustion sur les boss qui bougent beaucoup (incantation longue).", "Esprit de l'eau puis Esprit du vent : les deux esprits que les guides jugent les plus rentables.", "Bénédiction ardente : buff de dégâts pour le groupe."]
+        },
+        "PvP": {
+          "rotation": [
+            { "name": "Contrôle", "steps": ["Cri de l'âme", "Domination spatiale"], "note": "Peur et baisse de DÉF, puis ralentissement pour garder la distance." },
+            { "name": "Burst", "steps": ["Invocation : Esprit ancien", "Attaque conjointe : Malédiction", "Fusion des éléments"], "note": "Esprit ancien avec Malédiction, le burst universel des guides." }
+          ],
+          "tips": ["Drainage en choix défensif.", "Dissipation de choc sur le premier contrôle."]
+        }
+      },
+      "designed": {
+        "summary": "Le Spiritualiste vit de ses esprits : chaque compétence d'esprit lance Domination spatiale (86 % d'ATQ sur 4 cibles) et donne un élément pour Fusion des éléments. Les 4 invocations (toutes à 15 s de recharge) montent donc ensemble, avec Revitalisation d'esprit qui les fait revenir plus vite et Avènement d'esprit, actif en permanence. Drainage (206 % toutes les 30 s) remplace Assaut anéantissant, deux fois moins rentable.",
+        "method": "Données des sorts au niveau 1 (metabot.gg, noms anglais rapprochés des noms français) : dégâts par seconde = % d'ATQ ÷ temps de recharge (× nombre de cibles), pondérés par leurs conditions (compétence d'esprit pour Domination spatiale, dégâts sur la durée pour Renversement consécutif, déséquilibre pour Rafale continue) ; buffs comptés par leur temps actif. Certaines descriptions sont coupées sur la source : ces effets ne sont pas comptés. Sans guide ni profil de joueur.",
+        "skills": [
+          { "name": "Domination spatiale", "kind": "Active", "role": "Zone à chaque compétence d'esprit", "priority": { "PvE": 0.9, "PvP": 0.8 }, "target": { "PvE": 10, "PvP": 10 },
+            "why": "86 % d'ATQ sur 4 cibles chaque fois qu'un esprit utilise une compétence : avec 4 invocations toutes les 15 s, au moins 4 déclenchements par cycle, soit environ 23 % d'ATQ par seconde sur une cible. Plus que n'importe quelle invocation seule." },
+          { "name": "Invocation : Esprit de la terre", "kind": "Active", "role": "Invocation (élément + Domination)", "priority": { "PvE": 0.65, "PvP": 0.55 }, "target": { "PvE": 10, "PvP": 10 },
+            "why": "135 % d'ATQ sur une cible toutes les 15 s (9 % par seconde, presque autant que l'Esprit de l'eau, 145 %), plus un déclenchement de Domination spatiale et un élément pour Fusion des éléments." },
+          { "name": "Invocation : Esprit du feu", "kind": "Active", "role": "Invocation (élément + Domination)", "priority": { "PvE": 0.6, "PvP": 0.4 }, "target": { "PvE": 8, "PvP": 5 },
+            "why": "120 % d'ATQ sur 4 cibles toutes les 15 s : 8 % par seconde sur un boss, 32 % sur un pack. Comme les autres esprits, elle lance Domination spatiale et donne un élément : la laisser au niveau 1 retire une source de Fusion des éléments." },
+          { "name": "Rafale continue", "kind": "Active", "role": "Dégâts sur cible déséquilibrée", "priority": { "PvE": 0.25, "PvP": 0.3 }, "target": { "PvE": 3, "PvP": 5 },
+            "why": "82,5 % d'ATQ, seulement sur une cible déséquilibrée : quelques secondes par combat. Combustion (67 % sur 4 cibles) fait mieux le reste du temps." },
+          { "name": "Avènement d'esprit", "kind": "Passive", "role": "Dégâts après une invocation", "priority": { "PvE": 0.9, "PvP": 0.7 }, "target": { "PvE": 10, "PvP": 10 },
+            "why": "Pendant 10 s après une invocation, 50 % de chance de 26 % d'ATQ en plus à chaque coup. Avec 4 invocations à 15 s de recharge, la fenêtre est ouverte en permanence : environ +13 % d'ATQ sur chaque Combustion." },
+          { "name": "Revitalisation d'esprit", "kind": "Passive", "role": "Invocations plus fréquentes", "priority": { "PvE": 0.8, "PvP": 0.6 }, "target": { "PvE": 10, "PvP": 10 },
+            "why": "11 % de chance à chaque coup de retirer 1 s aux invocations : à un coup par seconde, elles reviennent environ 10 % plus vite, donc 10 % de Domination spatiale, d'éléments et d'Avènement d'esprit en plus." },
+          { "name": "Concentration mentale", "kind": "Passive", "role": "Chance d'état mental", "priority": { "PvE": 0.45, "PvP": 0.6 }, "target": { "PvE": 5, "PvP": 8 },
+            "why": "+11 % de chance d'état mental (la peur de Cri de l'âme) et +0,3 % de Coup puissant : presque rien pour les dégâts en JcE ; plus utile en JcJ." },
+          { "name": "Drainage", "kind": "Stigma", "role": "Gros coup toutes les 30 s", "priority": { "PvE": 0.75, "PvP": 0.75 }, "target": { "PvE": 10, "PvP": 15 },
+            "why": "206 % d'ATQ toutes les 30 s (6,9 % par seconde) et −300 PM pour la cible : le meilleur stigma de dégâts directs après Esprit ancien. Assaut anéantissant (216 % toutes les 60 s) fait moitié moins." },
+          { "name": "Attaque conjointe : Assaut anéantissant", "kind": "Stigma", "role": "Attaque conjointe (60 s)", "priority": { "PvE": 0.45, "PvP": 0.35 }, "target": { "PvE": 5, "PvP": 5 },
+            "why": "100 % d'ATQ plus 116 % pour l'esprit, toutes les 60 s : 3,6 % d'ATQ par seconde, moitié moins que Drainage." }
+        ],
+        "play": {
+          "PvE": {
+            "rotation": [
+              { "name": "Ouverture", "steps": ["Attaque conjointe : Malédiction", "Attaque conjointe : Corrosion", "Invocation : Esprit de l'eau", "Invocation : Esprit du vent", "Invocation : Esprit de la terre", "Invocation : Esprit du feu", "Fusion des éléments"], "note": "Les deux dégâts sur la durée d'abord (ils ouvrent Renversement consécutif), puis les 4 invocations : chacune lance Domination spatiale et donne un élément ; à 4 éléments, Fusion des éléments." },
+              { "name": "Burst (toutes les 90 s)", "steps": ["Invocation : Esprit ancien", "Fusion des éléments", "Drainage", "Fusion des éléments"], "note": "Pendant 30 s, chaque compétence de l'Esprit ancien donne l'état 4 éléments : Fusion des éléments à chaque fois." },
+              { "name": "Boucle", "steps": ["Combustion", "Attaque conjointe : Malédiction", "Choc de givre"], "note": "Combustion (67 % × 4) tant que les PM suivent, Choc de givre (+100 PM) quand ils baissent ; Malédiction toutes les 10 s, et chaque invocation dès qu'elle revient." }
+            ],
+            "tips": ["Relance chaque invocation dès qu'elle revient : c'est elle qui déclenche Domination spatiale, Avènement d'esprit et les éléments.", "Garde toujours un dégât sur la durée sur la cible (Malédiction, Corrosion) : Renversement consécutif ajoute 23,5 % d'ATQ une fois sur deux.", "Drainage toutes les 30 s : 206 % d'ATQ, ton meilleur stigma de dégâts directs après Esprit ancien."]
+          },
+          "PvP": {
+            "rotation": [
+              { "name": "Contrôle", "steps": ["Cri de l'âme", "Invocation : Esprit de l'eau", "Domination spatiale"], "note": "Peur 5 s (70 %), puis l'invocation lance Domination spatiale et son ralentissement." },
+              { "name": "Burst", "steps": ["Invocation : Esprit ancien", "Attaque conjointe : Malédiction", "Fusion des éléments", "Drainage"], "note": "Drainage retire aussi 300 PM : vise un soigneur ou un lanceur de sorts." }
+            ],
+            "tips": ["Dissipation de choc sur le premier contrôle.", "Garde la distance : tout le kit tire à 20 m."]
+          }
+        },
+        "differences": [
+          "Domination spatiale monte (0,90 contre 0,70) : 86 % sur 4 cibles à chaque compétence d'esprit, environ 23 % d'ATQ par seconde avec les 4 invocations.",
+          "Les 4 invocations montent ensemble (Esprit du feu au niveau 8 au lieu de 1, Esprit de la terre 0,65 contre 0,50) : chacune donne un élément et un déclenchement de Domination spatiale.",
+          "Avènement d'esprit (0,90 contre 0,80) et Revitalisation d'esprit (0,80 contre 0,55) montent : la fenêtre de 10 s après invocation reste ouverte en permanence, et les invocations reviennent environ 10 % plus vite.",
+          "Concentration mentale baisse en JcE (0,45 contre 0,80) : +11 % de chance d'état mental et +0,3 % de Coup puissant, presque rien pour les dégâts.",
+          "Drainage remplace Assaut anéantissant dans le set JcE : 206 % toutes les 30 s contre 216 % toutes les 60 s."
+        ]
+      },
       "skills": [
         { "name": "Combustion", "kind": "Active", "role": "Dégâts principaux", "priority": { "PvE": 1.0, "PvP": 0.9 }, "target": { "PvE": 10, "PvP": 10 },
           "why": "Ta principale source de dégâts (clic droit) : chaque niveau augmente directement ton DPS. Évite de l'enchaîner sur les boss qui bougent beaucoup (incantation longue)." },
@@ -625,6 +978,59 @@
       "coreSkills": { "PvE": [], "PvP": [] },
       "notes": ["Soigneur qui frappe : Soins améliorés convertit l'ATQ en Boost de soins, donc l'ATQ prime sur la DÉF, et Condamnation fait environ la moitié des dégâts. Repère de raid : au moins 1 000 Précision et 1 000 CRIT ; pas de RÉS aux altérations, d'Esquive ni de lignes défensives en JcE.", "Rotation : Enchaînement de douleur (marque la cible, sans quoi Condamnation ne part pas), Sceau d'affaiblissement, Prière de boost + Châtiment de la Terre (Condamnation toujours critique sur la cible au niveau 5), puis Condamnation à chaque recharge ; Fulguration chargée en début de combat et à chaque recharge ; Sanction de la terre entre les deux pour annuler les animations et récupérer des PM. Lumière de protection reste allumée (pas avec un Aède : son mantra la remplace).", "Daevanion JcE : +4 à Condamnation, Aura sacrée et Fulguration ; cases de compétences actives jusqu'au niveau 12 d'abord. JcJ : +4 à Halo de récupération, Enchaînement de douleur, Condamnation et Éclair de jugement. Éviter les cases « PM +50 »."],
       "skillsSource": "Guide Clerc aion2-guides.info (tests de joueurs : Whelps, Lucia, Kaeria, aLuckyRO), noms et effets français de metabot.gg, et compétences réellement montées par 24 Clercs niveau 45 (serveurs EU, niveau d'objet 743 à 2617). Les entrées « à valider » ne sont pas décrites par les guides.",
+      "play": {
+        "PvE": {
+          "rotation": [
+            { "name": "Ouverture", "steps": ["Lumière de protection", "Enchaînement de douleur", "Sceau d'affaiblissement", "Prière de boost", "Châtiment de la Terre", "Fulguration"], "note": "Lumière de protection reste allumée (sauf avec un Aède) ; la marque d'Enchaînement de douleur avant tout, sinon Condamnation ne part pas ; Fulguration chargée au maximum." },
+            { "name": "Ligne Prière", "steps": ["Prière de boost", "Châtiment de la Terre", "Condamnation", "Enchaînement de douleur"], "note": "Prière de boost en bas de la ligne (priorité la plus haute)." },
+            { "name": "Ligne Affaiblissement", "steps": ["Sceau d'affaiblissement", "Aura sacrée", "Lumière de restauration", "Éclair de jugement"], "note": "Macro : une étape de la ligne Prière, puis une de cette ligne, 10 ms chacune." },
+            { "name": "Remplissage", "steps": ["Sanction de la terre"], "note": "Entre deux sorts : annule les animations et rend des PM." }
+          ],
+          "tips": ["Fulguration chargée en début de combat puis à chaque recharge.", "Avec un Aède : retire Lumière de protection (son mantra la remplace) et lance Sceau d'affaiblissement à la main.", "L'ATQ prime sur la DÉF : Soins améliorés convertit l'ATQ en Boost de soins."]
+        },
+        "PvP": {
+          "rotation": [
+            { "name": "Pression", "steps": ["Enchaînement de douleur", "Condamnation", "Éclair de jugement", "Fulguration"], "note": "Enchaînement de douleur peut renverser 3 s (spécialisation 8)." },
+            { "name": "Soins", "steps": ["Halo de récupération", "Lumière de restauration"], "note": "Halo de récupération retire aussi un affaiblissement." }
+          ],
+          "tips": ["Set JcJ : Prière de boost 20, Lumière de protection 20, Pouvoir de Yustiel 15, Voix de l'anéantissement 10 (Absolution en JcJ de groupe).", "Dissipation de choc sur le premier contrôle."]
+        }
+      },
+      "designed": {
+        "summary": "Le calcul confirme le cœur des joueurs : Condamnation fait 192 % sur 4 cibles toutes les 3 s (64 % d'ATQ par seconde), loin devant le reste. Il remonte ce qui l'ouvre et ce qui affaiblit le boss : Enchaînement de douleur (−10 % de Tolérance JcE avec la spécialisation 12) et Sceau d'affaiblissement (−15 % de DÉF, et 11 % d'ATQ par seconde).",
+        "method": "Données des sorts au niveau 1 (metabot.gg) : dégâts par seconde = % d'ATQ ÷ temps de recharge (× nombre de cibles), pondérés par leurs conditions (marque d'Enchaînement de douleur pour Condamnation, déséquilibre pour Foudre déferlante) ; buffs et affaiblissements comptés par leur temps actif (durée ÷ recharge). Sans guide ni profil de joueur.",
+        "skills": [
+          { "name": "Sceau d'affaiblissement", "kind": "Active", "role": "Baisse de DÉF + dégâts", "priority": { "PvE": 0.9, "PvP": 0.7 }, "target": { "PvE": 10, "PvP": 8 },
+            "why": "113 % d'ATQ sur 4 cibles toutes les 10 s, soit 11 % par seconde (presque autant qu'Aura sacrée, 14 %), plus des dégâts sur la durée ; spécialisation 8 : −15 % de DÉF de la cible tant qu'ils durent, pour tout le groupe." },
+          { "name": "Enchaînement de douleur", "kind": "Active", "role": "Marque (ouvre Condamnation)", "priority": { "PvE": 0.9, "PvP": 0.9 }, "target": { "PvE": 10, "PvP": 10 },
+            "why": "152 % d'ATQ sur 4 cibles toutes les 20 s et la marque sans laquelle Condamnation (ta meilleure compétence, 64 % d'ATQ par seconde) ne part pas. Spécialisation 12 : −10 % de Tolérance aux DGT JcE du boss, pour tout le groupe ; le niveau 10 de base t'en rapproche." },
+          { "name": "Foudre déferlante", "kind": "Active", "role": "Dégâts pendant le déséquilibre", "priority": { "PvE": 0.4, "PvP": 0.2 }, "target": { "PvE": 5, "PvP": 1 },
+            "why": "113 % d'ATQ, et seulement sur une cible déséquilibrée : quelques secondes par combat. Les points rapportent plus dans Sceau d'affaiblissement." }
+        ],
+        "play": {
+          "PvE": {
+            "rotation": [
+              { "name": "Ouverture", "steps": ["Lumière de protection", "Enchaînement de douleur", "Sceau d'affaiblissement", "Prière de boost", "Châtiment de la Terre", "Fulguration"], "note": "La marque et −15 % de DÉF avant les gros coups : Fulguration chargée (983 % × 4) tombe sur une cible affaiblie, sous Prière de boost (+20 % d'ATQ)." },
+              { "name": "Boucle de 3 s", "steps": ["Condamnation", "Sanction de la terre", "Éclair de jugement"], "note": "Condamnation à chaque recharge ; sur la cible de Châtiment de la Terre, elle critique toujours et la spécialisation 12 remet sa recharge à zéro." },
+              { "name": "Toutes les 10 à 30 s", "steps": ["Sceau d'affaiblissement", "Enchaînement de douleur", "Aura sacrée", "Châtiment de la Terre", "Lumière de restauration"], "note": "Sceau d'affaiblissement à chaque recharge pour garder −15 % de DÉF ; Enchaînement de douleur avant qu'il expire, sinon Condamnation s'arrête." }
+            ],
+            "tips": ["Sanction de la terre entre deux sorts : annule l'animation, rend 110 PM et, avec la spécialisation 12, retire 7 s à Fulguration à chaque Décharge.", "Soigne d'abord avec ce qui ne coûte pas de temps : Faveur éclatante en attaquant, Lumière de restauration à la recharge.", "Avec un Aède : retire Lumière de protection, son mantra la remplace."]
+          },
+          "PvP": {
+            "rotation": [
+              { "name": "Pression", "steps": ["Enchaînement de douleur", "Sceau d'affaiblissement", "Condamnation", "Fulguration"], "note": "Renversement possible (Enchaînement de douleur, spécialisation 8), −15 % de DÉF, puis les deux gros coups." },
+              { "name": "Soins", "steps": ["Halo de récupération", "Lumière de restauration", "Pouvoir de Yustiel"], "note": "Pouvoir de Yustiel (+10 % de Tolérance JcJ au groupe) quand le burst adverse arrive." }
+            ],
+            "tips": ["Dissipation de choc sur le premier contrôle.", "Voix de l'anéantissement (niveau 10) retire les boucliers protecteurs."]
+          }
+        },
+        "differences": [
+          "Sceau d'affaiblissement monte (0,90 contre 0,75) : 11 % d'ATQ par seconde et −15 % de DÉF du boss pour tout le groupe.",
+          "Enchaînement de douleur monte au niveau 10 (contre 8) : il ouvre Condamnation, et sa spécialisation 12 retire 10 % de Tolérance JcE au boss.",
+          "Foudre déferlante baisse (0,40 contre 0,55) : seulement pendant le déséquilibre.",
+          "Stigmas : même set que les joueurs (Châtiment de la Terre, Prière de boost, Lumière de protection, Aura noble), le calcul arrive au même ordre."
+        ]
+      },
       "skills": [
         { "name": "Condamnation", "kind": "Active", "role": "Dégâts principaux (cible enchaînée)", "priority": { "PvE": 1.0, "PvP": 1.0 }, "target": { "PvE": 10, "PvP": 10 },
           "why": "192 % d'ATQ sur 4 cibles toutes les 3 s, seulement sur une cible sous Enchaînement de douleur : environ la moitié des dégâts du Clerc. Spécialisations : 8 jusqu'à +12 % sur peu de cibles, 12 un critique remet la recharge à zéro, 16 multi-coups. +4 niveaux par le Daevanion JcE et JcJ ; à pousser au niveau 20." },
@@ -709,6 +1115,63 @@
       "coreSkills": { "PvE": [], "PvP": [] },
       "notes": ["Soutien qui frappe : les passifs et les stigmas du guide visent les dégâts (ATQ, CRIT, Boost de DGT CRIT, Coup puissant), le Mantra de l'invincibilité porte le groupe. Précision nécessaire tôt, sinon les boss esquivent et parent. Pierres de mana : ATQ, CRIT, Précision. Anneaux : niveaux de Coup ombreux, Coup fracassant et Frappe tournoyante.", "Rotation : Pouvoir de la tempête, Frappe de ruée sur le boss, puis la ligne Coup ombreux (Coup percutant, Rage de Marchutan, Frappe tournoyante, Coup ombreux) et Frappe incandescente en remplissage ; Coup fracassant tenu sur le clic gauche entre les coups. Mantra de l'invincibilité et Mantra de sprint sont des interrupteurs à allumer une fois. Avec un Clerc, ton mantra remplace sa Lumière de protection.", "Daevanion JcE : +4 à Coup ombreux, Frappe incandescente, Coup fracassant et Frappe tournoyante. JcJ : +4 à Frappe déferlante, Dissipation de choc et Coup percutant. JcJ : ouvrir avec Coup percutant pour forcer la Dissipation de choc adverse, temporiser, puis étourdir, renverser et frapper."],
       "skillsSource": "Guide Aède aion2-guides.info (tests de joueurs : Grobs, Arthars), noms et effets français de metabot.gg, et compétences réellement montées par 24 Aèdes niveau 45 (serveurs EU, niveau d'objet 827 à 2469). Deux compétences s'appellent « Coup fracassant » : l'attaque de base (active) et un stigma JcJ. Les entrées « à valider » ne sont pas décrites par les guides.",
+      "play": {
+        "PvE": {
+          "rotation": [
+            { "name": "Ouverture", "steps": ["Mantra de l'invincibilité", "Mantra de sprint", "Pouvoir de la tempête", "Frappe de ruée"], "note": "Les deux mantras sont des interrupteurs à allumer une fois ; Pouvoir de la tempête, puis Frappe de ruée sur le boss." },
+            { "name": "Ligne Coup ombreux", "steps": ["Coup percutant", "Rage de Marchutan", "Frappe tournoyante", "Coup ombreux"], "note": "Coup ombreux en bas de la ligne (priorité la plus haute)." },
+            { "name": "Remplissage", "steps": ["Frappe incandescente", "Coup fracassant"], "note": "Macro : ligne Coup ombreux puis Frappe incandescente ; Coup fracassant tenu sur le clic gauche." }
+          ],
+          "tips": ["Avec un Clerc, ton mantra remplace sa Lumière de protection.", "Précision nécessaire tôt, sinon les boss esquivent et parent.", "Défense ciblée sur les grosses attaques du boss."]
+        },
+        "PvP": {
+          "rotation": [
+            { "name": "Ouverture", "steps": ["Coup percutant"], "note": "Force la Dissipation de choc adverse, puis temporise jusqu'au retour de tes contrôles." },
+            { "name": "Combo", "steps": ["Coup percutant", "Frappe déferlante", "Coup ombreux", "Frappe tournoyante"], "note": "Étourdir, renverser, frapper." }
+          ],
+          "tips": ["Set JcJ solo : Mantra de l'invincibilité, Bénédiction protectrice 15, Rage de Marchutan 10, Coup fracassant (stigma).", "Mantra de sprint en arène à la place du stigma Coup fracassant."]
+        }
+      },
+      "designed": {
+        "summary": "Coup ombreux (210 % toutes les 5 s, 42 % d'ATQ par seconde) et Frappe tournoyante (700 % × 4 toutes les 30 s) restent le cœur. Le calcul remonte deux compétences que les joueurs délaissent : Frappe brûlante (182 % × 4 toutes les 10 s, sans PM : 18 % par seconde) et Frappe de ruée (190 % × 4 et 100 PM toutes les 15 s). Le stigma Coup fracassant (−30 % de DÉF) prend la place de Défense ciblée, qui ne rapporte rien à un Aède.",
+        "method": "Données des sorts au niveau 1 (metabot.gg) : dégâts par seconde = % d'ATQ ÷ temps de recharge (× nombre de cibles), pondérés par leurs conditions (étourdissement pour Frappe déferlante, déséquilibre pour Rafale déferlante) ; buffs et affaiblissements comptés par leur temps actif (durée ÷ recharge) ; PM pris en compte (Frappe incandescente coûte 120 PM). Sans guide ni profil de joueur.",
+        "skills": [
+          { "name": "Frappe brûlante", "kind": "Active", "role": "Zone sans PM", "priority": { "PvE": 0.75, "PvP": 0.5 }, "target": { "PvE": 10, "PvP": 5 },
+            "why": "182 % d'ATQ sur 4 cibles toutes les 10 s, sans coût en PM : 18 % d'ATQ par seconde sur une seule cible, la troisième meilleure valeur de l'Aède après Coup ombreux (42 %) et Frappe tournoyante (23 %), devant Coup percutant (15 %)." },
+          { "name": "Frappe de ruée", "kind": "Active", "role": "Dégâts + PM", "priority": { "PvE": 0.8, "PvP": 0.8 }, "target": { "PvE": 10, "PvP": 10 },
+            "why": "190 % d'ATQ sur 4 cibles toutes les 15 s (13 % par seconde) et 100 PM rendus : de quoi payer presque une Frappe incandescente (229 % × 4, 120 PM) de plus à chaque recharge. Pas seulement une compétence d'engagement." },
+          { "name": "Promesse de la terre", "kind": "Passive", "role": "Baisse la Tolérance de la cible", "priority": { "PvE": 0.9, "PvP": 0.6 }, "target": { "PvE": 10, "PvP": 6 },
+            "why": "Chaque attaque retire 5,4 % de Tolérance aux DGT JcE à la cible pendant 5 s : un Aède frappe sans arrêt, donc l'effet est permanent, et tout le groupe frappe environ 5 % plus fort." },
+          { "name": "Coup fracassant", "kind": "Stigma", "role": "Baisse de DÉF avant le burst", "priority": { "PvE": 0.75, "PvP": 0.75 }, "target": { "PvE": 5, "PvP": 1 },
+            "why": "Stigma distinct de l'attaque de base : 218 % d'ATQ toutes les 45 s (4,8 % par seconde) et −30 % de DÉF pendant 5 s. Juste avant Frappe tournoyante (700 % × 4), c'est le plus gros coup de l'Aède qui tombe sur une DÉF réduite." },
+          { "name": "Défense ciblée", "kind": "Stigma", "role": "Blocage garanti", "priority": { "PvE": 0.5, "PvP": 0.4 }, "target": { "PvE": 1, "PvP": 1 },
+            "why": "Blocage garanti toutes les 20 s qui rend PM et endurance ; l'Aède n'a aucun passif de dégâts déclenché par un blocage (Défense en croix ne rend qu'un petit soin). Utile seulement contre une attaque précise d'un boss." }
+        ],
+        "play": {
+          "PvE": {
+            "rotation": [
+              { "name": "Ouverture", "steps": ["Mantra de l'invincibilité", "Pouvoir de la tempête", "Frappe de ruée", "Coup fracassant (stigma)", "Frappe tournoyante", "Coup ombreux"], "note": "Pouvoir de la tempête (+20 % de VIT de combat, −20 % de recharges) d'abord ; le stigma Coup fracassant pose −30 % de DÉF pour 5 s, juste avant Frappe tournoyante." },
+              { "name": "Boucle de 5 s", "steps": ["Coup ombreux", "Frappe incandescente", "Coup fracassant"], "note": "Coup ombreux à chaque recharge ; Frappe incandescente (229 % × 4) tant que les PM suivent, Coup fracassant (+100 PM) quand ils baissent." },
+              { "name": "Toutes les 10 à 15 s", "steps": ["Frappe brûlante", "Frappe de ruée", "Coup percutant"], "note": "Frappe brûlante à chaque recharge (sans PM), Frappe de ruée pour ses 100 PM." },
+              { "name": "Burst (30 à 45 s)", "steps": ["Coup fracassant (stigma)", "Frappe tournoyante", "Rage de Marchutan"], "note": "Une Frappe tournoyante sur deux tombe dans la fenêtre de −30 % de DÉF." }
+            ],
+            "tips": ["Mantra de l'invincibilité toujours allumé : +10,5 % de Boost et de Tolérance aux DGT JcE pour tout le groupe.", "Promesse de la terre ne tient que si tu frappes : ne laisse pas de trou de plus de 5 s.", "Avec un Clerc, ton mantra remplace sa Lumière de protection."]
+          },
+          "PvP": {
+            "rotation": [
+              { "name": "Ouverture", "steps": ["Coup percutant"], "note": "Force la Dissipation de choc adverse." },
+              { "name": "Combo", "steps": ["Coup percutant", "Frappe déferlante", "Coup fracassant (stigma)", "Coup ombreux", "Frappe tournoyante"], "note": "Étourdissement, renversement 3 s, −30 % de DÉF, puis le burst." }
+            ],
+            "tips": ["Temporise jusqu'au retour de Coup percutant (15 s).", "Bénédiction protectrice au niveau 15 : Promesse du vent ×1,5."]
+          }
+        },
+        "differences": [
+          "Frappe brûlante monte au niveau 10 (contre 3) : 182 % d'ATQ sur 4 cibles toutes les 10 s, sans PM, soit 18 % d'ATQ par seconde.",
+          "Frappe de ruée monte (0,80 contre 0,55) : 190 % sur 4 cibles et 100 PM toutes les 15 s, qui paient les Frappes incandescentes.",
+          "Promesse de la terre monte au niveau 10 (contre 8) : l'Aède frappe en continu, donc −5,4 % de Tolérance JcE en permanence sur la cible.",
+          "Le stigma Coup fracassant remplace Défense ciblée dans le set JcE : −30 % de DÉF juste avant Frappe tournoyante, alors qu'un blocage ne déclenche aucun passif de dégâts chez l'Aède."
+        ]
+      },
       "skills": [
         { "name": "Coup ombreux", "kind": "Active", "role": "Dégâts principaux", "priority": { "PvE": 1.0, "PvP": 0.95 }, "target": { "PvE": 10, "PvP": 10 },
           "why": "210 % d'ATQ toutes les 5 s : les dégâts principaux de l'Aède. Spécialisations : 8 critique, 12 enchaînement de frappe perçante, 16 plus de temps de recharge, 20 critique garanti. +4 niveaux par le Daevanion JcE ; en bas de la ligne de macro (priorité la plus haute)." },

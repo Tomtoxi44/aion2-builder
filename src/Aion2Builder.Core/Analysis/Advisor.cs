@@ -10,7 +10,7 @@ public sealed class Advisor(GameDatabase db)
     public AdviceReport Analyze(CharacterSnapshot c, GameMode mode, PlayerInputs? inputs = null, PetCollection? pets = null)
     {
         inputs ??= new PlayerInputs();
-        var profile = db.Resolve(c.ClassCode, mode);
+        var profile = db.Resolve(c.ClassCode, mode, inputs.UsesDesigned);
         var petAdvisor = new PetAdvisor(db);
         var stats = new StatAnalyzer(db, petAdvisor.Sources(pets));
         var sp = stats.Profile(c, profile);
