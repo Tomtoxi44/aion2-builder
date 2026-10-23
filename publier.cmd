@@ -4,6 +4,8 @@ rem Ferme l'application avant : l'exe en cours d'utilisation ne peut pas etre re
 cd /d "%~dp0"
 dotnet publish src\Aion2Builder.App -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o publish
 del /q publish\*.pdb 2>nul
+rem Ancienne version renommee pendant qu'elle tournait : supprimee des qu'elle est fermee.
+del /q publish\*.ancien.exe 2>nul
 echo.
 echo Executable : %~dp0publish\Aion2Builder.exe
 pause
