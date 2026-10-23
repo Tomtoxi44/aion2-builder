@@ -18,7 +18,16 @@ Deux interfaces partagent le même moteur :
 | `src/Aion2Builder.Cli` | Ligne de commande |
 | `src/Aion2Builder.App` | Interface graphique Avalonia (écrite en C#, sans XAML) |
 
-## Utilisation
+## Lancer l'application (Windows)
+
+1. Double-clique sur **`publier.cmd`** : il crée `publish\Aion2Builder.exe` (un seul fichier, environ 30 Mo).
+2. Double-clique sur **`publish\Aion2Builder.exe`** (ou sur un raccourci vers lui sur le bureau).
+
+Après une mise à jour du code, ferme l'application et relance `publier.cmd`. L'exe utilise le runtime .NET 10
+(installé avec le SDK). Si Windows refuse de le lancer (« Une stratégie de contrôle d'application a bloqué ce
+fichier »), c'est Smart App Control : voir la dernière section.
+
+## Utilisation en ligne de commande
 
 ```bash
 dotnet run --project src/Aion2Builder.Cli -- advise Lyra --server Azphel --region eu --mode both
