@@ -89,7 +89,9 @@ L'interface est organisée comme un éditeur :
   filtrable, noms français). « Mes personnages » liste ceux déjà importés avec leur score (calculé en arrière-plan) ;
   ils se rouvrent sans connexion.
 - **Accueil** : les quatre notes et les actions les plus rentables, à cocher « fait » (gardé jusqu'au prochain import,
-  qui vérifie) ; l'inspecteur montre le personnage, sa progression d'un import à l'autre (niveau d'objet, puissance) et sa
+  qui vérifie) ; l'inspecteur montre le personnage, un « Et si… » (score global si tu remplaces les pièces en retard,
+  suis la répartition des compétences ou ouvres les 20 prochaines cases Daevanion, avec le même calcul que les notes ;
+  aussi par pièce dans l'écran Équipement), sa progression d'un import à l'autre (niveau d'objet, puissance) et sa
   position parmi des joueurs niveau 45 de sa classe (« devant 30 % d'entre eux »).
 - **Rail à gauche** : Accueil, Stats, Équipement, Compétences, Build, Daevanion, Familiers, Détails, chacun avec sa note.
 - **Build et rotation** : le build des joueurs et le build conçu côte à côte (priorités, niveaux visés, ≠ là où ils

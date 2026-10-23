@@ -39,7 +39,7 @@ public sealed class Advisor(GameDatabase db)
         return new AdviceReport(c, profile, mode, sp, gear, skills, daevanion, engravings, petPlan, ordered, Scores(sp, gear, skills, daevanion, c, mode));
     }
 
-    static AreaScores Scores(StatProfile sp, GearPlan gear, SkillPlan skills, DaevanionPlan dae, CharacterSnapshot c, GameMode mode)
+    public static AreaScores Scores(StatProfile sp, GearPlan gear, SkillPlan skills, DaevanionPlan dae, CharacterSnapshot c, GameMode mode)
     {
         var balance = 1 - sp.Categories.Sum(x => Math.Abs(x.Gap)) / 2;
         var statScore = sp.TotalBudget > 0 ? 100 * (0.6 * sp.Efficiency + 0.4 * balance) : 0;

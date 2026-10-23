@@ -517,6 +517,22 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         }
         panel.Children.Add(new Border { Padding = new Thickness(14), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = scores });
 
+        // « Et si… » : le score global si l'on suivait chaque conseil (même calcul que les notes).
+        var gains = WhatIf.Gains(r).Where(g => g.Delta > 0).ToList();
+        if (gains.Count > 0)
+        {
+            panel.Children.Add(SectionHeader("Et si…", Tip(T("score global", 11, Tok.Muted, mono: true), "Même calcul que les notes ; les stats d'une pièce remplacée ne sont pas simulées.")));
+            var rows = new StackPanel { Spacing = 6, Margin = new Thickness(14, 10) };
+            foreach (var g in gains)
+            {
+                var screen = g.Area switch { Area.Gear => Screen.Gear, Area.Skills => Screen.Skills, _ => Screen.Daeva };
+                rows.Children.Add(Tip(Clickable(ColumnsSpaced("40,*,Auto", 8, T($"+{g.Delta}", 13, Tok.Good, FontWeight.SemiBold, mono: true),
+                        T(g.Label, 12, Tok.Text2), T($"→ {g.Overall}", 12, Tok.Score(g.Overall), mono: true)),
+                    () => GoTo(screen), hover: Tok.Hover, padding: new Thickness(4, 3)), g.Detail));
+            }
+            panel.Children.Add(rows);
+        }
+
         // Comparaison aux joueurs de la classe (niveau 45) : position dans l'échantillon, de 0 à 100 %.
         if (r.Profile.Class.Benchmark is { ItemLevel.Count: > 0 } bench && c.Level >= 45)
         {
@@ -606,6 +622,11 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             ("statut", Fmt.Status(p.Status), StatusBrush(p.Status)),
         ]));
         body.Children.Add(Field("Conseil", p.Advice));
+        if (p.Status is SlotStatus.Empty or SlotStatus.Replace or SlotStatus.Weak)
+        {
+            var after = WhatIf.SlotFixed(r, p.Slot);
+            body.Children.Add(Field("Et si", $"Cette pièce au niveau du palier : score global {r.Scores.Overall} → {after} ({(after > r.Scores.Overall ? "+" : "")}{after - r.Scores.Overall}).", Tok.Good));
+        }
         body.Children.Add(Field("Où chercher", p.NextSource ?? r.Gear.Stage.Gear.FirstOrDefault(g => g.Group == p.Group)?.For(r.Mode) ?? "—", Tok.Text2));
         if (item is { HasDetail: true })
         {

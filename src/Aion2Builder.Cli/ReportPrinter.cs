@@ -12,6 +12,9 @@ sealed class ReportPrinter(GameDatabase db)
         Title($"{c.Name} — {r.Profile.Class.Name} niv. {c.Level} · {c.ServerName} ({c.Region}) · niveau d'objet {c.ItemLevel} · PC {c.CombatPower}");
         Console.WriteLine($"Vue {GameDatabase.ModeName(r.Mode)} · rôle {r.Profile.Role.Name} · lu le {c.FetchedAtUtc.ToLocalTime():dd/MM/yyyy HH:mm}");
         Console.WriteLine($"Score {r.Scores.Overall}/100  (stats {r.Scores.Stats} · équipement {r.Scores.Gear} · compétences {r.Scores.Skills} · Daevanion {r.Scores.Daevanion})");
+        var gains = WhatIf.Gains(r).Where(g => g.Delta > 0).ToList();
+        if (gains.Count > 0)
+            Console.WriteLine("Et si : " + string.Join(" · ", gains.Select(g => $"{g.Label} → {g.Overall} (+{g.Delta})")));
         if (r.Profile.Class.Benchmark is { ItemLevel.Count: > 0 } bench && c.Level >= 45)
         {
             var nodes = r.Daevanion.Boards.Where(b => b.Pool == DaevanionPlanner.NormalPool).Sum(b => b.Board.OpenNodes);
