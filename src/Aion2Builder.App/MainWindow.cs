@@ -349,17 +349,19 @@ public sealed class MainWindow : Window
         }
         flyout.Content = new StackPanel { Width = 190, Spacing = 8, Children = { Label("Couleur secondaire"), grid } };
 
-        var button = Clickable(new StackPanel
+        // Le clic ouvre le menu lui-même : Clickable marque le clic comme traité, un second gestionnaire ne serait jamais appelé.
+        Border? button = null;
+        button = Clickable(new StackPanel
             {
                 Orientation = Orientation.Horizontal, Spacing = 7,
                 Children = { new Ellipse { Width = 10, Height = 10, Fill = Accent.Main }, T("thème", 12, Tok.Muted, mono: true) },
             },
-            () => { }, hover: Tok.HoverStrong, padding: new Thickness(9, 3));
+            () => FlyoutBase.ShowAttachedFlyout(button!), hover: Tok.HoverStrong, padding: new Thickness(9, 3));
         button.BorderBrush = Tok.Border;
         button.BorderThickness = new Thickness(1);
         button.CornerRadius = new CornerRadius(4);
         FlyoutBase.SetAttachedFlyout(button, flyout);
-        button.PointerPressed += (_, _) => FlyoutBase.ShowAttachedFlyout(button);
+        ToolTip.SetTip(button, "Couleur secondaire de l'interface");
         return button;
     }
 
@@ -510,7 +512,9 @@ public sealed class MainWindow : Window
         prompt.Margin = new Thickness(0, 0, 8, 0);
         DockPanel.SetDock(prompt, Dock.Left);
 
-        var tag = Clickable(scopeTag, () => { }, padding: new Thickness(6, 2));
+        Border? tag = null;
+        tag = Clickable(scopeTag, () => FlyoutBase.ShowAttachedFlyout(tag!), hover: Tok.HoverStrong, padding: new Thickness(6, 2));
+        ToolTip.SetTip(tag, "Région et serveur de la recherche");
         tag.BorderBrush = Tok.Border;
         tag.BorderThickness = new Thickness(1);
         tag.CornerRadius = new CornerRadius(3);
@@ -521,7 +525,6 @@ public sealed class MainWindow : Window
             Content = new StackPanel { Spacing = 8, Width = 200, Children = { Label("Région"), region, Label("Serveur (vide = tous)"), server } },
         };
         FlyoutBase.SetAttachedFlyout(tag, scopeFlyout);
-        tag.PointerPressed += (_, _) => FlyoutBase.ShowAttachedFlyout(tag);
         DockPanel.SetDock(tag, Dock.Right);
 
         var input = new Border
