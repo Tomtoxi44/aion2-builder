@@ -73,7 +73,8 @@ public sealed class MainWindow : Window
         FilterMode = AutoCompleteFilterMode.Contains, ItemTemplate = new FuncDataTemplate<ServerInfo>((s, _) => ServerItem(s)),
     };
     readonly StackPanel hitsPanel = new();
-    readonly StackPanel recentPanel = new();
+    readonly StackPanel historyPanel = new();
+    readonly TextBlock historyCount = T("", 11, Tok.Muted, mono: true);
     readonly TextBlock scopeTag = T("", 11, Tok.Muted, mono: true);
     Control? importView;
     List<SearchHit> hits = [];
@@ -100,7 +101,7 @@ public sealed class MainWindow : Window
         server.ItemsSource = serverCache.Load(RegionCode);
         UpdateScopeTag();
 
-        search.TextChanged += (_, _) => ScheduleSearch();
+        search.TextChanged += (_, _) => { ScheduleSearch(); RenderHistory(); };
         search.KeyDown += async (_, e) =>
         {
             if (e.Key == Key.Enter) { e.Handled = true; await ImportBestAsync(); }
@@ -119,7 +120,7 @@ public sealed class MainWindow : Window
         if (last is not null && TryLoad(last.Path) is { } snapshot)
         {
             state.Screen = Enum.TryParse<Screen>(prefs.Screen, out var screen) ? screen : Screen.Home;
-            Open(snapshot, keepScreen: true);
+            Open(snapshot, last.Path, keepScreen: true);
         }
         else
         {
@@ -175,9 +176,10 @@ public sealed class MainWindow : Window
         }
     }
 
-    void Open(CharacterSnapshot snapshot, bool keepScreen = false)
+    void Open(CharacterSnapshot snapshot, string path, bool keepScreen = false)
     {
         current = snapshot;
+        store.MarkViewed(path);
         inputs = store.LoadInputs(snapshot);
         state.Slot = state.Stat = state.Skill = null;
         state.Board = null;
@@ -486,12 +488,15 @@ public sealed class MainWindow : Window
         importView ??= BuildImport();
         if (importView.Parent is Border previous) previous.Child = null;
         RenderHits();
-        RenderRecents();
+        RenderHistory();
         return new Border { Child = importView };
     }
 
     Control BuildImport()
     {
+        // Les contrôles réutilisés (saisie, listes, filtres) quittent l'ancienne palette avant d'entrer dans la nouvelle.
+        foreach (var reused in new Control[] { search, scopeTag, hitsPanel, historyPanel, historyCount, region, server }) Detach(reused);
+
         var prompt = T(">", 13, Accent.Main, mono: true);
         prompt.Margin = new Thickness(0, 0, 8, 0);
         DockPanel.SetDock(prompt, Dock.Left);
@@ -510,7 +515,6 @@ public sealed class MainWindow : Window
         tag.PointerPressed += (_, _) => FlyoutBase.ShowAttachedFlyout(tag);
         DockPanel.SetDock(tag, Dock.Right);
 
-        if (search.Parent is DockPanel oldRow) oldRow.Children.Remove(search);
         var input = new Border
         {
             Padding = new Thickness(12, 10), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1),
@@ -528,7 +532,7 @@ public sealed class MainWindow : Window
                 {
                     input,
                     Label("Site officiel").WithMargin(12, 8, 12, 4), hitsPanel,
-                    Label("Récents").WithMargin(12, 8, 12, 4), recentPanel,
+                    HistoryHeader(), new ScrollViewer { MaxHeight = 280, Content = historyPanel, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled },
                     new Border { Height = 6 },
                 },
             },
@@ -549,6 +553,16 @@ public sealed class MainWindow : Window
         grid.Children.Add(palette);
         grid.Children.Add(hint);
         return grid;
+    }
+
+    static void Detach(Control control)
+    {
+        switch (control.Parent)
+        {
+            case Panel panel: panel.Children.Remove(control); break;
+            case ContentControl host: host.Content = null; break;
+            case Decorator decorator: decorator.Child = null; break;
+        }
     }
 
     void UpdateScopeTag() => scopeTag.Text = $"{RegionCode} · {ServerFilter ?? "tous serveurs"}";
@@ -582,22 +596,46 @@ public sealed class MainWindow : Window
         }
     }
 
-    void RenderRecents()
+    Control HistoryHeader()
     {
-        recentPanel.Children.Clear();
-        var list = store.List();
-        if (list.Count == 0) { recentPanel.Children.Add(T("aucun personnage enregistré", 13, Tok.Faint).WithMargin(12, 7)); return; }
-        foreach (var s in list.Take(6))
+        DockPanel.SetDock(historyCount, Dock.Right);
+        return new DockPanel { Margin = new Thickness(12, 8, 12, 4), Children = { historyCount, Label("Historique") } };
+    }
+
+    /// <summary>
+    /// Tous les personnages déjà consultés, du plus récent au plus ancien, filtrés par le nom tapé
+    /// (sans tenir compte des majuscules ni des accents).
+    /// </summary>
+    void RenderHistory()
+    {
+        historyPanel.Children.Clear();
+        var all = store.History();
+        var query = search.Text?.Trim() ?? "";
+        var compare = System.Globalization.CultureInfo.InvariantCulture.CompareInfo;
+        var shown = query.Length == 0 ? all
+            : all.Where(x => compare.IndexOf(x.Character.Name, query, System.Globalization.CompareOptions.IgnoreCase | System.Globalization.CompareOptions.IgnoreNonSpace) >= 0).ToList();
+        historyCount.Text = query.Length == 0 ? all.Count.ToString() : $"{shown.Count} / {all.Count}";
+
+        if (all.Count == 0) { historyPanel.Children.Add(T("aucun personnage consulté pour l'instant", 13, Tok.Faint).WithMargin(12, 7)); return; }
+        if (shown.Count == 0) { historyPanel.Children.Add(T($"aucun personnage consulté ne correspond à « {query} »", 13, Tok.Faint).WithMargin(12, 7)); return; }
+        foreach (var (s, viewedAt) in shown)
         {
-            var date = T(s.FetchedAtUtc.ToLocalTime().ToString("dd/MM"), 13, Tok.Muted, mono: true);
+            var date = T(viewedAt.ToLocalTime().ToString("dd/MM HH:mm"), 13, Tok.Muted, mono: true);
             DockPanel.SetDock(date, Dock.Right);
+            var isCurrent = current is not null && s.Name == current.Name && s.ServerName == current.ServerName && s.Region == current.Region;
             var name = new StackPanel
             {
                 Orientation = Orientation.Horizontal, Spacing = 6,
-                Children = { T(s.Name, 13), T($"— {db.FindClass(s.ClassCode)?.Name ?? s.ClassCode} · {s.ServerName} ({s.Region})", 13, Tok.Muted) },
+                Children =
+                {
+                    T(s.Name, 13, isCurrent ? Accent.Main : null, isCurrent ? FontWeight.SemiBold : FontWeight.Normal),
+                    T($"— {db.FindClass(s.ClassCode)?.Name ?? s.ClassCode} · niv. {s.Level} · {s.ServerName} ({s.Region}) · obj {s.ItemLevel}", 13, Tok.Muted),
+                },
             };
             var saved = s;
-            recentPanel.Children.Add(Clickable(new DockPanel { Children = { date, name } }, () => OpenSaved(saved), hover: Tok.HoverStrong, padding: new Thickness(12, 7)));
+            var row = Clickable(new DockPanel { Children = { date, name } }, () => OpenSaved(saved), hover: Tok.HoverStrong, padding: new Thickness(12, 7));
+            ToolTip.SetTip(row, $"Consulté le {viewedAt.ToLocalTime():dd/MM/yyyy à HH:mm} · importé le {s.FetchedAtUtc.ToLocalTime():dd/MM/yyyy à HH:mm}");
+            historyPanel.Children.Add(row);
         }
     }
 
@@ -662,7 +700,7 @@ public sealed class MainWindow : Window
             prefs = prefs with { LastFile = path, Name = search.Text ?? snapshot.Name, Region = snapshot.Region };
             prefs.Save();
             SetStatus($"importé depuis le site officiel");
-            Open(snapshot);
+            Open(snapshot, path);
         }
         catch (ArmoryException ex) { SetStatus(ex.Message, error: true); }
     }
@@ -673,7 +711,7 @@ public sealed class MainWindow : Window
         prefs = prefs with { LastFile = s.Path };
         prefs.Save();
         SetStatus("");
-        Open(snapshot);
+        Open(snapshot, s.Path);
     }
 
     async Task LoadServersAsync(bool force)

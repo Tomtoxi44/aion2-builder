@@ -65,5 +65,36 @@ public sealed class CharacterStore(string? dir = null)
         File.WriteAllText(path, JsonSerializer.Serialize(inputs, GameDataStore.Json));
     }
 
+    // Historique de consultation : dernière ouverture de chaque personnage (clé = nom du fichier).
+    string ViewsPath => Path.Combine(Directory, "history", "views.json");
+
+    Dictionary<string, DateTime> LoadViews()
+    {
+        try { return File.Exists(ViewsPath) ? JsonSerializer.Deserialize<Dictionary<string, DateTime>>(File.ReadAllText(ViewsPath)) ?? [] : []; }
+        catch (Exception ex) when (ex is JsonException or IOException) { return []; }
+    }
+
+    public void MarkViewed(string path)
+    {
+        var views = LoadViews();
+        views[Path.GetFileName(path)] = DateTime.UtcNow;
+        try
+        {
+            System.IO.Directory.CreateDirectory(Path.GetDirectoryName(ViewsPath)!);
+            File.WriteAllText(ViewsPath, JsonSerializer.Serialize(views));
+        }
+        catch (IOException) { /* historique non vital */ }
+    }
+
+    /// <summary>Personnages consultés, du plus récent au plus ancien ; un personnage jamais rouvert date de son import.</summary>
+    public List<(SavedCharacter Character, DateTime ViewedAtUtc)> History()
+    {
+        var views = LoadViews();
+        return List()
+            .Select(c => (c, views.TryGetValue(Path.GetFileName(c.Path), out var at) ? at : c.FetchedAtUtc))
+            .OrderByDescending(x => x.Item2)
+            .ToList();
+    }
+
     static string Sanitize(string key) => string.Concat(key.Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch));
 }
