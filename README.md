@@ -132,9 +132,9 @@ clique « Recharger les données » dans l'application.
 
 Les paliers d'équipement sont calés sur des personnages réels des serveurs EU (octobre 2026 : bleu, puis jaune, puis
 jaune enchanté +8/+10 ; aucun orange ni rouge observé). Les autres valeurs sont **indicatives** (guides communautaires,
-observations) et à affiner selon la saison. Le **Spiritualiste**, le **Templier** et l'**Assassin** ont une fiche de
-compétences détaillée ; celles du Templier et de l'Assassin croisent des guides et les compétences réellement montées
-par des joueurs niveau 45 des serveurs EU (8 Templiers, 24 Assassins) (`classes.json` → `skills` : rôle, priorité et niveau visé par mode, et la raison affichée ; les entrées « à valider »
+observations) et à affiner selon la saison. Le **Spiritualiste**, le **Templier**, l'**Assassin** et le **Sorcier** ont une fiche de
+compétences détaillée ; celles du Templier, de l'Assassin et du Sorcier croisent des guides et les compétences réellement
+montées par des joueurs niveau 45 des serveurs EU (8 Templiers, 24 Assassins, 24 Sorciers) (`classes.json` → `skills` : rôle, priorité et niveau visé par mode, et la raison affichée ; les entrées « à valider »
 ne sont pas documentées par les guides). Pour les autres classes, l'analyse se base sur ta barre tant que leur fiche n'est
 pas remplie.
 
