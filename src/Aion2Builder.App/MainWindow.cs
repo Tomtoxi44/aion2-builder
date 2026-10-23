@@ -305,7 +305,7 @@ public sealed class MainWindow : Window
     void CloseTab(string path)
     {
         var index = tabs.IndexOf(path);
-        if (index < 0) return;
+        if (index < 0 || loading is not null && path == currentPath) return; // l'import en cours ouvrira son personnage
         tabs.RemoveAt(index);
         opened.Remove(path);
         prefs = prefs with { Tabs = [.. tabs] };
