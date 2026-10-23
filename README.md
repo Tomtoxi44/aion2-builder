@@ -153,11 +153,11 @@ clique « Recharger les données » dans l'application.
 
 Les paliers d'équipement sont calés sur des personnages réels des serveurs EU (octobre 2026 : bleu, puis jaune, puis
 jaune enchanté +8/+10 ; aucun orange ni rouge observé). Les autres valeurs sont **indicatives** (guides communautaires,
-observations) et à affiner selon la saison. Le **Spiritualiste**, le **Templier**, l'**Assassin** et le **Sorcier** ont une fiche de
-compétences détaillée ; celles du Templier, de l'Assassin et du Sorcier croisent des guides et les compétences réellement
-montées par des joueurs niveau 45 des serveurs EU (8 Templiers, 24 Assassins, 24 Sorciers) (`classes.json` → `skills` : rôle, priorité et niveau visé par mode, et la raison affichée ; les entrées « à valider »
-ne sont pas documentées par les guides). Pour les autres classes, l'analyse se base sur ta barre tant que leur fiche n'est
-pas remplie.
+observations) et à affiner selon la saison. Les **8 classes** ont une fiche de compétences
+détaillée (12 actives, 10 passifs, 13 stigmas). Hors Spiritualiste, elles croisent des guides et les compétences réellement
+montées par des joueurs niveau 45 des serveurs EU (8 Templiers, 24 joueurs pour chacune des autres classes) (`classes.json` → `skills` : rôle, priorité et niveau visé par mode, et la raison affichée ; les entrées « à valider »
+ne sont pas documentées par les guides). Le Rôdeur n'a pas de guide JcJ : ses priorités JcJ sont déduites des effets
+des sorts. Deux compétences de l'Aède s'appellent « Coup fracassant » (attaque de base et stigma) : le type les départage.
 
 ## Limites
 

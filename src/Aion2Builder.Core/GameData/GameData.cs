@@ -221,8 +221,17 @@ public sealed record ResolvedProfile(ClassProfile Class, RoleProfile Role, GameM
             ? Class.Skills.Where(s => s.Priority.GetValueOrDefault(Mode) >= 0.85).Select(s => s.Name).ToList()
             : Class.CoreSkills.GetValueOrDefault(Mode) ?? [];
 
-    public SkillKnowledge? Skill(string name) =>
-        Class.Skills.FirstOrDefault(s => GameDatabase.NormalizeLabel(s.Name) == GameDatabase.NormalizeLabel(name));
+    /// <summary>
+    /// Fiche d'une compétence. Deux compétences peuvent porter le même nom (Aède : « Coup fracassant », attaque de base
+    /// et stigma) : le type (Active, Passive, Stigma) départage.
+    /// </summary>
+    public SkillKnowledge? Skill(string name, string? kind = null)
+    {
+        var matches = Class.Skills.Where(s => GameDatabase.NormalizeLabel(s.Name) == GameDatabase.NormalizeLabel(name)).ToList();
+        return kind is null || matches.Count <= 1
+            ? matches.FirstOrDefault()
+            : matches.FirstOrDefault(s => s.Kind.Equals(kind, StringComparison.OrdinalIgnoreCase)) ?? matches[0];
+    }
 }
 
 /// <summary>Toutes les données de jeu chargées, avec index de recherche.</summary>

@@ -33,7 +33,7 @@ public sealed partial class SkillAdvisor(GameDatabase db)
     /// <summary>Importance de la compétence pour ce profil : 0 = inutile, 1 = indispensable.</summary>
     public double Priority(SkillInfo s, ResolvedProfile p)
     {
-        if (p.Skill(s.Name) is { } k) return k.Priority.GetValueOrDefault(p.Mode);
+        if (p.Skill(s.Name, KindOf(s).ToString()) is { } k) return k.Priority.GetValueOrDefault(p.Mode);
         var set = db.Settings.Skills;
         if (p.Mode == GameMode.PvP && CommonPvp(s)) return 1.0;
         return KindOf(s) switch
@@ -82,7 +82,7 @@ public sealed partial class SkillAdvisor(GameDatabase db)
 
         var rows = c.Skills.Where(s => KindOf(s) != SkillKind.Stigma).Select(s =>
         {
-            var known = p.Skill(s.Name);
+            var known = p.Skill(s.Name, KindOf(s).ToString());
             var b = bonus.GetValueOrDefault(Norm(s.Name));
             var priority = Priority(s, p);
             var target = known?.Target.GetValueOrDefault(p.Mode) is > 0 and var t ? t : priority >= 0.3 ? set.BaseMax : 1;
@@ -118,7 +118,7 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         // Stigmas : les plus utiles occupent les emplacements, montés jusqu'au niveau visé.
         var st = db.Settings.Stigmas;
         var stigmaRows = c.Skills.Where(s => KindOf(s) == SkillKind.Stigma)
-            .Select(s => (Skill: s, Known: p.Skill(s.Name), Priority: Priority(s, p)))
+            .Select(s => (Skill: s, Known: p.Skill(s.Name, KindOf(s).ToString()), Priority: Priority(s, p)))
             .OrderByDescending(x => x.Priority).ThenByDescending(x => x.Skill.Level).ToList();
         var chosen = stigmaRows.Take(st.Slots).Select(x => x.Skill.Id).ToHashSet();
         var stigmas = stigmaRows.Select(x =>
