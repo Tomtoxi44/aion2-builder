@@ -82,24 +82,28 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
 
         var steps = new List<PlannedNode>();
         var respecs = new List<RespecPlan>();
+        var routes = new List<DesignedRoute>();
         foreach (var pool in pools.Where(x => Relevant(x, p.Mode)))
         {
             var poolBoards = boards.Where(b => Pool(b) == pool).ToList();
             var budget = budgets.First(b => b.Pool == pool);
 
             // Prochaines cases à partir du placement actuel ; "faisable" tant que les points non dépensés suffisent.
+            // La liste couvre au moins tous les points non dépensés indiqués (et PlanLength cases sinon).
             var current = poolBoards.ToDictionary(b => b.Id, b => new HashSet<(int, int)>(open[b.Id]));
             var cumulative = 0.0;
             var order = 0;
-            foreach (var (board, node, passage) in Grow(poolBoards, grids, current, values, double.PositiveInfinity, settings.PlanLength))
+            foreach (var (board, node, passage) in Grow(poolBoards, grids, current, values, double.PositiveInfinity, settings.MaxPlanLength))
             {
+                if (order >= settings.PlanLength && cumulative >= budget.Unspent) break;
                 cumulative += NodeCost(node);
-                steps.Add(new PlannedNode(++order, pool, board, node, values[node.Id], NodeCost(node), passage, cumulative <= budget.Unspent));
+                steps.Add(new PlannedNode(++order, pool, board, node, values[node.Id], NodeCost(node), passage, cumulative <= budget.Unspent, cumulative));
             }
 
             respecs.Add(Respec(pool, poolBoards, grids, values, budget, n => Importance(n, ctx)));
+            routes.Add(Route(pool, poolBoards, grids, values, budget, n => Importance(n, ctx)));
         }
-        return new DaevanionPlan(steps, summaries, budgets, respecs);
+        return new DaevanionPlan(steps, summaries, budgets, respecs, routes);
     }
 
     /// <summary>
@@ -110,12 +114,66 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
     RespecPlan Respec(string pool, List<DaevanionBoard> boards, Dictionary<int, Dictionary<(int, int), DaevanionNode>> grids,
         Dictionary<long, double> values, PoolBudget budget, Func<DaevanionNode, double> importance)
     {
-        var starts = boards.ToDictionary(b => b.Id, b => b.Nodes.Where(n => n.IsStart).Select(n => (n.Row, n.Col)).ToHashSet());
+        var starts = Starts(boards);
         var chosen = boards.ToDictionary(b => b.Id, b => b.Nodes.Where(n => n.Open || n.IsStart).Select(n => (n.Row, n.Col)).ToHashSet());
+        var currentValue = Value(boards, grids, values, chosen);
+        var added = Improve(boards, grids, values, chosen, starts, importance);
+
+        var optimal = boards.SelectMany(b => chosen[b.Id].Select(cell => grids[b.Id][cell].Id)).ToHashSet();
+        var remove = boards.SelectMany(b => b.Nodes.Where(n => n.Open && !n.IsStart && !optimal.Contains(n.Id)).Select(n => (Board: b, Node: n)))
+            .Select(x => new NodeRef(x.Board, x.Node, values[x.Node.Id], NodeCost(x.Node))).OrderBy(x => x.Value / x.Cost).ToList();
+        var step = 0;
+        var add = added.Where(a => !a.Node.Open && optimal.Contains(a.Node.Id)).DistinctBy(a => a.Node.Id)
+            .Select(a => new PlannedNode(++step, pool, a.Board, a.Node, values[a.Node.Id], NodeCost(a.Node), false, true)).ToList();
+        return new RespecPlan(pool, budget.Spent, currentValue, Value(boards, grids, values, chosen), remove, add, optimal);
+    }
+
+    /// <summary>
+    /// Route conçue : sans tenir compte du placement actuel, le meilleur chemin depuis le centre pour tous les points de
+    /// la réserve (dépensés + non dépensés), affiné comme une réorganisation, puis la suite pour les points à venir.
+    /// Les cases sont numérotées dans l'ordre d'ouverture (chemins d'accès compris).
+    /// </summary>
+    DesignedRoute Route(string pool, List<DaevanionBoard> boards, Dictionary<int, Dictionary<(int, int), DaevanionNode>> grids,
+        Dictionary<long, double> values, PoolBudget budget, Func<DaevanionNode, double> importance)
+    {
+        var starts = Starts(boards);
+        var chosen = boards.ToDictionary(b => b.Id, b => new HashSet<(int, int)>(starts[b.Id]));
+        foreach (var _ in Grow(boards, grids, chosen, values, budget.Budget, int.MaxValue)) { }
+        Improve(boards, grids, values, chosen, starts, importance);
+
+        // Ordre d'ouverture des cases retenues (même règle : meilleur chemin valeur / coût), puis la suite au-delà des points actuels.
+        var kept = boards.ToDictionary(b => b.Id, b => grids[b.Id].Where(kv => chosen[b.Id].Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value));
+        var opened = boards.ToDictionary(b => b.Id, b => new HashSet<(int, int)>(starts[b.Id]));
+        var nodes = new List<PlannedNode>();
+        var cumulative = 0.0;
+        foreach (var (inBudget, grid, max) in new[] { (true, kept, int.MaxValue), (false, grids, db.Settings.Daevanion.MaxPlanLength) })
+            foreach (var (board, node, passage) in Grow(boards, grid, opened, values, double.PositiveInfinity, max))
+            {
+                cumulative += NodeCost(node);
+                nodes.Add(new PlannedNode(nodes.Count + 1, pool, board, node, values[node.Id], NodeCost(node), passage, inBudget, cumulative));
+            }
+        var current = boards.ToDictionary(b => b.Id, b => b.Nodes.Where(n => n.Open || n.IsStart).Select(n => (n.Row, n.Col)).ToHashSet());
+        return new DesignedRoute(pool, budget.Budget, Value(boards, grids, values, current), Value(boards, grids, values, chosen), nodes);
+    }
+
+    static Dictionary<int, HashSet<(int, int)>> Starts(List<DaevanionBoard> boards) =>
+        boards.ToDictionary(b => b.Id, b => b.Nodes.Where(n => n.IsStart).Select(n => (n.Row, n.Col)).ToHashSet());
+
+    static double Value(List<DaevanionBoard> boards, Dictionary<int, Dictionary<(int, int), DaevanionNode>> grids,
+        Dictionary<long, double> values, Dictionary<int, HashSet<(int, int)>> chosen) =>
+        boards.Sum(b => chosen[b.Id].Sum(cell => values[grids[b.Id][cell].Id]));
+
+    /// <summary>
+    /// Améliore un placement (modifié sur place) : retire jusqu'à 3 cases peu rentables en bout de chemin (sans couper
+    /// le chemin), réinvestit les points libérés au meilleur endroit, et garde le changement seulement s'il rapporte plus.
+    /// Renvoie les cases ajoutées.
+    /// </summary>
+    List<(DaevanionBoard Board, DaevanionNode Node)> Improve(List<DaevanionBoard> boards, Dictionary<int, Dictionary<(int, int), DaevanionNode>> grids,
+        Dictionary<long, double> values, Dictionary<int, HashSet<(int, int)>> chosen, Dictionary<int, HashSet<(int, int)>> starts,
+        Func<DaevanionNode, double> importance)
+    {
         var added = new List<(DaevanionBoard Board, DaevanionNode Node)>();
-        double Value() => boards.Sum(b => chosen[b.Id].Sum(cell => values[grids[b.Id][cell].Id]));
-        var currentValue = Value();
-        var spent = (double)budget.Spent;
+        double Value() => DaevanionPlanner.Value(boards, grids, values, chosen);
 
         for (var accepted = 0; accepted < 80;)
         {
@@ -159,14 +217,7 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
             if (!improved) break;
             accepted++;
         }
-
-        var optimal = boards.SelectMany(b => chosen[b.Id].Select(cell => grids[b.Id][cell].Id)).ToHashSet();
-        var remove = boards.SelectMany(b => b.Nodes.Where(n => n.Open && !n.IsStart && !optimal.Contains(n.Id)).Select(n => (Board: b, Node: n)))
-            .Select(x => new NodeRef(x.Board, x.Node, values[x.Node.Id], NodeCost(x.Node))).OrderBy(x => x.Value / x.Cost).ToList();
-        var step = 0;
-        var add = added.Where(a => !a.Node.Open && optimal.Contains(a.Node.Id)).DistinctBy(a => a.Node.Id)
-            .Select(a => new PlannedNode(++step, pool, a.Board, a.Node, values[a.Node.Id], NodeCost(a.Node), false, true)).ToList();
-        return new RespecPlan(pool, (int)spent, currentValue, Value(), remove, add, optimal);
+        return added;
     }
 
     static bool KeepsConnected(HashSet<(int R, int C)> set, HashSet<(int R, int C)> starts, (int R, int C) without)

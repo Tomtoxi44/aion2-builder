@@ -19,9 +19,13 @@ using static Aion2Builder.App.Ui;
 
 namespace Aion2Builder.App;
 
-/// <summary>Dernières saisies, pour rouvrir l'application sur le même personnage, le même écran et le même thème.</summary>
+/// <summary>
+/// Dernières saisies, pour rouvrir l'application sur les mêmes personnages (onglets), le même écran, le même thème
+/// et la même disposition (largeur de l'inspecteur).
+/// </summary>
 sealed record UiPrefs(string Region = "eu", string Server = "", string Name = "", GameMode Mode = GameMode.PvE, string? LastFile = null,
-    int Tab = 0, string Screen = "Home", string Accent = "Orange", bool AutoUpdate = true)
+    int Tab = 0, string Screen = "Home", string Accent = "Orange", bool AutoUpdate = true,
+    List<string>? Tabs = null, double InspectorWidth = 340, bool InspectorHidden = false)
 {
     static string PathOf => System.IO.Path.Combine(AppPaths.Root, "ui.json");
 
@@ -91,6 +95,10 @@ public sealed class MainWindow : Window
     // Mise à jour proposée par Aion 2 Todo (vérifiée au lancement puis toutes les 6 h).
     Updater.Release? update;
     bool installing;
+    // Onglets : les personnages ouverts, comme les fichiers d'un éditeur ; leurs fiches restent en mémoire.
+    readonly List<string> tabs = [];
+    readonly Dictionary<string, CharacterSnapshot> opened = [];
+    string? currentPath;
 
     public MainWindow()
     {
@@ -125,7 +133,18 @@ public sealed class MainWindow : Window
         server.GotFocus += (_, _) => server.IsDropDownOpen = true;
         KeyDown += (_, e) =>
         {
-            if (e.Key == Key.K && e.KeyModifiers.HasFlag(KeyModifiers.Control)) { e.Handled = true; ShowImport(); }
+            if (!e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
+            switch (e.Key)
+            {
+                case Key.K: e.Handled = true; ShowImport(); break;
+                case Key.W when currentPath is not null: e.Handled = true; CloseTab(currentPath); break;
+                case Key.Tab when tabs.Count > 1 && currentPath is not null:
+                    e.Handled = true;
+                    var step = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? -1 : 1;
+                    SwitchTab(tabs[(tabs.IndexOf(currentPath) + step + tabs.Count) % tabs.Count]);
+                    break;
+                case Key.I: e.Handled = true; ToggleInspector(); break;
+            }
         };
         Opened += async (_, _) => await LoadServersAsync(force: false);
         Updater.CleanOld();
@@ -134,11 +153,18 @@ public sealed class MainWindow : Window
         updateTimer.Tick += async (_, _) => await CheckUpdateAsync(manual: false);
         updateTimer.Start();
 
-        var last = prefs.LastFile is not null ? store.List().FirstOrDefault(s => s.Path == prefs.LastFile) : null;
-        if (last is not null && TryLoad(last.Path) is { } snapshot)
+        // Onglets de la dernière session (fichiers encore présents), puis le dernier personnage affiché.
+        foreach (var path in (prefs.Tabs ?? []).Append(prefs.LastFile).OfType<string>().Distinct())
+            if (File.Exists(path) && TryLoad(path) is { } saved)
+            {
+                tabs.Add(path);
+                opened[path] = saved;
+            }
+        var last = prefs.LastFile is not null && opened.ContainsKey(prefs.LastFile) ? prefs.LastFile : tabs.FirstOrDefault();
+        if (last is not null)
         {
             state.Screen = Enum.TryParse<Screen>(prefs.Screen, out var screen) ? screen : Screen.Home;
-            Open(snapshot, last.Path, keepScreen: true);
+            Open(opened[last], last, keepScreen: true);
         }
         else
         {
@@ -197,6 +223,11 @@ public sealed class MainWindow : Window
     void Open(CharacterSnapshot snapshot, string path, bool keepScreen = false)
     {
         current = snapshot;
+        currentPath = path;
+        opened[path] = snapshot;
+        if (!tabs.Contains(path)) tabs.Add(path);
+        prefs = prefs with { LastFile = path, Tabs = [.. tabs] };
+        prefs.Save();
         store.MarkViewed(path);
         inputs = store.LoadInputs(snapshot);
         state.Slot = state.Stat = state.Skill = null;
@@ -222,6 +253,42 @@ public sealed class MainWindow : Window
     }
 
     void Navigate(Screen screen) => Update(st => st.Screen = screen);
+
+    /// <summary>Passe à un autre personnage ouvert, sur le même écran.</summary>
+    void SwitchTab(string path)
+    {
+        if (loading is not null) return;
+        if (path == currentPath && state.Screen != Screen.Import) return;
+        var snapshot = opened.TryGetValue(path, out var known) ? known : TryLoad(path);
+        if (snapshot is null) return;
+        SetStatus("");
+        Open(snapshot, path, keepScreen: true);
+    }
+
+    /// <summary>Ferme un onglet (le personnage reste dans l'historique) ; sans onglet, retour à l'import.</summary>
+    void CloseTab(string path)
+    {
+        var index = tabs.IndexOf(path);
+        if (index < 0) return;
+        tabs.RemoveAt(index);
+        opened.Remove(path);
+        prefs = prefs with { Tabs = [.. tabs] };
+        if (path != currentPath) { prefs.Save(); Render(); return; }
+        if (tabs.Count > 0) { SwitchTab(tabs[Math.Min(index, tabs.Count - 1)]); return; }
+        current = null;
+        currentPath = null;
+        report = null;
+        prefs = prefs with { LastFile = null };
+        prefs.Save();
+        ShowImport();
+    }
+
+    void ToggleInspector()
+    {
+        prefs = prefs with { InspectorHidden = !prefs.InspectorHidden };
+        prefs.Save();
+        Render();
+    }
 
     void ShowImport()
     {
@@ -438,17 +505,38 @@ public sealed class MainWindow : Window
 
     Control MainArea()
     {
-        if (state.Screen == Screen.Import || report is null) return ImportHost();
+        var grid = new Grid { RowDefinitions = new RowDefinitions(tabs.Count > 0 ? "34,*" : "0,*") };
+        if (tabs.Count > 0) grid.Children.Add(TabBar());
+        var page = state.Screen == Screen.Import || report is null ? ImportHost() : Page(report);
+        Grid.SetRow(page, 1);
+        grid.Children.Add(page);
+        return grid;
+    }
 
+    /// <summary>Fil d'Ariane, puis le contenu et l'inspecteur, séparés par une poignée qui règle la largeur de l'inspecteur.</summary>
+    Control Page(AdviceReport r)
+    {
+        var (content, inspector) = new ScreenViews(db, r, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key)).Build();
         var grid = new Grid { RowDefinitions = new RowDefinitions("36,*") };
-        grid.Children.Add(Breadcrumb(report));
-        var (content, inspector) = new ScreenViews(db, report, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key)).Build();
-        var body = new Grid { ColumnDefinitions = new ColumnDefinitions(inspector is null ? "*" : "*,340") };
+        grid.Children.Add(Breadcrumb(r, inspector is not null));
+        var body = new Grid();
+        body.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star) { MinWidth = 420 });
         body.Children.Add(Scroll(content));
-        if (inspector is not null)
+        if (inspector is not null && !prefs.InspectorHidden)
         {
-            var side = new Border { Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1, 0, 0, 0), Child = Scroll(inspector) };
-            Grid.SetColumn(side, 1);
+            body.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+            body.ColumnDefinitions.Add(new ColumnDefinition(Math.Clamp(prefs.InspectorWidth, 240, 760), GridUnitType.Pixel) { MinWidth = 240, MaxWidth = 760 });
+            var splitter = new GridSplitter { Width = 5, Background = Tok.Border, ResizeDirection = GridResizeDirection.Columns, ResizeBehavior = GridResizeBehavior.PreviousAndNext };
+            ToolTip.SetTip(splitter, "Glisse pour régler la largeur de l'inspecteur (Ctrl+I pour le masquer)");
+            splitter.DragCompleted += (_, _) =>
+            {
+                prefs = prefs with { InspectorWidth = Math.Round(body.ColumnDefinitions[2].ActualWidth) };
+                prefs.Save();
+            };
+            Grid.SetColumn(splitter, 1);
+            body.Children.Add(splitter);
+            var side = new Border { Background = Tok.Panel, Child = Scroll(inspector) };
+            Grid.SetColumn(side, 2);
             body.Children.Add(side);
         }
         Grid.SetRow(body, 1);
@@ -456,7 +544,49 @@ public sealed class MainWindow : Window
         return grid;
     }
 
-    Control Breadcrumb(AdviceReport r)
+    /// <summary>
+    /// Onglets des personnages ouverts, comme les fichiers d'un éditeur : initiale, nom, classe et niveau ; × ferme
+    /// (Ctrl+W), Ctrl+Tab passe au suivant, + ouvre l'import (Ctrl+K).
+    /// </summary>
+    Control TabBar()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var path in tabs)
+        {
+            if (!opened.TryGetValue(path, out var c)) continue;
+            var on = path == currentPath && state.Screen != Screen.Import;
+            var className = db.FindClass(c.ClassCode)?.Name ?? c.ClassCode;
+            var chip = new Border
+            {
+                Width = 20, Height = 20, CornerRadius = new CornerRadius(4), Background = on ? Accent.Dim : Tok.Border,
+                Child = T(c.Name[..1].ToUpperInvariant(), 11, on ? Accent.Main : Tok.Muted, FontWeight.SemiBold, mono: true).Centered(),
+            };
+            var tabPath = path;
+            var close = Clickable(T("×", 14, Tok.Muted).Centered(), () => CloseTab(tabPath), hover: Tok.HoverStrong, padding: new Thickness(5, 0));
+            close.CornerRadius = new CornerRadius(3);
+            ToolTip.SetTip(close, "Fermer l'onglet (Ctrl+W)");
+            var label = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center,
+                Children = { chip, T(c.Name, 13, on ? Tok.Text : Tok.Text2, on ? FontWeight.SemiBold : FontWeight.Normal), T($"{className} {c.Level}", 11, Tok.Muted, mono: true), close },
+            };
+            var tab = Clickable(label, () => SwitchTab(tabPath), on ? Tok.Window : null, on ? null : Tok.Hover, new Thickness(10, 0, 6, 0));
+            tab.BorderBrush = on ? Accent.Main : Brushes.Transparent;
+            tab.BorderThickness = new Thickness(0, 2, 0, 0);
+            ToolTip.SetTip(tab, $"{c.Name} — {className} niv. {c.Level} · {c.ServerName} ({c.Region}) · niveau d'objet {c.ItemLevel} · importé le {c.FetchedAtUtc.ToLocalTime():dd/MM HH:mm}");
+            row.Children.Add(new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 1, 0), Child = tab });
+        }
+        var plus = Clickable(T("+", 16, state.Screen == Screen.Import ? Accent.Main : Tok.Muted).Centered(), ShowImport, hover: Tok.Hover, padding: new Thickness(14, 0));
+        ToolTip.SetTip(plus, "Ouvrir un autre personnage (Ctrl+K)");
+        row.Children.Add(plus);
+        return new Border
+        {
+            Background = Tok.Chrome, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = new ScrollViewer { Content = row, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled },
+        };
+    }
+
+    Control Breadcrumb(AdviceReport r, bool hasInspector)
     {
         var c = r.Character;
         TextBlock Value(string label, string value) => new()
@@ -478,6 +608,16 @@ public sealed class MainWindow : Window
                 Value("obj", c.ItemLevel.ToString()), Value("pc", c.CombatPower.ToString()),
             },
         };
+        if (hasInspector)
+        {
+            var toggle = Clickable(T(prefs.InspectorHidden ? "◧ inspecteur" : "◨ inspecteur", 11, prefs.InspectorHidden ? Tok.Muted : Tok.Text2, mono: true),
+                ToggleInspector, hover: Tok.HoverStrong, padding: new Thickness(7, 2));
+            toggle.BorderBrush = Tok.Border;
+            toggle.BorderThickness = new Thickness(1);
+            toggle.CornerRadius = new CornerRadius(3);
+            ToolTip.SetTip(toggle, prefs.InspectorHidden ? "Afficher l'inspecteur (Ctrl+I)" : "Masquer l'inspecteur (Ctrl+I) ; sa largeur se règle en glissant sa bordure");
+            right.Children.Add(toggle);
+        }
         DockPanel.SetDock(right, Dock.Right);
         var left = new StackPanel
         {

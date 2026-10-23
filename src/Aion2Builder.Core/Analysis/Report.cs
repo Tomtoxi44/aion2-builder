@@ -109,7 +109,9 @@ public sealed record SkillPlan(List<SkillAdvice> Skills, List<StigmaAdvice> Stig
 // ----- Daevanion -----
 
 /// <param name="Affordable">Faisable avec les points non dépensés déclarés (sinon : à prendre plus tard).</param>
-public sealed record PlannedNode(int Step, string Pool, DaevanionBoard Board, DaevanionNode Node, double Value, double Cost, bool IsPassage, bool Affordable = false)
+/// <param name="Cumulative">Points dépensés depuis le début de la liste, cette case comprise.</param>
+public sealed record PlannedNode(int Step, string Pool, DaevanionBoard Board, DaevanionNode Node, double Value, double Cost, bool IsPassage,
+    bool Affordable = false, double Cumulative = 0)
 {
     public string Effects => Node.Effects.Count == 0 ? Node.Name : string.Join(", ", Node.Effects.Select(e => e.Raw));
 }
@@ -141,7 +143,18 @@ public sealed record RespecPlan(string Pool, int Budget, double CurrentValue, do
     public double Gain => CurrentValue <= 0 ? (OptimalValue > 0 ? 1 : 0) : OptimalValue / CurrentValue - 1;
 }
 
-public sealed record DaevanionPlan(List<PlannedNode> Steps, List<BoardSummary> Boards, List<PoolBudget> Budgets, List<RespecPlan> Respecs)
+/// <summary>
+/// Route conçue d'une réserve : ordre d'ouverture depuis le centre, sans tenir compte du placement actuel.
+/// Les cases <see cref="PlannedNode.Affordable"/> tiennent dans les points de la réserve (dépensés + non dépensés), les suivantes sont la suite.
+/// </summary>
+public sealed record DesignedRoute(string Pool, int Budget, double CurrentValue, double Value, List<PlannedNode> Nodes)
+{
+    public double Gain => CurrentValue <= 0 ? (Value > 0 ? 1 : 0) : Value / CurrentValue - 1;
+    public IEnumerable<PlannedNode> InBudget => Nodes.Where(n => n.Affordable);
+}
+
+public sealed record DaevanionPlan(List<PlannedNode> Steps, List<BoardSummary> Boards, List<PoolBudget> Budgets, List<RespecPlan> Respecs,
+    List<DesignedRoute> Routes)
 {
     public IEnumerable<IGrouping<string, PlannedNode>> ByPool => Steps.GroupBy(s => s.Pool);
 }

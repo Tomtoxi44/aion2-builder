@@ -129,11 +129,32 @@ sealed class ReportPrinter(GameDatabase db)
         }
         foreach (var pool in r.Daevanion.ByPool)
         {
+            var unspent = r.Daevanion.Budgets.First(b => b.Pool == pool.Key).Unspent;
             Console.WriteLine();
-            Console.WriteLine($"  Prochaines cases — {db.Settings.Daevanion.PoolNames.GetValueOrDefault(pool.Key, pool.Key)} :");
-            foreach (var s in pool.Take(15))
+            Console.WriteLine($"  Prochaines cases — {db.Settings.Daevanion.PoolNames.GetValueOrDefault(pool.Key, pool.Key)}" +
+                              (unspent > 0 ? $" (tes {unspent} points non dépensés couvrent les cases « faisable maintenant ») :" : " (suis la liste jusqu'à épuisement de tes points) :"));
+            foreach (var s in pool)
                 Colored(s.IsPassage ? ConsoleColor.DarkGray : ConsoleColor.Gray,
-                    $"   {s.Step,2}. {s.Board.Name,-9} ligne {s.Node.Row,2} col. {s.Node.Col,2}  {s.Effects}{(s.IsPassage ? "  (passage)" : "")}{(s.Affordable ? "  [faisable maintenant]" : "")}");
+                    $"   {s.Step,3}. {s.Board.Name,-9} ligne {s.Node.Row,2} col. {s.Node.Col,2}  {Fmt.Num(s.Cumulative),4} pts  {s.Effects}{(s.IsPassage ? "  (passage)" : "")}{(s.Affordable ? "  [faisable maintenant]" : "")}");
+        }
+        foreach (var route in r.Daevanion.Routes.Where(x => x.Nodes.Count > 0))
+        {
+            Console.WriteLine();
+            var inBudget = route.InBudget.ToList();
+            Colored(ConsoleColor.Cyan, $"  Route conçue {db.Settings.Daevanion.PoolNames.GetValueOrDefault(route.Pool, route.Pool)} : depuis le centre, " +
+                $"{inBudget.Count} cases pour tes {route.Budget} points ({(route.Gain >= 0 ? "+" : "")}{Fmt.Pct(route.Gain)} de valeur par rapport à ton placement actuel)");
+            var open = inBudget.Count(x => x.Node.Open);
+            var inRoute = inBudget.Select(x => x.Node.Id).ToHashSet();
+            var outside = r.Daevanion.Boards.Where(b => b.Pool == route.Pool).SelectMany(b => b.Board.Nodes.Where(n => n.Open && !n.IsStart && !inRoute.Contains(n.Id))
+                .Select(n => (b.Board, Node: n))).ToList();
+            Console.WriteLine($"   {open} de ces cases sont déjà ouvertes chez toi ; {inBudget.Count - open} à ouvrir, {outside.Count} ouvertes chez toi hors de la route. " +
+                              "L'ordre complet est dans l'écran Daevanion → Route conçue.");
+            foreach (var x in inBudget.Where(x => !x.Node.Open))
+                Colored(ConsoleColor.Green, $"   {x.Step,3}. ouvrir  {x.Board.Name,-9} ligne {x.Node.Row,2} col. {x.Node.Col,2}  {x.Effects}{(x.IsPassage ? "  (passage)" : "")}");
+            foreach (var (board, node) in outside)
+                Colored(ConsoleColor.Red, $"        retirer {board.Name,-9} ligne {node.Row,2} col. {node.Col,2}  {string.Join(", ", node.Effects.Select(e => e.Raw))}");
+            foreach (var x in route.Nodes.Where(x => !x.Affordable && !x.Node.Open).Take(10))
+                Colored(ConsoleColor.DarkCyan, $"   {x.Step,3}. suite   {x.Board.Name,-9} ligne {x.Node.Row,2} col. {x.Node.Col,2}  {Fmt.Num(x.Cumulative),4} pts  {x.Effects}{(x.IsPassage ? "  (passage)" : "")}");
         }
 
         Section("Familiers — effets de possession (Pet Meter via Aion 2 Todo)");

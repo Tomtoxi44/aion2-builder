@@ -113,9 +113,23 @@ public sealed partial class SkillAdvisor(GameDatabase db)
                 Move(donor, need);
             }
 
-        // 2. Points encore libres : vers les compétences utiles pas encore au maximum.
-        foreach (var r in acquired.Where(r => r.Priority >= 0.3).OrderByDescending(r => r.Priority))
+        // 2. Points encore libres : vers les compétences pas encore au maximum, les plus utiles d'abord. Tout point
+        //    non dépensé trouve une place (la réinitialisation est gratuite : mieux vaut un point posé qu'un point oublié).
+        foreach (var r in acquired.OrderByDescending(r => r.Priority))
             while (free > 0 && r.Rec < set.BaseMax) { free--; r.Rec++; Move(null, r); }
+
+        // 3. Points posés au-dessus du niveau visé d'une compétence nettement moins utile : vers les compétences utiles
+        //    pas encore au maximum. Sans ça, ils dorment là et la répartition conseillée change d'un passage à l'autre.
+        foreach (var r in acquired.Where(r => r.Priority >= 0.3).OrderByDescending(r => r.Priority))
+            while (r.Rec < set.BaseMax)
+            {
+                var donor = acquired.Where(d => d != r && d.Rec > d.Target && d.Priority + set.ChangeThreshold <= r.Priority)
+                    .OrderBy(d => d.Priority).ThenByDescending(d => d.Rec - d.Target).FirstOrDefault();
+                if (donor is null) break;
+                donor.Rec--;
+                r.Rec++;
+                Move(donor, r);
+            }
 
         var advice = rows.ToDictionary(r => r, r => new SkillAdvice(r.Skill, KindOf(r.Skill), r.Known?.Role ?? DefaultRole(r.Skill),
             r.Known?.Why ?? DefaultWhy(r.Skill, p), r.Known is not null, r.Known?.Unverified ?? false, r.Priority,
@@ -125,10 +139,12 @@ public sealed partial class SkillAdvisor(GameDatabase db)
             .OrderByDescending(m => m.To.Priority).ThenBy(m => m.From?.Priority ?? -1).ToList();
 
         // Prochains points (quand tu en gagnes), à partir de la répartition conseillée : niveau visé d'abord,
-        // puis le maximum achetable des compétences utiles. Les points consécutifs sur une même compétence sont groupés.
+        // puis le maximum achetable des compétences utiles, jusqu'au bout (le site ne montre pas les points non
+        // dépensés : la liste doit couvrir ceux que le joueur a sans les avoir indiqués). Les points consécutifs
+        // sur une même compétence sont groupés.
         var simulated = acquired.ToDictionary(r => r, r => r.Rec);
         var nextPoints = new List<SkillStep>();
-        for (var i = 0; i < 12; i++)
+        for (var i = 0; i < 200; i++)
         {
             var next = acquired.Where(r => simulated[r] < r.Target).OrderByDescending(r => r.Priority).FirstOrDefault()
                        ?? acquired.Where(r => r.Priority >= 0.3 && simulated[r] < set.BaseMax).OrderByDescending(r => r.Priority).FirstOrDefault();

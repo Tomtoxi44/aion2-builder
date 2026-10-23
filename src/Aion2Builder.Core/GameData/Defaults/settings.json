@@ -10,7 +10,7 @@
     "coreSkillMultiplier": 1.6,
     "unequippedSkillNodeValue": 0.2,
     "maxPathLength": 5,
-    "planLength": 15,
+    "planLength": 30,
     "respecMinGain": 0.04,
     "_respecMaxImportance": "Une case ne peut être conseillée au retrait que si sa stat ou sa compétence a une importance inférieure à ce seuil (0 = inutile, 1 = indispensable).",
     "respecMaxImportance": 0.4

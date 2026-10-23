@@ -27,6 +27,10 @@ sealed class UiState
     public string? Genus { get; set; }
     public bool HomeHow { get; set; }
     public bool StatsHow { get; set; }
+    /// <summary>Listes longues (prochains points, prochaines cases) affichées en entier.</summary>
+    public bool AllNext { get; set; }
+    /// <summary>Daevanion : route conçue depuis le centre au lieu du plan à partir du plateau actuel.</summary>
+    public bool DaevaRoute { get; set; }
     public HashSet<Area> Collapsed { get; } = [];
 }
 
@@ -164,12 +168,13 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         };
         for (var i = 0; i < 8; i++) grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
 
-        var placeholder = Placeholder();
-        Grid.SetRow(placeholder, 0);
-        Grid.SetRowSpan(placeholder, 6);
-        Grid.SetColumn(placeholder, 1);
-        Grid.SetColumnSpan(placeholder, 2);
-        grid.Children.Add(placeholder);
+        // Au centre de la silhouette : le tableau de bord sur l'accueil, l'état de l'équipement sur l'écran Équipement.
+        var center = s.Screen == Screen.Home ? HomeCenter() : GearCenter();
+        Grid.SetRow(center, 0);
+        Grid.SetRowSpan(center, 6);
+        Grid.SetColumn(center, 1);
+        Grid.SetColumnSpan(center, 2);
+        grid.Children.Add(center);
 
         var selected = s.Screen == Screen.Gear ? SelectedSlot?.Slot : null;
         foreach (var (slot, row, col) in DollLayout)
@@ -184,28 +189,71 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         return grid;
     }
 
-    static Control Placeholder()
+    (string Label, int Value, Screen Screen)[] AreaScores =>
+    [
+        ("Stats", r.Scores.Stats, Screen.Stats), ("Équipement", r.Scores.Gear, Screen.Gear),
+        ("Compétences", r.Scores.Skills, Screen.Skills), ("Daevanion", r.Scores.Daevanion, Screen.Daeva),
+    ];
+
+    /// <summary>Accueil : les quatre notes (clic = écran), puis les actions les plus rentables (clic = l'endroit où agir).</summary>
+    Control HomeCenter()
     {
-        var hatch = new LinearGradientBrush
+        var tiles = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*"), ColumnSpacing = 8 };
+        var i = 0;
+        foreach (var (label, v, screen) in AreaScores)
         {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Absolute),
-            EndPoint = new RelativePoint(14.14, 14.14, RelativeUnit.Absolute),
-            SpreadMethod = GradientSpreadMethod.Repeat,
-            GradientStops =
-            {
-                new GradientStop(Color.Parse("#18191C"), 0), new GradientStop(Color.Parse("#18191C"), 0.5),
-                new GradientStop(Color.Parse("#151619"), 0.5), new GradientStop(Color.Parse("#151619"), 1),
-            },
-        };
-        return new Panel
+            var tile = Clickable(new StackPanel { Spacing = 2, Children = { T(v.ToString(), 22, Tok.Score(v), FontWeight.SemiBold, mono: true), T(label, 11, Tok.Muted) } },
+                () => GoTo(screen), Tok.Panel, Tok.TileHover, new Thickness(12, 8));
+            tile.CornerRadius = new CornerRadius(4);
+            tile.BorderBrush = Tok.Border;
+            tile.BorderThickness = new Thickness(1);
+            Grid.SetColumn(tile, i++);
+            tiles.Children.Add(tile);
+        }
+        var actions = new StackPanel();
+        foreach (var f in r.ActionPlan.Take(5)) actions.Children.Add(CompactAction(f));
+        if (actions.Children.Count == 0) actions.Children.Add(T("✓ Rien d'important à faire : tout est en ordre pour cette vue.", 13, Tok.Good).WithMargin(4, 8));
+        var header = new DockPanel { Margin = new Thickness(2, 6, 2, 0) };
+        var all = Clickable(T($"tout voir ({r.Findings.Count})", 11, Accent.Main), () => GoTo(Screen.Details));
+        DockPanel.SetDock(all, Dock.Right);
+        header.Children.Add(all);
+        header.Children.Add(Label($"À faire maintenant · {Mode}"));
+        return new StackPanel { Spacing = 8, Children = { tiles, header, actions } };
+    }
+
+    /// <summary>Une action sur une ligne : gravité, titre, zone ; le détail passe en infobulle.</summary>
+    Border CompactAction(Finding f)
+    {
+        var (icon, color) = Sev(f.Severity);
+        var row = Clickable(ColumnsSpaced("16,*,Auto", 8, T(icon, 12, color, FontWeight.SemiBold, mono: true), T(f.Title, 13, weight: FontWeight.Medium),
+                T(Fmt.Area(f.Area), 11, Tok.Muted, mono: true)),
+            () => Go(f), hover: Tok.TileHover, padding: new Thickness(8, 7));
+        row.BorderBrush = Tok.RowLine2;
+        row.BorderThickness = new Thickness(0, 0, 0, 1);
+        return Tip(row, $"{f.Detail}\n→ {f.Action}");
+    }
+
+    /// <summary>Équipement : palier, pièces à traiter par statut et gravures à revoir.</summary>
+    Control GearCenter()
+    {
+        var g = r.Gear;
+        var lines = new StackPanel { Spacing = 6 };
+        lines.Children.Add(T(g.NextStage is null ? $"Palier « {g.Stage.Name} »" : $"Palier « {g.Stage.Name} » → « {g.NextStage.Name} » à {g.NextStage.MinItemLevel}", 15, weight: FontWeight.SemiBold));
+        foreach (var (status, label) in new[] { (SlotStatus.Empty, "vide(s)"), (SlotStatus.Replace, "à remplacer"), (SlotStatus.Weak, "en retard"), (SlotStatus.Enchant, "à enchanter") })
         {
-            Children =
-            {
-                new Border { Background = hatch, CornerRadius = new CornerRadius(4) },
-                new Rectangle { Stroke = Tok.Dashed, StrokeThickness = 1, StrokeDashArray = new AvaloniaList<double> { 4, 3 }, RadiusX = 4, RadiusY = 4 },
-                T("rendu du personnage", 12, Tok.Faint, mono: true).Centered(),
-            },
-        };
+            var slots = g.Slots.Where(x => x.Status == status).ToList();
+            if (slots.Count == 0) continue;
+            var (code, color) = StatusCode(status);
+            lines.Children.Add(ColumnsSpaced("18,*", 8, T(code, 12, color, FontWeight.SemiBold, mono: true),
+                T($"{slots.Count} {label} : {string.Join(", ", slots.OrderByDescending(x => x.Priority).Select(x => x.SlotName))}", 13, Tok.Text2, wrap: true)));
+        }
+        var engr = r.Engravings.Items.Count(e => e.NeedsWork);
+        if (engr > 0)
+            lines.Children.Add(ColumnsSpaced("18,*", 8, T("G", 12, Tok.Warn, FontWeight.SemiBold, mono: true), T($"{engr} pièce(s) aux gravures à revoir (tableau sous la silhouette)", 13, Tok.Text2, wrap: true)));
+        if (g.Slots.All(x => x.Status == SlotStatus.Ok) && engr == 0)
+            lines.Children.Add(T("✓ Toutes les pièces sont au niveau de ton palier.", 13, Tok.Good));
+        lines.Children.Add(T("Clique une pièce pour son détail dans l'inspecteur.", 12, Tok.Muted).WithMargin(0, 6, 0, 0));
+        return new Border { Padding = new Thickness(16, 12), Background = Tok.Frame, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Child = lines };
     }
 
     static (string Code, IBrush Color) StatusCode(SlotStatus status) => status switch
@@ -400,7 +448,23 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
     Control HomeInspector()
     {
+        var c = r.Character;
         var panel = new StackPanel();
+        panel.Children.Add(SectionHeader("Personnage"));
+        panel.Children.Add(new StackPanel
+        {
+            Spacing = 8, Margin = new Thickness(14, 12),
+            Children =
+            {
+                T(c.Name, 17, weight: FontWeight.SemiBold),
+                T($"{r.Profile.Class.Name} · {r.Profile.Role.Name} · niveau {c.Level}", 13, Tok.Text2),
+                KeyValue([
+                    ("serveur", $"{c.ServerName} ({c.Region})", null), ("niveau_objet", c.ItemLevel.ToString(), null), ("puissance", c.CombatPower.ToString(), null),
+                    ("vue", Mode, Accent.Main), ("build", inputs.UsesDesigned ? "conçu" : "joueurs", null),
+                    ("importé", c.FetchedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm"), null),
+                ]),
+            },
+        });
         panel.Children.Add(SectionHeader("Score"));
 
         var global = new DockPanel { Margin = new Thickness(0, 0, 0, 2) };
@@ -426,11 +490,6 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 () => GoTo(screen)));
         }
         panel.Children.Add(new Border { Padding = new Thickness(14), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = scores });
-
-        var all = r.Findings.Count;
-        panel.Children.Add(SectionHeader($"Top 3 · {Mode}", Clickable(T($"tout voir ({all})", 11, Accent.Main), () => GoTo(Screen.Details))));
-        foreach (var f in r.ActionPlan.Take(3))
-            panel.Children.Add(ActionRow(f));
 
         panel.Children.Add(Collapsible("Comment c'est calculé ?", HowText, s.HomeHow, () => update(st => st.HomeHow = !st.HomeHow), new Thickness(14, 12, 14, 14)));
         return panel;
@@ -650,7 +709,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     /// <summary>Déplacements groupés par compétence qui reçoit : « +9 Coup de choc ← Défense d'égide −8, Sceau de protection −1 ».</summary>
     Control SkillMoves(SkillPlan sk)
     {
-        var list = new StackPanel { Spacing = 8 };
+        var list = new StackPanel { Spacing = 2 };
         foreach (var group in sk.Moves.GroupBy(m => m.To))
         {
             var moves = group.ToList();
@@ -666,8 +725,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 },
             };
             var to = group.Key.Skill.Name;
-            list.Children.Add(Clickable(new StackPanel { Spacing = 2, Children = { line, T(MoveReason(group.Key, moves), 12, Tok.Muted, wrap: true).WithLineHeight(1.4) } },
-                () => update(st => st.Skill = to), hover: Tok.Hover, padding: new Thickness(6, 4)));
+            // La raison passe en infobulle (et dans l'inspecteur au clic) : une ligne par compétence.
+            list.Children.Add(Tip(Clickable(line, () => update(st => st.Skill = to), hover: Tok.Hover, padding: new Thickness(6, 4)), MoveReason(group.Key, moves)));
         }
         return list;
     }
@@ -678,19 +737,30 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         if (sk.NextPoints.Count == 0)
             list.Children.Add(T($"Tes compétences utiles sont au niveau acheté maximum ({db.Settings.Skills.BaseMax}) : la suite passe par les cases Daevanion et l'équipement.",
                 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
-        var i = 0;
-        foreach (var x in sk.NextPoints)
+        // Points numérotés de bout en bout (« 3–4 ») : le joueur suit la liste jusqu'à épuisement de ses points.
+        const int shown = 8;
+        var total = 0;
+        foreach (var (x, index) in sk.NextPoints.Select((x, i) => (x, i)))
         {
-            var notes = new List<string> { Pts(x.Points) };
-            if (x.To == x.Skill.Target) notes.Add("niveau visé atteint");
-            else if (x.BeyondTarget) notes.Add("au-delà du visé, faute de mieux");
-            if (x.Specialty is { } spec) notes.Add($"spécialisation du niveau {spec}");
+            var first = total + 1;
+            total += x.Points;
+            if (index >= shown && !s.AllNext) continue;
+            var tags = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            if (x.Specialty is { } spec) tags.Children.Add(T($"✦ spé. {spec}", 11, Accent.Main, FontWeight.SemiBold, mono: true));
+            if (x.To == x.Skill.Target) tags.Children.Add(T("visé atteint", 11, Tok.Good, mono: true));
+            else if (x.BeyondTarget) tags.Children.Add(T("au-delà du visé", 11, Tok.Faint, mono: true));
             var name = x.Skill.Skill.Name;
-            list.Children.Add(Clickable(ColumnsSpaced("24,*,Auto", 8,
-                    T($"{++i}.", 12, Tok.Muted, mono: true),
-                    T($"{name}   {x.From} → {x.To}", 13),
-                    T(string.Join(" · ", notes), 12, x.Specialty is not null ? Accent.Main : Tok.Muted, mono: true)),
-                () => update(st => st.Skill = name), hover: Tok.Hover, padding: new Thickness(6, 4)));
+            list.Children.Add(Clickable(ColumnsSpaced("54,*,Auto", 8,
+                    T(x.Points == 1 ? $"{first}" : $"{first}–{total}", 12, Tok.Muted, mono: true),
+                    T($"{name}   {x.From} → {x.To}", 13, x.BeyondTarget ? Tok.Text2 : null),
+                    tags),
+                () => update(st => st.Skill = name), hover: Tok.Hover, padding: new Thickness(6, 3)));
+        }
+        if (sk.NextPoints.Count > shown)
+        {
+            var rest = sk.NextPoints.Skip(shown).Sum(x => x.Points);
+            list.Children.Add(Clickable(T(s.AllNext ? "▴ réduire" : $"▾ voir la suite ({rest} points de plus)", 12, Accent.Main),
+                () => update(st => st.AllNext = !st.AllNext), hover: Tok.Hover, padding: new Thickness(6, 4)));
         }
         return list;
     }
@@ -721,22 +791,31 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         // Ce qu'il faut faire tout de suite (réinitialisation gratuite), puis où vont les points suivants.
         if (sk.Moves.Count > 0)
         {
-            panel.Children.Add(SectionHeader($"Maintenant · {Pts(sk.Moves.Sum(m => m.Points))} à placer (réinitialisation gratuite)", padX: 20));
-            panel.Children.Add(new Border { Padding = new Thickness(14, 8), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = SkillMoves(sk) });
+            panel.Children.Add(SectionHeader($"Maintenant · {Pts(sk.Moves.Sum(m => m.Points))} à déplacer (réinitialisation gratuite) · survole une ligne pour la raison", padX: 20));
+            panel.Children.Add(new Border { Padding = new Thickness(14, 6), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = SkillMoves(sk) });
         }
-        panel.Children.Add(SectionHeader("Prochains points · quand tu en gagnes, dans cet ordre", padX: 20));
-        panel.Children.Add(new Border { Padding = new Thickness(14, 8), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = NextPoints(sk) });
+        else
+            panel.Children.Add(new Border
+            {
+                Padding = new Thickness(20, 10), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = T(sk.UnspentPoints > 0 ? "✓ Rien à déplacer : place tes points non dépensés dans l'ordre ci-dessous."
+                    : "✓ Tes points sont bien placés : rien à changer. La liste ci-dessous sert quand tu gagnes de nouveaux points.", 13, Tok.Good, wrap: true),
+            });
+        panel.Children.Add(SectionHeader("Prochains points · le site ne montre pas tes points libres : suis la liste jusqu'à épuisement", padX: 20));
+        panel.Children.Add(new Border { Padding = new Thickness(14, 6), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = NextPoints(sk) });
 
-        const string cols = "80,*,140,90,64,110";
-        panel.Children.Add(TableHeader(cols, "Type", "Compétence", "Rôle", "Niveau", "Visé", "Maintenant"));
+        const string cols = "*,190,90,64,110";
+        panel.Children.Add(TableHeader(cols, "Compétence", "Rôle", "Niveau", "Visé", "Maintenant"));
         var selected = SelectedSkillName;
         foreach (var a in sk.Skills)
         {
-            var kind = a.Kind == SkillKind.Passive ? "Passive" : a.InBar ? "Active ✓" : "Active";
+            var kind = a.Kind == SkillKind.Passive ? "passif" : a.InBar ? null : "hors barre";
             Control delta = a.Delta == 0 ? T("=", 12, Tok.Muted, mono: true) : Pill(DeltaText(a), DeltaColor(a));
             var (aimText, aimColor, aimTip) = Aim(a);
+            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { T(a.Skill.Name, 13, a.Skill.Acquired ? null : Tok.Muted) } };
+            if (kind is not null) name.Children.Add(T(kind, 11, Tok.Faint, mono: true));
             panel.Children.Add(TableRow(Columns(cols,
-                    T(kind, 12, Tok.Muted), T(a.Skill.Name, 13, a.Skill.Acquired ? null : Tok.Muted), T(a.Role, 13, Tok.Text2),
+                    name, Tip(T(a.Role, 13, Tok.Text2), a.Role),
                     Tip(T(a.Skill.Acquired ? $"{a.Base} +{a.Bonus} = {a.Total}" : "—", 13, mono: true), "Niveau acheté + niveaux gratuits (Daevanion, équipement) = niveau total."),
                     Tip(T(aimText, 13, aimColor, FontWeight.SemiBold, mono: true), aimTip), delta),
                 a.Skill.Name == selected, () => update(st => st.Skill = a.Skill.Name)));
@@ -1034,7 +1113,23 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             inner.BorderThickness = new Thickness(0, 2, 0, 0);
             tabs.Children.Add(new Border { Height = 34, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 1, 0), Child = inner });
         }
-        var tabBar = new Border { Height = 34, Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = tabs };
+        Border Segment(string text, bool on, bool route)
+        {
+            var seg = Clickable(T(text, 12, on ? Tok.OnAccent : Tok.Muted, FontWeight.SemiBold, mono: true), () => update(st => { st.DaevaRoute = route; st.AllNext = false; }),
+                on ? Accent.Main : null, padding: new Thickness(10, 2));
+            seg.CornerRadius = new CornerRadius(3);
+            return seg;
+        }
+        var switcher = new Border
+        {
+            Background = Tok.Window, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Padding = new Thickness(2),
+            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0),
+            Child = new StackPanel { Orientation = Orientation.Horizontal, Children = { Segment("Ton plateau", !s.DaevaRoute, false), Segment("Route conçue", s.DaevaRoute, true) } },
+        };
+        ToolTip.SetTip(switcher, "Ton plateau : la suite à partir de tes cases ouvertes (et la réorganisation si elle vaut le coup).\n" +
+                                 "Route conçue : le meilleur chemin depuis le centre pour tous tes points, sans tenir compte de ton placement actuel.");
+        DockPanel.SetDock(switcher, Dock.Right);
+        var tabBar = new Border { Height = 34, Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = new DockPanel { Children = { switcher, tabs } } };
         DockPanel.SetDock(tabBar, Dock.Top);
         panel.Children.Add(tabBar);
         if (selected is null)
@@ -1055,6 +1150,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             {
                 T("● compétence · ■ stat", 12, Tok.Muted),
                 new TextBlock { FontSize = 12, Foreground = Tok.Muted, Inlines = new InlineCollection { new Run("1 2 3") { Foreground = Accent.Main, FontWeight = FontWeight.Bold }, new Run(" à prendre, dans l'ordre") } },
+                s.DaevaRoute ? T("chiffres sur les cases pleines : ordre depuis le centre", 12, Tok.Muted) : new Control(),
                 new TextBlock { FontSize = 12, Foreground = Tok.Muted, Inlines = new InlineCollection { new Run("✕") { Foreground = Tok.Bad, FontWeight = FontWeight.Bold }, new Run(" à retirer") } },
                 T("coût : gris 1 · vert 2 · bleu 3 · orange 4", 12, Tok.Muted),
             },
@@ -1072,49 +1168,129 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     /// </summary>
     Control DaevaNext(BoardSummary selected)
     {
+        if (s.DaevaRoute && RouteFor(selected.Pool) is { } route) return RouteList(route, selected);
         var panel = new StackPanel { Margin = new Thickness(20, 0, 20, 20) };
         var respec = WorthRespec(selected.Pool);
         var steps = respec?.Add ?? r.Daevanion.Steps.Where(x => x.Pool == selected.Pool).ToList();
+        var unspent = r.Daevanion.Budgets.FirstOrDefault(x => x.Pool == selected.Pool)?.Unspent ?? 0;
         panel.Children.Add(SectionHeader(respec is not null
             ? $"Après réinitialisation ({respec.Remove.Count} case(s) à retirer, +{Fmt.Pct(respec.Gain)} de valeur) · dans cet ordre"
-            : $"Prochaines cases · réserve {PoolShort(selected.Pool)}, avec tes prochains points, dans cet ordre", padX: 0));
-        var list = new StackPanel { Spacing = 2, Margin = new Thickness(0, 6, 0, 0) };
-        foreach (var x in steps.Take(15))
+            : unspent > 0
+                ? $"Prochaines cases · réserve {PoolShort(selected.Pool)} · tes {unspent} points libres couvrent les cases « faisable »"
+                : $"Prochaines cases · réserve {PoolShort(selected.Pool)} · suis la liste jusqu'à épuisement de tes points", padX: 0));
+        var list = new StackPanel { Spacing = 0, Margin = new Thickness(0, 4, 0, 0) };
+        const int shown = 15;
+        foreach (var x in s.AllNext ? steps : steps.Take(shown))
         {
-            var boardId = x.Board.Id;
-            var tags = new List<string> { $"{x.Cost:0} pt{(x.Cost > 1 ? "s" : "")}" };
-            if (x.Affordable) tags.Add("faisable maintenant");
-            list.Children.Add(Clickable(ColumnsSpaced("28,80,*,Auto", 8,
-                    T(x.Step.ToString(), 12, Accent.Main, FontWeight.Bold, mono: true),
-                    T(x.Board.Name, 12, boardId == selected.Board.Id ? Tok.Text : Tok.Muted),
-                    new StackPanel
-                    {
-                        Spacing = 1,
-                        Children =
-                        {
-                            T(x.Effects, 13, x.IsPassage ? Tok.Muted : null, wrap: true),
-                            T(x.IsPassage ? "case de passage vers les suivantes" : Reason(x.Node), 11, Tok.Muted, wrap: true),
-                        },
-                    },
-                    T(string.Join(" · ", tags), 11, x.Affordable ? Tok.Good : Tok.Muted, mono: true)),
-                () => update(st => st.Board = boardId), hover: Tok.Hover, padding: new Thickness(6, 4)));
+            var tag = x.Affordable ? ("faisable", Tok.Good) : x.IsPassage ? ("passage", Tok.Faint) : ("", Tok.Muted);
+            list.Children.Add(NodeRow(x.Step.ToString(), Accent.Main, x, selected, tag));
         }
+        if (steps.Count > shown) list.Children.Add(MoreToggle(steps.Count - shown, "cases"));
         if (steps.Count == 0)
             list.Children.Add(T("Rien à prendre : la réserve est pleine, ou ce qui reste vaut peu pour ta classe.", 12, Tok.Muted, wrap: true));
         panel.Children.Add(list);
         return panel;
     }
 
+    DesignedRoute? RouteFor(string pool) => r.Daevanion.Routes.FirstOrDefault(x => x.Pool == pool && x.Nodes.Count > 0);
+
+    /// <summary>Une case sur une ligne : numéro, plateau, effet, coût et cumul ; la raison passe en infobulle.</summary>
+    Border NodeRow(string number, IBrush numberColor, PlannedNode x, BoardSummary selected, (string Text, IBrush Color) tag)
+    {
+        var boardId = x.Board.Id;
+        var row = Clickable(ColumnsSpaced("34,70,*,100,70", 8,
+                T(number, 12, numberColor, FontWeight.Bold, mono: true),
+                T(x.Board.Name, 12, boardId == selected.Board.Id ? Tok.Text : Tok.Muted),
+                T(x.Effects, 13, x.IsPassage ? Tok.Muted : null),
+                T($"{x.Cost:0} pt · Σ {Fmt.Num(x.Cumulative)}", 11, Tok.Muted, mono: true),
+                T(tag.Text, 11, tag.Color, mono: true)),
+            () => update(st => st.Board = boardId), hover: Tok.Hover, padding: new Thickness(6, 3));
+        return Tip(row, $"{x.Board.Name} ligne {x.Node.Row} col. {x.Node.Col} — {(x.IsPassage ? "case de passage vers les suivantes" : Reason(x.Node))}");
+    }
+
+    Border MoreToggle(int hidden, string what) =>
+        Clickable(T(s.AllNext ? "▴ réduire" : $"▾ voir la suite ({hidden} {what} de plus)", 12, Accent.Main), () => update(st => st.AllNext = !st.AllNext),
+            hover: Tok.Hover, padding: new Thickness(6, 5));
+
+    /// <summary>
+    /// Route conçue : cases à ouvrir pour la suivre, cases ouvertes hors route, puis la suite ; l'ordre complet depuis le
+    /// centre (utile après une réinitialisation) se déplie.
+    /// </summary>
+    Control RouteList(DesignedRoute route, BoardSummary selected)
+    {
+        var panel = new StackPanel { Margin = new Thickness(20, 0, 20, 20) };
+        var inBudget = route.InBudget.ToList();
+        var toOpen = inBudget.Where(x => !x.Node.Open).ToList();
+        var inRoute = inBudget.Select(x => x.Node.Id).ToHashSet();
+        var outside = r.Daevanion.Boards.Where(b => b.Pool == route.Pool)
+            .SelectMany(b => b.Board.Nodes.Where(n => n.Open && !n.IsStart && !inRoute.Contains(n.Id)).Select(n => (b.Board, Node: n))).ToList();
+        var later = route.Nodes.Where(x => !x.Affordable && !x.Node.Open).ToList();
+
+        if (s.AllNext)
+        {
+            panel.Children.Add(SectionHeader($"Ordre complet depuis le centre · {inBudget.Count} cases pour tes {route.Budget} points, puis la suite", padX: 0));
+            var all = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
+            foreach (var x in route.Nodes)
+                all.Children.Add(NodeRow(x.Step.ToString(), x.Node.Open ? Tok.Muted : Accent.Main, x, selected,
+                    x.Node.Open ? ("ouverte", Tok.Faint) : x.Affordable ? ("à ouvrir", Tok.Good) : ("suite", Tok.Muted)));
+            all.Children.Add(MoreToggle(0, ""));
+            panel.Children.Add(all);
+            return panel;
+        }
+
+        panel.Children.Add(SectionHeader($"À ouvrir pour suivre la route · {toOpen.Count} case(s), {Fmt.Num(toOpen.Sum(x => x.Cost))} points", padX: 0));
+        var list = new StackPanel { Margin = new Thickness(0, 4, 0, 8) };
+        foreach (var x in toOpen) list.Children.Add(NodeRow(x.Step.ToString(), Accent.Main, x, selected, ("à ouvrir", Tok.Good)));
+        if (toOpen.Count == 0) list.Children.Add(T("Tes cases ouvertes suivent déjà la route conçue.", 12, Tok.Good).WithMargin(6, 4));
+        panel.Children.Add(list);
+
+        if (outside.Count > 0)
+        {
+            panel.Children.Add(SectionHeader($"Ouvertes chez toi, hors de la route · {outside.Count} case(s)", padX: 0));
+            var off = new StackPanel { Margin = new Thickness(0, 4, 0, 8) };
+            foreach (var (board, node) in outside)
+            {
+                var boardId = board.Id;
+                off.Children.Add(Tip(Clickable(ColumnsSpaced("34,70,*", 8, T("✕", 12, Tok.Bad, FontWeight.Bold, mono: true), T(board.Name, 12, Tok.Muted),
+                        T(string.Join(", ", node.Effects.Select(e => e.Raw)), 13, Tok.Text2)),
+                    () => update(st => st.Board = boardId), hover: Tok.Hover, padding: new Thickness(6, 3)), Reason(node)));
+            }
+            panel.Children.Add(off);
+        }
+
+        panel.Children.Add(SectionHeader($"La suite, avec tes prochains points · {later.Count} case(s)", padX: 0));
+        var next = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
+        foreach (var x in later.Take(12)) next.Children.Add(NodeRow(x.Step.ToString(), Tok.Text2, x, selected, ("suite", Tok.Muted)));
+        next.Children.Add(Clickable(T("▾ ordre complet depuis le centre (pour suivre la route après une réinitialisation)", 12, Accent.Main),
+            () => update(st => st.AllNext = true), hover: Tok.Hover, padding: new Thickness(6, 5)));
+        panel.Children.Add(next);
+        return panel;
+    }
+
     /// <summary>Grille 15 × 15 : case ouverte pleine, fermée en contour, à prendre numérotée, à retirer barrée.</summary>
     Control BoardGrid(BoardSummary summary)
     {
-        const int size = 26, gap = 2;
+        const int size = 30, gap = 2;
         var board = summary.Board;
-        var respec = WorthRespec(summary.Pool);
-        var numbers = respec is not null
-            ? respec.Add.Where(x => x.Board.Id == board.Id).ToDictionary(x => x.Node.Id, x => x.Step)
-            : r.Daevanion.Steps.Where(x => x.Board.Id == board.Id).ToDictionary(x => x.Node.Id, x => x.Step);
-        var removed = respec?.Remove.Where(x => x.Board.Id == board.Id).Select(x => x.Node.Id).ToHashSet() ?? [];
+        var route = s.DaevaRoute ? RouteFor(summary.Pool) : null;
+        var respec = route is null ? WorthRespec(summary.Pool) : null;
+        Dictionary<long, int> numbers;
+        HashSet<long> removed;
+        if (route is not null)
+        {
+            // Route conçue : toutes les cases de la route numérotées dans l'ordre depuis le centre (ouvertes comprises).
+            var inBudget = route.InBudget.Where(x => x.Board.Id == board.Id).ToList();
+            numbers = inBudget.ToDictionary(x => x.Node.Id, x => x.Step);
+            var kept = inBudget.Select(x => x.Node.Id).ToHashSet();
+            removed = board.Nodes.Where(n => n.Open && !n.IsStart && !kept.Contains(n.Id)).Select(n => n.Id).ToHashSet();
+        }
+        else
+        {
+            numbers = respec is not null
+                ? respec.Add.Where(x => x.Board.Id == board.Id).ToDictionary(x => x.Node.Id, x => x.Step)
+                : r.Daevanion.Steps.Where(x => x.Board.Id == board.Id).ToDictionary(x => x.Node.Id, x => x.Step);
+            removed = respec?.Remove.Where(x => x.Board.Id == board.Id).Select(x => x.Node.Id).ToHashSet() ?? [];
+        }
         var canvas = new Canvas { Width = 15 * (size + gap) - gap, Height = 15 * (size + gap) - gap };
         foreach (var n in board.Nodes)
         {
@@ -1122,16 +1298,18 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var grade = n.IsStart ? Brushes.White : Tok.B(db.Grade(n.Grade).Color);
             var isRemoved = removed.Contains(n.Id);
             int? step = numbers.TryGetValue(n.Id, out var st) ? st : null;
+            // Une case déjà ouverte qui fait partie de la route garde sa couleur, avec son numéro en sombre.
+            var openStep = open && step is not null;
             var cell = new Border
             {
                 Width = size, Height = size,
                 CornerRadius = new CornerRadius(n.IsSkill ? size / 2.0 : 3),
                 Background = isRemoved ? Tok.CellOff : open ? grade : Tok.CellOff,
-                BorderBrush = isRemoved ? Tok.Bad : step is not null ? Accent.Main : open ? grade : Tok.Alpha(grade, 0.33),
-                BorderThickness = new Thickness(isRemoved || step is not null ? 2 : 1),
+                BorderBrush = isRemoved ? Tok.Bad : step is not null && !open ? Accent.Main : open ? grade : Tok.Alpha(grade, 0.33),
+                BorderThickness = new Thickness(isRemoved || step is not null && !open ? 2 : 1),
                 Opacity = open || step is not null || isRemoved ? 1 : 0.55,
                 Child = isRemoved ? T("✕", 11, Tok.Bad, FontWeight.SemiBold, mono: true).Centered()
-                    : step is null ? null : T(step.ToString()!, 11, Accent.Main, FontWeight.SemiBold, mono: true).Centered(),
+                    : step is null ? null : T(step.ToString()!, step >= 100 ? 9 : 11, openStep ? Tok.OnAccent : Accent.Main, FontWeight.SemiBold, mono: true).Centered(),
             };
             Tip(cell, $"{(n.Name.Length > 0 ? n.Name : n.Type)} — {db.Settings.Daevanion.NodeCost.GetValueOrDefault(n.Grade, 0)} point(s)\n" +
                       string.Join("\n", n.Effects.Select(e => e.Raw)) +
@@ -1184,6 +1362,26 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
         var board = SelectedBoard;
         if (board is null) return panel;
+        if (s.DaevaRoute && RouteFor(board.Pool) is { } route)
+        {
+            var inBudget = route.InBudget.ToList();
+            var open = inBudget.Count(x => x.Node.Open);
+            panel.Children.Add(SectionHeader("Route conçue", T($"{(route.Gain >= 0 ? "+" : "")}{Fmt.Pct(route.Gain)}", 12, route.Gain > 0.005 ? Tok.Good : Tok.Muted, mono: true)));
+            panel.Children.Add(new StackPanel
+            {
+                Spacing = 10, Margin = new Thickness(14, 12),
+                Children =
+                {
+                    T($"Construite depuis le centre pour tes {route.Budget} points, sans tenir compte de ton placement : {inBudget.Count} cases, dont {open} déjà ouvertes chez toi.",
+                        13, Tok.Text2, wrap: true).WithLineHeight(1.5),
+                    T(route.Gain > 0.005 ? $"Elle vaut {Fmt.Pct(route.Gain)} de plus que ton placement actuel : à suivre si tu réinitialises."
+                        : "Ton placement actuel vaut autant : inutile de réinitialiser, continue simplement par la suite de la route.", 13, wrap: true).WithLineHeight(1.5),
+                    T("Chaque case vaut selon l'importance de sa stat ou de sa compétence pour ta classe (build suivi) et ce mode, rapportée à son coût, chemins d'accès compris.",
+                        12, Tok.Muted, wrap: true).WithLineHeight(1.45),
+                },
+            });
+            return panel;
+        }
         if (WorthRespec(board.Pool) is { } respec)
         {
             panel.Children.Add(SectionHeader("Réorganisation", T($"+{Fmt.Pct(respec.Gain)}", 12, Tok.Good, mono: true)));

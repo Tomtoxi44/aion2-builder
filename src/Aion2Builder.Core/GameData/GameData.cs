@@ -187,6 +187,8 @@ public sealed record DaevanionSettings
     public double UnequippedSkillNodeValue { get; init; } = 0.2;
     public int MaxPathLength { get; init; } = 5;
     public int PlanLength { get; init; } = 15;
+    /// <summary>Plafond de la liste des prochaines cases quand les points non dépensés indiqués demandent plus que <see cref="PlanLength"/>.</summary>
+    public int MaxPlanLength { get; init; } = 400;
     public string PointSources { get; init; } = "";
     /// <summary>Gain minimal (en part de la valeur actuelle) pour conseiller de réinitialiser un plateau.</summary>
     public double RespecMinGain { get; init; } = 0.04;
