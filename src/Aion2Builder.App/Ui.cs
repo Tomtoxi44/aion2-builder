@@ -1,139 +1,226 @@
-using Aion2Builder.Analysis;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 
 namespace Aion2Builder.App;
 
-/// <summary>Petits constructeurs de contrôles pour écrire l'interface en C#.</summary>
+/// <summary>Petits constructeurs de contrôles pour écrire l'interface en C# (pas de .axaml).</summary>
 static class Ui
 {
-    public static readonly IBrush Muted = Brush("#8B93A7");
-    public static readonly IBrush CardBackground = Brush("#1AFFFFFF");
-    public static readonly IBrush Good = Brush("#46A758");
-    public static readonly IBrush Bad = Brush("#E5484D");
-    public static readonly IBrush Warn = Brush("#F5A524");
-    public static readonly IBrush Accent = Brush("#3FA7D6");
+    /// <summary>Couleur secondaire en cours (menu « thème »).</summary>
+    public static AccentTheme Accent { get; set; } = AccentTheme.All[0];
 
-    public static IBrush Brush(string hex) => new SolidColorBrush(Color.Parse(hex));
+    static readonly Cursor Hand = new(StandardCursorType.Hand);
 
-    public static IBrush SeverityBrush(Severity s) => s switch
-    {
-        Analysis.Severity.Critical => Bad,
-        Analysis.Severity.Important => Warn,
-        Analysis.Severity.Advice => Accent,
-        _ => Muted,
-    };
-
-    public static IBrush StatusBrush(SlotStatus s) => s switch
-    {
-        SlotStatus.Empty => Bad,
-        SlotStatus.Replace or SlotStatus.Weak => Warn,
-        SlotStatus.Enchant => Accent,
-        _ => Good,
-    };
-
-    public static IBrush ScoreBrush(int score) => score >= 75 ? Good : score >= 50 ? Warn : Bad;
-
-    public static TextBlock Text(string text, double size = 13, bool bold = false, IBrush? color = null, bool wrap = true)
+    public static TextBlock T(string text, double size = 13, IBrush? color = null, FontWeight weight = FontWeight.Normal,
+        bool mono = false, bool wrap = false)
     {
         var block = new TextBlock
         {
             Text = text,
             FontSize = size,
-            FontWeight = bold ? FontWeight.SemiBold : FontWeight.Normal,
+            FontWeight = weight,
             TextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap,
+            TextTrimming = wrap ? TextTrimming.None : TextTrimming.CharacterEllipsis,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        // Ne pas écrire Foreground = null : cela masquerait la couleur héritée du thème.
+        if (mono) block.FontFamily = Fonts.Mono;
+        // Ne pas écrire Foreground = null : cela masquerait la couleur héritée.
         if (color is not null) block.Foreground = color;
         return block;
     }
 
-    /// <summary>Ajoute une infobulle (au survol de la souris).</summary>
+    /// <summary>Libellé de section : 11 px, majuscules, interlettrage 0,08 em.</summary>
+    public static TextBlock Label(string text, IBrush? color = null) =>
+        new() { Text = text.ToUpperInvariant(), FontSize = 11, LetterSpacing = 0.88, Foreground = color ?? Tok.Muted, VerticalAlignment = VerticalAlignment.Center };
+
+    /// <summary>En-tête de section commun au contenu (padX 20) et à l'inspecteur (padX 14).</summary>
+    public static Border SectionHeader(string text, Control? right = null, double padX = 14, bool topBorder = false)
+    {
+        var dock = new DockPanel();
+        if (right is not null)
+        {
+            DockPanel.SetDock(right, Dock.Right);
+            dock.Children.Add(right);
+        }
+        dock.Children.Add(Label(text));
+        return new Border
+        {
+            Padding = new Thickness(padX, 8),
+            BorderBrush = Tok.Border,
+            BorderThickness = new Thickness(0, topBorder ? 1 : 0, 0, 1),
+            Child = dock,
+        };
+    }
+
+    /// <summary>Liste clé / valeur en police à chasse fixe, colonnes 110 px | reste.</summary>
+    public static Grid KeyValue(IEnumerable<(string Key, string Value, IBrush? Color)> rows)
+    {
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("110,*"), ColumnSpacing = 10, RowSpacing = 6 };
+        var r = 0;
+        foreach (var (key, value, color) in rows)
+        {
+            grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            var k = T(key, 12, Tok.Muted, mono: true);
+            var v = T(value, 12, color, mono: true, wrap: true);
+            Grid.SetRow(k, r);
+            Grid.SetRow(v, r);
+            Grid.SetColumn(v, 1);
+            grid.Children.Add(k);
+            grid.Children.Add(v);
+            r++;
+        }
+        return grid;
+    }
+
+    /// <summary>Bloc « libellé en majuscules + texte » de l'inspecteur.</summary>
+    public static StackPanel Field(string label, string text, IBrush? color = null) =>
+        new() { Spacing = 5, Children = { Label(label), T(text, 13, color, wrap: true) } };
+
+    /// <summary>Ligne de grille à colonnes fixes (ex. "150,100,90,80,80,*"), espacement 12 par défaut.</summary>
+    public static Grid Columns(string definitions, params Control[] cells) => ColumnsSpaced(definitions, 12, cells);
+
+    public static Grid ColumnsSpaced(string definitions, double spacing, params Control[] cells)
+    {
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions(definitions), ColumnSpacing = spacing };
+        for (var i = 0; i < cells.Length; i++)
+        {
+            Grid.SetColumn(cells[i], i);
+            grid.Children.Add(cells[i]);
+        }
+        return grid;
+    }
+
+    /// <summary>Zone cliquable avec survol : fond normal, fond survolé, action au clic gauche.</summary>
+    public static Border Clickable(Control child, Action onClick, IBrush? background = null, IBrush? hover = null, Thickness? padding = null)
+    {
+        var normal = background ?? Brushes.Transparent;
+        var border = new Border { Background = normal, Child = child, Cursor = Hand, Padding = padding ?? default };
+        if (hover is not null)
+        {
+            border.PointerEntered += (_, _) => border.Background = hover;
+            border.PointerExited += (_, _) => border.Background = normal;
+        }
+        border.PointerPressed += (_, e) =>
+        {
+            if (!e.GetCurrentPoint(border).Properties.IsLeftButtonPressed) return;
+            e.Handled = true;
+            onClick();
+        };
+        return border;
+    }
+
+    /// <summary>Barre de progression plate ; repère optionnel (trait clair 2 × 14) à la cible.</summary>
+    public static Control Bar(double ratio, IBrush fill, double height, double? marker = null, IBrush? track = null)
+    {
+        static Grid Split(double r, Control? left)
+        {
+            r = Math.Clamp(r, 0, 1);
+            var g = new Grid
+            {
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition(new GridLength(r, GridUnitType.Star)),
+                    new ColumnDefinition(new GridLength(1 - r, GridUnitType.Star)),
+                },
+            };
+            if (left is not null) g.Children.Add(left);
+            return g;
+        }
+
+        var bar = new Panel { Height = height, Background = track ?? Tok.HoverStrong, VerticalAlignment = VerticalAlignment.Center };
+        bar.Children.Add(Split(ratio, new Border { Background = fill }));
+        if (marker is null) return bar;
+
+        var holder = new Panel { Height = 14 };
+        holder.Children.Add(bar);
+        var m = Math.Clamp(marker.Value, 0, 1);
+        var line = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(new GridLength(m, GridUnitType.Star)),
+                new ColumnDefinition(new GridLength(2)),
+                new ColumnDefinition(new GridLength(1 - m, GridUnitType.Star)),
+            },
+        };
+        var tick = new Border { Background = Tok.Text, Width = 2, Height = 14 };
+        Grid.SetColumn(tick, 1);
+        line.Children.Add(tick);
+        holder.Children.Add(line);
+        return holder;
+    }
+
+    /// <summary>Compteur « − N + » : chaque clic appelle <paramref name="onChange"/> tout de suite.</summary>
+    public static Border Stepper(int value, Action<int> onChange, IBrush? background = null)
+    {
+        Border Button(string text, int delta) => Clickable(T(text, 12, Accent.Main, mono: true),
+            () => onChange(Math.Max(0, value + delta)), hover: Tok.HoverStrong, padding: new Thickness(9, 3));
+        return new Border
+        {
+            BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3),
+            Background = background ?? Tok.Panel, VerticalAlignment = VerticalAlignment.Center,
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Children =
+                {
+                    Button("−", -1),
+                    new Border { MinWidth = 24, Child = T(value.ToString(), 12, Tok.Text, FontWeight.SemiBold, mono: true).Centered() },
+                    Button("+", 1),
+                },
+            },
+        };
+    }
+
+    /// <summary>Pastille de conseil : texte coloré sur fond de la même couleur à 15 %.</summary>
+    public static Border Pill(string text, IBrush color) => new()
+    {
+        Background = Tok.Alpha(color, 0.15), CornerRadius = new CornerRadius(3), Padding = new Thickness(7, 1),
+        HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
+        Child = T(text, 12, color, FontWeight.SemiBold, mono: true),
+    };
+
+    /// <summary>Bloc repliable « + Titre » : le texte n'apparaît qu'une fois ouvert.</summary>
+    public static StackPanel Collapsible(string title, string text, bool open, Action toggle, Thickness padding)
+    {
+        var head = Clickable(new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 8,
+            Children = { T(open ? "−" : "+", 12, Accent.Main, mono: true), T(title, 12, Accent.Main) },
+        }, toggle);
+        var panel = new StackPanel { Spacing = 8, Margin = padding, Children = { head } };
+        if (open) panel.Children.Add(T(text, 12, Tok.Muted, wrap: true).WithLineHeight(1.55));
+        return panel;
+    }
+
     public static T Tip<T>(T control, string text) where T : Control
     {
         ToolTip.SetTip(control, text);
         return control;
     }
 
-    public static Border Card(Control child, IBrush? accent = null, double bottom = 8) => new()
+    public static TextBlock Centered(this TextBlock block)
     {
-        Background = CardBackground,
-        CornerRadius = new CornerRadius(8),
-        Padding = new Thickness(12, 10),
-        Margin = new Thickness(0, 0, 0, bottom),
-        BorderBrush = accent,
-        BorderThickness = accent is null ? new Thickness(0) : new Thickness(4, 0, 0, 0),
-        Child = child,
-    };
-
-    public static StackPanel Stack(double spacing = 4, params Control[] children)
-    {
-        var panel = new StackPanel { Spacing = spacing };
-        foreach (var c in children) panel.Children.Add(c);
-        return panel;
+        block.HorizontalAlignment = HorizontalAlignment.Center;
+        block.TextAlignment = TextAlignment.Center;
+        return block;
     }
 
-    public static StackPanel Row(double spacing = 8, params Control[] children)
+    public static TextBlock WithLineHeight(this TextBlock block, double factor)
     {
-        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = spacing };
-        foreach (var c in children) panel.Children.Add(c);
-        return panel;
+        block.LineHeight = block.FontSize * factor;
+        return block;
     }
-
-    /// <summary>Pastille colorée (score, statut, rareté).</summary>
-    public static Border Chip(string text, IBrush color) => new()
-    {
-        Background = color,
-        CornerRadius = new CornerRadius(10),
-        Padding = new Thickness(8, 2),
-        VerticalAlignment = VerticalAlignment.Center,
-        Child = new TextBlock { Text = text, FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = Brushes.Black },
-    };
 
     public static ScrollViewer Scroll(Control content) => new()
     {
-        Content = new Border { Padding = new Thickness(16, 12), Child = content },
+        Content = content,
         HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
     };
 
-    /// <summary>Barre de répartition avec repère de cible.</summary>
-    public static Control ShareBar(double share, double target, IBrush color)
-    {
-        const double width = 260;
-        var canvas = new Canvas { Width = width, Height = 14 };
-        canvas.Children.Add(new Border { Width = width, Height = 14, CornerRadius = new CornerRadius(4), Background = CardBackground });
-        canvas.Children.Add(new Border { Width = Math.Clamp(share, 0, 1) * width, Height = 14, CornerRadius = new CornerRadius(4), Background = color });
-        var marker = new Border { Width = 2, Height = 18, Background = Brushes.White };
-        Canvas.SetLeft(marker, Math.Clamp(target, 0, 1) * width - 1);
-        Canvas.SetTop(marker, -2);
-        canvas.Children.Add(marker);
-        return canvas;
-    }
-
-    /// <summary>Tableau simple : colonnes de largeur fixe, une ligne par entrée.</summary>
-    public static Grid Table(string columns, IEnumerable<Control[]> rows, string[]? headers = null)
-    {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions(columns) };
-        var r = 0;
-        void Add(Control[] cells, bool header)
-        {
-            grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-            for (var c = 0; c < cells.Length; c++)
-            {
-                var cell = cells[c];
-                cell.Margin = new Thickness(0, header ? 0 : 3, 12, header ? 6 : 3);
-                Grid.SetRow(cell, r);
-                Grid.SetColumn(cell, c);
-                grid.Children.Add(cell);
-            }
-            r++;
-        }
-        if (headers is not null) Add(headers.Select(h => (Control)Text(h, 12, true, Muted, wrap: false)).ToArray(), true);
-        foreach (var row in rows) Add(row, false);
-        return grid;
-    }
+    public static IBrush Brush(string hex) => Tok.B(hex);
 }

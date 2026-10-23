@@ -51,10 +51,19 @@ Interface graphique :
 dotnet run --project src/Aion2Builder.App
 ```
 
-Région, serveur, nom → « Importer depuis le site officiel ». Le champ serveur est une liste filtrable : tape quelques
-lettres (« az ») pour retrouver ton serveur ; vide, la recherche porte sur tous les serveurs de la région. La liste est
-gardée en cache une semaine dans `%APPDATA%\Aion2Builder\servers` (« Recharger les données » la relit). Les personnages importés sont gardés dans
-`%APPDATA%\Aion2Builder\characters` et rouverts sans connexion ; « Actualiser » relit le site.
+L'interface est organisée comme un éditeur (maquette : `Redesign ergonomique de l'application/design_handoff_ide_redesign`) :
+
+- **Import** (avatar du rail ou **Ctrl+K**) : tape le nom, les résultats du site officiel s'affichent au fil de la saisie ;
+  Entrée importe le meilleur résultat. L'étiquette « eu · tous serveurs » choisit la région et le serveur (liste
+  filtrable, noms français). Les personnages déjà importés sont dans « Récents » et se rouvrent sans connexion.
+- **Rail à gauche** : Accueil, Stats, Équipement, Compétences, Daevanion, Détails, chacun avec sa note.
+- **Bascule JcE | JcJ** toujours visible en haut ; **thème** : 8 couleurs secondaires au choix.
+- **Inspecteur à droite** : clique une pièce, une stat, une compétence ou un plateau pour son détail. Les compteurs
+  « − N + » (points non dépensés) recalculent tout de suite.
+- **Menus** : Personnage → Actualiser depuis le site officiel ; Données → Recharger les données / Ouvrir le dossier des données.
+
+La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Builder\servers`, les personnages dans
+`%APPDATA%\Aion2Builder\characters`.
 
 ## Comment l'algorithme raisonne
 
