@@ -79,8 +79,27 @@ public sealed record SkillAdvice(
 public sealed record StigmaAdvice(SkillInfo Skill, string Role, string Why, bool Known, bool Unverified, double Priority,
     bool Recommended, int Target, int ShardsToTarget);
 
+/// <summary>
+/// Points déplacés par la répartition conseillée : d'une compétence nettement moins utile vers une plus utile
+/// (<see cref="From"/> null : points non dépensés).
+/// </summary>
+public sealed record SkillMove(SkillAdvice? From, SkillAdvice To, int Points);
+
+/// <summary>
+/// Prochains points à placer quand tu en gagnes, dans l'ordre : niveau acheté avant et après, et spécialisation
+/// débloquée au passage (niveau total 8, 12, 16 ou 20), s'il y en a une.
+/// </summary>
+public sealed record SkillStep(SkillAdvice Skill, int From, int To, int? Specialty)
+{
+    public int Points => To - From;
+    public bool BeyondTarget => To > Skill.Target;
+}
+
+/// <summary>Prochain palier d'un stigma (niveaux 5, 10, 15, 20 : ses effets s'y débloquent) et son coût en fragments.</summary>
+public sealed record StigmaStep(StigmaAdvice Stigma, int From, int To, int Shards);
+
 public sealed record SkillPlan(List<SkillAdvice> Skills, List<StigmaAdvice> Stigmas, int SpentPoints, int UnspentPoints,
-    bool HasKnowledge, string? Source)
+    bool HasKnowledge, string? Source, List<SkillMove> Moves, List<SkillStep> NextPoints, List<StigmaStep> NextShards)
 {
     public int Budget => SpentPoints + UnspentPoints;
     public IEnumerable<SkillAdvice> ToRemove => Skills.Where(s => s.Delta < 0).OrderBy(s => s.Priority);

@@ -93,27 +93,54 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         var free = inputs.UnspentSkillPoints / Math.Max(1, set.CostPerLevel);
         var acquired = rows.Where(r => r.Skill.Acquired).ToList();
 
+        // Qui donne à qui (donneur null : points non dépensés), pour expliquer chaque déplacement.
+        var moved = new Dictionary<(Row? From, Row To), int>();
+        void Move(Row? from, Row to) => moved[(from, to)] = moved.GetValueOrDefault((from, to)) + 1;
+
         // 1. Les compétences sous leur niveau visé, de la plus importante à la moins importante, prennent les points
         //    libres, puis ceux des compétences nettement moins utiles (au-dessus de leur cible d'abord).
         foreach (var need in acquired.Where(r => r.Rec < r.Target).OrderByDescending(r => r.Priority))
             while (need.Rec < need.Target)
             {
-                if (free > 0) { free--; need.Rec++; continue; }
+                if (free > 0) { free--; need.Rec++; Move(null, need); continue; }
+                // Donneur : au-dessus de son propre niveau visé d'abord, puis le moins utile ; à utilité égale, celui qui a le
+                // plus de marge sur son niveau visé (on répartit au lieu de vider une seule compétence sous son visé).
                 var donor = acquired.Where(r => r != need && r.Rec > 1 && r.Priority + set.ChangeThreshold <= need.Priority)
-                    .OrderBy(r => r.Rec > r.Target ? 0 : 1).ThenBy(r => r.Priority).FirstOrDefault();
+                    .OrderBy(r => r.Rec > r.Target ? 0 : 1).ThenBy(r => r.Priority).ThenByDescending(r => r.Rec - r.Target).FirstOrDefault();
                 if (donor is null) break;
                 donor.Rec--;
                 need.Rec++;
+                Move(donor, need);
             }
 
         // 2. Points encore libres : vers les compétences utiles pas encore au maximum.
         foreach (var r in acquired.Where(r => r.Priority >= 0.3).OrderByDescending(r => r.Priority))
-            while (free > 0 && r.Rec < set.BaseMax) { free--; r.Rec++; }
+            while (free > 0 && r.Rec < set.BaseMax) { free--; r.Rec++; Move(null, r); }
 
-        var skills = rows.Select(r => new SkillAdvice(r.Skill, KindOf(r.Skill), r.Known?.Role ?? DefaultRole(r.Skill),
-                r.Known?.Why ?? DefaultWhy(r.Skill, p), r.Known is not null, r.Known?.Unverified ?? false, r.Priority,
-                r.Base, r.Bonus, r.Target, r.Rec, openable.GetValueOrDefault(Norm(r.Skill.Name)), InBar(r.Skill)))
-            .OrderBy(s => s.Kind).ThenByDescending(s => s.Priority).ToList();
+        var advice = rows.ToDictionary(r => r, r => new SkillAdvice(r.Skill, KindOf(r.Skill), r.Known?.Role ?? DefaultRole(r.Skill),
+            r.Known?.Why ?? DefaultWhy(r.Skill, p), r.Known is not null, r.Known?.Unverified ?? false, r.Priority,
+            r.Base, r.Bonus, r.Target, r.Rec, openable.GetValueOrDefault(Norm(r.Skill.Name)), InBar(r.Skill)));
+        var skills = advice.Values.OrderBy(s => s.Kind).ThenByDescending(s => s.Priority).ToList();
+        var moves = moved.Select(m => new SkillMove(m.Key.From is { } f ? advice[f] : null, advice[m.Key.To], m.Value))
+            .OrderByDescending(m => m.To.Priority).ThenBy(m => m.From?.Priority ?? -1).ToList();
+
+        // Prochains points (quand tu en gagnes), à partir de la répartition conseillée : niveau visé d'abord,
+        // puis le maximum achetable des compétences utiles. Les points consécutifs sur une même compétence sont groupés.
+        var simulated = acquired.ToDictionary(r => r, r => r.Rec);
+        var nextPoints = new List<SkillStep>();
+        for (var i = 0; i < 12; i++)
+        {
+            var next = acquired.Where(r => simulated[r] < r.Target).OrderByDescending(r => r.Priority).FirstOrDefault()
+                       ?? acquired.Where(r => r.Priority >= 0.3 && simulated[r] < set.BaseMax).OrderByDescending(r => r.Priority).FirstOrDefault();
+            if (next is null) break;
+            var from = simulated[next]++;
+            if (nextPoints.Count > 0 && nextPoints[^1].Skill == advice[next]) nextPoints[^1] = nextPoints[^1] with { To = from + 1 };
+            else nextPoints.Add(new SkillStep(advice[next], from, from + 1, null));
+        }
+        nextPoints = nextPoints.Select(x => x with
+        {
+            Specialty = set.SpecialtyLevels.Where(l => l > x.From + x.Skill.Bonus && l <= x.To + x.Skill.Bonus).Cast<int?>().FirstOrDefault(),
+        }).ToList();
 
         // Stigmas : les plus utiles occupent les emplacements, montés jusqu'au niveau visé.
         var st = db.Settings.Stigmas;
@@ -132,7 +159,23 @@ public sealed partial class SkillAdvisor(GameDatabase db)
                 recommended ? st.ShardCost(x.Skill.Level, Math.Min(target, st.MaxLevel)) : 0);
         }).ToList();
 
-        return new SkillPlan(skills, stigmas, spent, inputs.UnspentSkillPoints, p.Class.Skills.Count > 0, p.Class.SkillsSource);
+        // Prochains fragments : par paliers de 5 niveaux (où les effets des stigmas se débloquent), tous les stigmas
+        // conseillés au palier suivant avant d'aller plus haut, le plus important d'abord.
+        var shardSteps = new List<StigmaStep>();
+        foreach (var g in stigmas.Where(x => x.Recommended))
+        {
+            var cap = Math.Min(g.Target, st.MaxLevel);
+            for (var level = g.Skill.Level; level < cap;)
+            {
+                var to = Math.Min(cap, (level / 5 + 1) * 5);
+                shardSteps.Add(new StigmaStep(g, level, to, st.ShardCost(level, to)));
+                level = to;
+            }
+        }
+        var nextShards = shardSteps.OrderBy(x => x.To).ThenByDescending(x => x.Stigma.Priority).Take(8).ToList();
+
+        return new SkillPlan(skills, stigmas, spent, inputs.UnspentSkillPoints, p.Class.Skills.Count > 0, p.Class.SkillsSource,
+            moves, nextPoints, nextShards);
     }
 
     string DefaultRole(SkillInfo s) => KindOf(s) switch

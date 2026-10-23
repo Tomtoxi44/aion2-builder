@@ -627,6 +627,73 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
     static IBrush DeltaColor(SkillAdvice a) => a.Delta == 0 ? Tok.Muted : a.Delta > 0 ? Tok.Good : Tok.Bad;
 
+    /// <summary>Niveau visé, indépendamment des points disponibles : ↑ à monter, ↓ au-dessus du visé, = atteint.</summary>
+    static (string Text, IBrush Color, string Tip) Aim(SkillAdvice a) =>
+        !a.Skill.Acquired ? ("—", Tok.Muted, $"Pas encore apprise (niveau {a.Skill.NeedLevel}).")
+        : a.Base < a.Target ? ($"↑ {a.Target}", Tok.Good, $"À monter jusqu'au niveau acheté {a.Target}, dès que tu as des points : {a.Role.ToLowerInvariant()}.")
+        : a.Base > a.Target ? ($"↓ {a.Target}", Tok.Warn, $"Au-dessus du niveau visé ({a.Target}) : ces points serviront ailleurs dès qu'une compétence plus importante en manque.")
+        : ($"= {a.Target}", Tok.Muted, "Au niveau visé.");
+
+    static string Pts(int n) => $"{n} point{(n > 1 ? "s" : "")}";
+
+    /// <summary>Pourquoi une compétence prend des points : son rôle et son importance contre ceux des donneurs.</summary>
+    static string MoveReason(SkillAdvice to, List<SkillMove> moves)
+    {
+        var donors = moves.Where(m => m.From is not null).Select(m => m.From!).Distinct().ToList();
+        var head = $"{to.Skill.Name} — {to.Role.ToLowerInvariant()}, importance {to.Priority:0.00}";
+        return donors.Count == 0
+            ? $"{head} : tes points non dépensés y servent le plus."
+            : $"{head} — passe avant {string.Join(", ", donors.Select(d => $"{d.Skill.Name} ({d.Role.ToLowerInvariant()}, {d.Priority:0.00})"))}.";
+    }
+
+    /// <summary>Déplacements groupés par compétence qui reçoit : « +9 Coup de choc ← Défense d'égide −8, Sceau de protection −1 ».</summary>
+    Control SkillMoves(SkillPlan sk)
+    {
+        var list = new StackPanel { Spacing = 8 };
+        foreach (var group in sk.Moves.GroupBy(m => m.To))
+        {
+            var moves = group.ToList();
+            var sources = string.Join(", ", moves.Select(m => m.From is null ? $"non dépensés −{m.Points}" : $"{m.From.Skill.Name} −{m.Points}"));
+            var line = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 8,
+                Children =
+                {
+                    T($"+{moves.Sum(m => m.Points)}  {group.Key.Skill.Name}", 13, Tok.Good, FontWeight.SemiBold),
+                    T("←", 13, Tok.Muted),
+                    T(sources, 13, moves.All(m => m.From is null) ? Tok.Text2 : Tok.Bad),
+                },
+            };
+            var to = group.Key.Skill.Name;
+            list.Children.Add(Clickable(new StackPanel { Spacing = 2, Children = { line, T(MoveReason(group.Key, moves), 12, Tok.Muted, wrap: true).WithLineHeight(1.4) } },
+                () => update(st => st.Skill = to), hover: Tok.Hover, padding: new Thickness(6, 4)));
+        }
+        return list;
+    }
+
+    Control NextPoints(SkillPlan sk)
+    {
+        var list = new StackPanel { Spacing = 2 };
+        if (sk.NextPoints.Count == 0)
+            list.Children.Add(T($"Tes compétences utiles sont au niveau acheté maximum ({db.Settings.Skills.BaseMax}) : la suite passe par les cases Daevanion et l'équipement.",
+                12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        var i = 0;
+        foreach (var x in sk.NextPoints)
+        {
+            var notes = new List<string> { Pts(x.Points) };
+            if (x.To == x.Skill.Target) notes.Add("niveau visé atteint");
+            else if (x.BeyondTarget) notes.Add("au-delà du visé, faute de mieux");
+            if (x.Specialty is { } spec) notes.Add($"spécialisation du niveau {spec}");
+            var name = x.Skill.Skill.Name;
+            list.Children.Add(Clickable(ColumnsSpaced("24,*,Auto", 8,
+                    T($"{++i}.", 12, Tok.Muted, mono: true),
+                    T($"{name}   {x.From} → {x.To}", 13),
+                    T(string.Join(" · ", notes), 12, x.Specialty is not null ? Accent.Main : Tok.Muted, mono: true)),
+                () => update(st => st.Skill = name), hover: Tok.Hover, padding: new Thickness(6, 4)));
+        }
+        return list;
+    }
+
     Control Skills()
     {
         var sk = r.Skills;
@@ -650,16 +717,27 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         });
         panel.Children.Add(new Border { Padding = new Thickness(20, 12), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = budget });
 
-        const string cols = "80,*,140,60,60,60,110";
-        panel.Children.Add(TableHeader(cols, "Type", "Compétence", "Rôle", "Acheté", "Bonus", "Total", "Conseil"));
+        // Ce qu'il faut faire tout de suite (réinitialisation gratuite), puis où vont les points suivants.
+        if (sk.Moves.Count > 0)
+        {
+            panel.Children.Add(SectionHeader($"Maintenant · {Pts(sk.Moves.Sum(m => m.Points))} à placer (réinitialisation gratuite)", padX: 20));
+            panel.Children.Add(new Border { Padding = new Thickness(14, 8), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = SkillMoves(sk) });
+        }
+        panel.Children.Add(SectionHeader("Prochains points · quand tu en gagnes, dans cet ordre", padX: 20));
+        panel.Children.Add(new Border { Padding = new Thickness(14, 8), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = NextPoints(sk) });
+
+        const string cols = "80,*,140,90,64,110";
+        panel.Children.Add(TableHeader(cols, "Type", "Compétence", "Rôle", "Niveau", "Visé", "Maintenant"));
         var selected = SelectedSkillName;
         foreach (var a in sk.Skills)
         {
             var kind = a.Kind == SkillKind.Passive ? "Passive" : a.InBar ? "Active ✓" : "Active";
             Control delta = a.Delta == 0 ? T("=", 12, Tok.Muted, mono: true) : Pill(DeltaText(a), DeltaColor(a));
+            var (aimText, aimColor, aimTip) = Aim(a);
             panel.Children.Add(TableRow(Columns(cols,
                     T(kind, 12, Tok.Muted), T(a.Skill.Name, 13, a.Skill.Acquired ? null : Tok.Muted), T(a.Role, 13, Tok.Text2),
-                    T(a.Base.ToString(), 13, mono: true), T($"+{a.Bonus}", 13, Tok.Muted, mono: true), T(a.Total.ToString(), 13, mono: true), delta),
+                    Tip(T(a.Skill.Acquired ? $"{a.Base} +{a.Bonus} = {a.Total}" : "—", 13, mono: true), "Niveau acheté + niveaux gratuits (Daevanion, équipement) = niveau total."),
+                    Tip(T(aimText, 13, aimColor, FontWeight.SemiBold, mono: true), aimTip), delta),
                 a.Skill.Name == selected, () => update(st => st.Skill = a.Skill.Name)));
         }
 
@@ -675,6 +753,24 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     T(g.Recommended ? $"{g.Skill.Level} → {g.Target}" : $"{g.Skill.Level}", 13, mono: true),
                     T(g.ShardsToTarget > 0 ? $"{g.ShardsToTarget} fragments" : "", 13, Tok.Muted, mono: true)),
                 g.Skill.Name == selected, () => update(st => st.Skill = g.Skill.Name)));
+        }
+
+        // Fragments : par paliers de 5 niveaux, là où les effets des stigmas se débloquent.
+        if (sk.NextShards.Count > 0)
+        {
+            panel.Children.Add(SectionHeader("Prochains fragments · par paliers (effets aux niveaux 5, 10, 15, 20)", padX: 20, topBorder: true));
+            var list = new StackPanel { Spacing = 2 };
+            var i = 0;
+            foreach (var x in sk.NextShards)
+            {
+                var name = x.Stigma.Skill.Name;
+                list.Children.Add(Clickable(ColumnsSpaced("24,*,Auto", 8,
+                        T($"{++i}.", 12, Tok.Muted, mono: true),
+                        T($"{name}   {x.From} → {x.To}", 13),
+                        T($"{x.Shards} fragments · palier {x.To}", 12, Tok.Muted, mono: true)),
+                    () => update(st => st.Skill = name), hover: Tok.Hover, padding: new Thickness(6, 4)));
+            }
+            panel.Children.Add(new Border { Padding = new Thickness(14, 8), Child = list });
         }
         return panel;
     }
@@ -692,10 +788,26 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 ("type", a.Kind == SkillKind.Passive ? "Passive" : a.InBar ? "Active (dans la barre)" : "Active", null),
                 ("rôle", a.Role, null),
                 ("niveau", $"{a.Base} +{a.Bonus} = {a.Total}", null),
-                ("conseil", a.Delta == 0 ? "rien à changer" : DeltaText(a), DeltaColor(a)),
+                ("visé", Aim(a).Text, Aim(a).Color),
+                ("maintenant", a.Delta == 0 ? "rien à changer" : DeltaText(a), DeltaColor(a)),
                 ("priorité", a.Priority.ToString("0.00"), null),
             ]));
             body.Children.Add(Field("Pourquoi", a.Why, a.Unverified ? Tok.Warn : null));
+            // Échanges : d'où viennent ses points, ou à qui elle les cède, et pourquoi.
+            var exchanges = r.Skills.Moves.Where(m => m.To == a).Select(m => m.From is null
+                    ? $"Reçoit {Pts(m.Points)} non dépensé(s)."
+                    : $"Reçoit {Pts(m.Points)} de {m.From.Skill.Name} ({m.From.Role.ToLowerInvariant()}, importance {m.From.Priority:0.00}).")
+                .Concat(r.Skills.Moves.Where(m => m.From == a).Select(m =>
+                    $"Cède {Pts(m.Points)} à {m.To.Skill.Name} ({m.To.Role.ToLowerInvariant()}, importance {m.To.Priority:0.00} contre {a.Priority:0.00})."))
+                .ToList();
+            if (exchanges.Count > 0) body.Children.Add(Field("Échanges conseillés", string.Join("\n", exchanges), Tok.Text2));
+            var rank = r.Skills.NextPoints.FindIndex(x => x.Skill == a);
+            if (rank >= 0)
+            {
+                var step = r.Skills.NextPoints[rank];
+                body.Children.Add(Field("Prochains points", $"N° {rank + 1} dans l'ordre : {step.From} → {step.To}" +
+                    (step.Specialty is { } spec ? $", ce qui débloque la spécialisation du niveau {spec}." : "."), Tok.Text2));
+            }
             body.Children.Add(T("Bonus : niveaux gratuits venant des cases Daevanion et de l'équipement.", 12, Tok.Muted, wrap: true).WithLineHeight(1.5));
         }
         else if (r.Skills.Stigmas.FirstOrDefault(x => x.Skill.Name == name) is { } g)
@@ -799,7 +911,46 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         info.Children.Add(new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(0, 12, 0, 0), Margin = new Thickness(0, 4, 0, 0), Child = legend });
 
         var body = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 28, Margin = new Thickness(20), Children = { BoardGrid(selected), info } };
-        panel.Children.Add(body);
+        panel.Children.Add(new StackPanel { Children = { body, DaevaNext(selected) } });
+        return panel;
+    }
+
+    /// <summary>
+    /// Sous le plateau : les cases à prendre de la réserve, dans l'ordre et avec les mêmes numéros que la grille
+    /// (après réinitialisation si elle est conseillée, sinon avec tes prochains points).
+    /// </summary>
+    Control DaevaNext(BoardSummary selected)
+    {
+        var panel = new StackPanel { Margin = new Thickness(20, 0, 20, 20) };
+        var respec = WorthRespec(selected.Pool);
+        var steps = respec?.Add ?? r.Daevanion.Steps.Where(x => x.Pool == selected.Pool).ToList();
+        panel.Children.Add(SectionHeader(respec is not null
+            ? $"Après réinitialisation ({respec.Remove.Count} case(s) à retirer, +{Fmt.Pct(respec.Gain)} de valeur) · dans cet ordre"
+            : $"Prochaines cases · réserve {PoolShort(selected.Pool)}, avec tes prochains points, dans cet ordre", padX: 0));
+        var list = new StackPanel { Spacing = 2, Margin = new Thickness(0, 6, 0, 0) };
+        foreach (var x in steps.Take(15))
+        {
+            var boardId = x.Board.Id;
+            var tags = new List<string> { $"{x.Cost:0} pt{(x.Cost > 1 ? "s" : "")}" };
+            if (x.Affordable) tags.Add("faisable maintenant");
+            list.Children.Add(Clickable(ColumnsSpaced("28,80,*,Auto", 8,
+                    T(x.Step.ToString(), 12, Accent.Main, FontWeight.Bold, mono: true),
+                    T(x.Board.Name, 12, boardId == selected.Board.Id ? Tok.Text : Tok.Muted),
+                    new StackPanel
+                    {
+                        Spacing = 1,
+                        Children =
+                        {
+                            T(x.Effects, 13, x.IsPassage ? Tok.Muted : null, wrap: true),
+                            T(x.IsPassage ? "case de passage vers les suivantes" : Reason(x.Node), 11, Tok.Muted, wrap: true),
+                        },
+                    },
+                    T(string.Join(" · ", tags), 11, x.Affordable ? Tok.Good : Tok.Muted, mono: true)),
+                () => update(st => st.Board = boardId), hover: Tok.Hover, padding: new Thickness(6, 4)));
+        }
+        if (steps.Count == 0)
+            list.Children.Add(T("Rien à prendre : la réserve est pleine, ou ce qui reste vaut peu pour ta classe.", 12, Tok.Muted, wrap: true));
+        panel.Children.Add(list);
         return panel;
     }
 
@@ -898,17 +1049,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             panel.Children.Add(T($"Aucune case à retirer sur {board.Board.Name} : ton chemin fait déjà partie de la meilleure répartition de tes points.",
                 13, Tok.Text2, wrap: true).WithLineHeight(1.5).WithMargin(14, 12));
         }
-
-        var steps = r.Daevanion.Steps.Where(x => x.Pool == board.Pool).ToList();
-        if (steps.Count > 0)
-        {
-            panel.Children.Add(SectionHeader("Prochaines cases", topBorder: true));
-            var lines = new StackPanel { Spacing = 6, Margin = new Thickness(14, 10) };
-            foreach (var x in steps)
-                lines.Children.Add(Line(x.Step.ToString(), Accent.Main, $"{x.Board.Name} l.{x.Node.Row} c.{x.Node.Col} — {x.Effects}",
-                    x.IsPassage ? Tok.Muted : x.Affordable ? Tok.Good : null, x.Affordable ? "faisable maintenant" : x.IsPassage ? "passage" : null));
-            panel.Children.Add(lines);
-        }
+        // Les prochaines cases, dans l'ordre, sont sous le plateau (contenu central).
         return panel;
     }
 

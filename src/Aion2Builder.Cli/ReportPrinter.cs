@@ -70,11 +70,28 @@ sealed class ReportPrinter(GameDatabase db)
                 $"  {(a.Kind == SkillKind.Passive ? "(P) " : "")}{a.Skill.Name,-32} {a.Role,-30} {a.Base,6} {"+" + a.Bonus,6} {delta,8}");
             if (a.Delta != 0) Console.WriteLine($"      {a.Why}");
         }
+        if (r.Skills.Moves.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  Maintenant (réinitialisation gratuite) :");
+            foreach (var g in r.Skills.Moves.GroupBy(m => m.To))
+                Console.WriteLine($"   +{g.Sum(m => m.Points)} {g.Key.Skill.Name} ({g.Key.Role}, {g.Key.Priority:0.00}) ← " +
+                    string.Join(", ", g.Select(m => m.From is null ? $"non dépensés −{m.Points}" : $"{m.From.Skill.Name} ({m.From.Priority:0.00}) −{m.Points}")));
+        }
+        Console.WriteLine();
+        Console.WriteLine("  Prochains points, dans l'ordre :");
+        var n = 0;
+        foreach (var x in r.Skills.NextPoints)
+            Console.WriteLine($"   {++n,2}. {x.Skill.Skill.Name} {x.From} → {x.To}" + (x.Specialty is { } spec ? $"  (spécialisation du niveau {spec})" : "") +
+                              (x.BeyondTarget ? "  (au-delà du visé)" : ""));
+        if (n == 0) Console.WriteLine($"   compétences utiles au maximum achetable ({db.Settings.Skills.BaseMax}) : la suite passe par le Daevanion et l'équipement");
         Console.WriteLine();
         Console.WriteLine($"  Stigmas ({db.Settings.Stigmas.Slots} emplacements, fragments) :");
         foreach (var s in r.Skills.Stigmas.Where(s => s.Recommended || s.Skill.Equipped))
             Colored(s.Recommended == s.Skill.Equipped ? ConsoleColor.Gray : s.Recommended ? ConsoleColor.Green : ConsoleColor.Red,
                 $"   {(s.Recommended ? (s.Skill.Equipped ? "garder " : "mettre ") : "retirer")} {s.Skill.Name,-36} niv. {s.Skill.Level,2} → {s.Target,-2} {s.Role}");
+        if (r.Skills.NextShards.Count > 0)
+            Console.WriteLine("  Prochains fragments : " + string.Join(" · ", r.Skills.NextShards.Select(x => $"{x.Stigma.Skill.Name} {x.From} → {x.To} ({x.Shards})")));
 
         Section("Daevanion");
         foreach (var b in r.Daevanion.Budgets.Where(b => DaevanionPlanner.Relevant(b.Pool, r.Mode)))

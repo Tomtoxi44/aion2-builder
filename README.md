@@ -110,12 +110,16 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    **rôle** de chaque compétence pour ta classe et le mode (dégâts principaux, burst, débuff, contrôle, défensif…) : elle dit
    quelles compétences monter, lesquelles **réduire**, et pourquoi. Les stigmas (4 emplacements, fragments) sont classés de
    la même façon, avec le coût en fragments pour atteindre le niveau visé.
+   L'écran Compétences montre, sans attendre d'avoir des points : le niveau visé de chaque compétence (↑ à monter,
+   ↓ au-dessus du visé, = atteint), ce qu'il faut faire maintenant (qui donne des points à qui, et pourquoi), l'ordre des
+   prochains points (avec les spécialisations débloquées au passage) et les prochains fragments de stigma par paliers de 5.
 5. **Daevanion.** Une case coûte 1, 2, 3 ou 4 points selon sa couleur (vérifié : 134 points pour Nezekan, Zikel et Vaizel,
    168 pour Triniel, 232 pour Azphel) et ne s'ouvre qu'à côté d'une case ouverte. Deux plans par réserve de points :
    - **réorganisation** : en partant de ton placement actuel, les cases peu utiles en bout de chemin (importance < 0,4)
      sont retirées si leurs points rapportent plus ailleurs → cases rouges à retirer, cases vertes à prendre ;
    - **prochaines cases** : où mettre tes prochains points sans rien retirer (les points non dépensés que tu indiques
      sont marqués « faisable maintenant »).
+   Sous le plateau, l'écran Daevanion liste ces cases dans l'ordre (mêmes numéros que la grille), avec la raison de chacune.
    Les niveaux de compétence valent selon l'importance de la compétence, les stats selon leur poids et l'équilibre des
    familles (une famille déjà au-dessus de sa cible vaut moins).
 6. **Gravures d'âme et pierres.** Chaque option de pièce et chaque pierre est jugée selon l'importance de sa stat pour
