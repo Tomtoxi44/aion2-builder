@@ -124,6 +124,8 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         var stigmas = stigmaRows.Select(x =>
         {
             var target = x.Known?.Target.GetValueOrDefault(p.Mode) is > 0 and var t ? t : x.Skill.Equipped ? 10 : 1;
+            // Déjà au-dessus du niveau visé : on garde le niveau actuel (les fragments ne se récupèrent pas).
+            target = Math.Max(target, x.Skill.Level);
             var recommended = chosen.Contains(x.Skill.Id);
             return new StigmaAdvice(x.Skill, x.Known?.Role ?? "Stigma", x.Known?.Why ?? DefaultWhy(x.Skill, p), x.Known is not null,
                 x.Known?.Unverified ?? false, x.Priority, recommended, target,

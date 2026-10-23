@@ -125,6 +125,10 @@
     },
     {
       "code": "TEMPLAR", "name": "Templier", "aliases": ["Templar"], "role": "tank",
+      "targetOverrides": {
+        "PvE": { "Offense": 0.45, "Defense": 0.30, "Sustain": 0.20, "Utility": 0.05 },
+        "PvP": { "Offense": 0.40, "Defense": 0.32, "Sustain": 0.23, "Utility": 0.05 }
+      },
       "weightOverrides": {
         "PvE": { "Attack": 0.75, "Accuracy": 0.85, "PowerfulHit": 0.8, "WeaponDamageBoost": 0.7, "CriticalDamage": 0.6, "DamageBoost": 0.7, "CombatSpeed": 0.6 },
         "PvP": { "PowerfulHit": 0.6, "StatusResist": 0.9 }

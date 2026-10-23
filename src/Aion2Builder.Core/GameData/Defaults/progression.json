@@ -39,60 +39,61 @@
     "safeLevel": 5,
     "transitionalMax": 3
   },
+  "_stagesNote": "Paliers calés sur 9 personnages niveau 45 des serveurs EU (oct. 2026) : vers 1000 de niveau d'objet, surtout du bleu enchanté +1 à +4 ; vers 1450, majorité de jaune ; de 1860 à 2582, presque tout en jaune enchanté +7/+8 en moyenne. Aucun orange ni rouge observé.",
   "stages": [
     {
-      "id": "leveling", "name": "Montée de niveau", "minLevel": 1, "maxLevel": 44, "minItemLevel": 0, "targetGrade": "Rare",
-      "goal": "Atteindre le niveau maximum : l'équipement change trop vite pour y investir.",
+      "id": "leveling", "name": "Montée de niveau", "minLevel": 1, "maxLevel": 44, "minItemLevel": 0, "targetGrade": "Rare", "enchantTarget": 0,
+      "goal": "Atteindre le niveau 45 : l'équipement change trop vite pour y investir.",
       "gear": [
         { "group": "Weapon", "pve": "Récompenses de quêtes de campagne", "pvp": "Récompenses de quêtes de campagne" },
         { "group": "Armor", "pve": "Récompenses de quêtes et expéditions de niveau", "pvp": "Récompenses de quêtes et expéditions de niveau" },
         { "group": "Accessory", "pve": "Quêtes et coffres de récompense", "pvp": "Quêtes et coffres de récompense" }
       ],
-      "tips": ["N'enchante pas au-delà de +0/+3 : tout sera remplacé.", "Garde tes matériaux d'enchantement et ta monnaie pour le niveau max."]
+      "tips": ["N'enchante pas : tout sera remplacé.", "Garde matériaux d'enchantement et monnaie pour le niveau 45."]
     },
     {
-      "id": "campaign", "name": "Équipement de campagne (bleu)", "minLevel": 45, "minItemLevel": 0, "targetGrade": "Legend",
-      "goal": "Compléter un set bleu de quête puis enchaîner les expéditions.",
+      "id": "campaign", "name": "Bleu de campagne", "minLevel": 45, "minItemLevel": 0, "targetGrade": "Legend", "enchantTarget": 3,
+      "goal": "Compléter un équipement bleu (quêtes, expéditions) avant de passer au jaune.",
       "gear": [
-        { "group": "Weapon", "pve": "Arme bleue de quête (set du Libérateur), puis arme d'expédition", "pvp": "Arme bleue de quête, puis arme achetée en points Abyssaux" },
+        { "group": "Weapon", "pve": "Arme bleue de quête puis d'expédition", "pvp": "Arme bleue de quête, puis arme achetée en points Abyssaux" },
         { "group": "Armor", "pve": "Set bleu de quête, remplacé pièce par pièce par les armures d'expédition", "pvp": "Set bleu de quête puis pièces Abyssales" },
-        { "group": "Accessory", "pve": "Accessoires d'expédition (anneaux, boucles, collier)", "pvp": "Accessoires d'expédition, puis accessoires Abyssaux" },
+        { "group": "Accessory", "pve": "Accessoires d'expédition (anneaux, boucles, collier, bracelets)", "pvp": "Accessoires d'expédition, puis accessoires Abyssaux" },
         { "group": "Special", "pve": "Amulette par transmutation, rune de quête", "pvp": "Amulette par transmutation, rune de quête" }
       ],
-      "tips": ["Les accessoires sont gardés plus longtemps que l'armure : ce sont eux qu'il faut enchanter en premier.", "Ne monte pas une arme bleue de quête au-dessus de +3."]
+      "tips": ["Le bleu sera remplacé par du jaune : pas au-delà de +3.", "Les accessoires restent plus longtemps que l'armure."]
     },
     {
-      "id": "expedition", "name": "Expéditions (bleu enchanté → jaune)", "minLevel": 45, "minItemLevel": 1100, "targetGrade": "Unique",
-      "goal": "Passer les emplacements un par un au grade jaune via les expéditions et la transmutation.",
+      "id": "yellow", "name": "Passage au jaune", "minLevel": 45, "minItemLevel": 1100, "targetGrade": "Unique", "enchantTarget": 5,
+      "goal": "Remplacer les pièces bleues par du jaune, la plus faible d'abord (les joueurs observés ont surtout du jaune vers 1450).",
       "gear": [
-        { "group": "Weapon", "pve": "Arme jaune des expéditions difficiles (priorité n°1 : plus gros gain de stats)", "pvp": "Arme jaune de la boutique Abyssale" },
-        { "group": "Armor", "pve": "Armures jaunes d'expédition ; commence par les pièces les plus faibles", "pvp": "Armures Abyssales (stats JcJ)" },
-        { "group": "Accessory", "pve": "Accessoires jaunes d'expédition / transmutation", "pvp": "Accessoires Abyssaux" },
+        { "group": "Weapon", "pve": "Arme jaune (expéditions difficiles / transmutation) : le plus gros gain de stats", "pvp": "Arme jaune de la boutique Abyssale" },
+        { "group": "Armor", "pve": "Armures jaunes d'expédition ; commence par les pièces les plus faibles", "pvp": "Armures jaunes Abyssales (stats JcJ)" },
+        { "group": "Accessory", "pve": "Accessoires jaunes d'expédition / transmutation", "pvp": "Accessoires jaunes Abyssaux" },
         { "group": "Special", "pve": "Amulette et runes de meilleur grade (transmutation)", "pvp": "Amulette et runes de meilleur grade (transmutation)" }
       ],
-      "tips": ["Enchante les pièces jaunes jusqu'au niveau sûr (+5) avant de chercher la pièce suivante.", "Vends au marché ce qui ne sert pas à ta classe pour financer les enchantements."]
+      "tips": ["Enchante les pièces jaunes jusqu'à +5 avant de chercher la pièce suivante.", "Vends ce qui ne sert pas à ta classe pour financer les enchantements."]
     },
     {
-      "id": "raid", "name": "Raids et Abysses (jaune → orange)", "minLevel": 45, "minItemLevel": 1400, "targetGrade": "Epic",
-      "goal": "Obtenir les pièces orange du contenu le plus difficile.",
+      "id": "yellow-enchanted", "name": "Jaune enchanté", "minLevel": 45, "minItemLevel": 1500, "targetGrade": "Unique", "enchantTarget": 8,
+      "goal": "Tout en jaune, puis monter l'enchantement (≈ +7 en moyenne vers 1860 chez les joueurs observés).",
       "gear": [
-        { "group": "Weapon", "pve": "Arme orange de raid / expédition cauchemar", "pvp": "Arme orange Abyssale (rang Abyssal)" },
-        { "group": "Armor", "pve": "Armures orange de raid", "pvp": "Armures orange Abyssales" },
-        { "group": "Accessory", "pve": "Accessoires orange de raid", "pvp": "Accessoires orange Abyssaux" },
-        { "group": "Special", "pve": "Runes et amulette orange", "pvp": "Runes et amulette orange" }
+        { "group": "Weapon", "pve": "Enchantement de l'arme jaune en priorité", "pvp": "Arme jaune Abyssale enchantée" },
+        { "group": "Armor", "pve": "Dernières pièces bleues → jaunes, puis enchantement", "pvp": "Armures jaunes Abyssales enchantées" },
+        { "group": "Accessory", "pve": "Accessoires jaunes enchantés ; relance des stats secondaires", "pvp": "Accessoires jaunes Abyssaux enchantés" },
+        { "group": "Special", "pve": "Runes et amulette de meilleur grade", "pvp": "Runes et amulette de meilleur grade" }
       ],
-      "tips": ["L'arme d'abord, puis les accessoires, puis l'armure.", "Au-delà de +5 l'enchantement coûte cher : réserve-le aux pièces orange."]
+      "tips": ["L'arme d'abord, puis les accessoires, puis l'armure.", "Au-delà de +5 l'enchantement coûte cher : vise les pièces que tu garderas."]
     },
     {
-      "id": "endgame", "name": "Fin de jeu (orange → rouge, dépassement)", "minLevel": 45, "minItemLevel": 1700, "targetGrade": "Mythic",
-      "goal": "Optimiser : pièces rouges, dépassement (exceed) et stats secondaires parfaites.",
+      "id": "endgame", "name": "Fin de jeu actuelle (jaune +8/+10)", "minLevel": 45, "minItemLevel": 2100, "targetGrade": "Unique", "enchantTarget": 10,
+      "goal": "Optimiser : enchantement +8 à +10 (moyenne +8 chez les joueurs observés au-delà de 2100) et stats secondaires parfaites.",
       "gear": [
-        { "group": "Weapon", "pve": "Arme rouge (raid le plus difficile)", "pvp": "Arme rouge Abyssale" },
-        { "group": "Armor", "pve": "Pièces rouges / dépassement des orange", "pvp": "Pièces rouges Abyssales" },
+        { "group": "Weapon", "pve": "Arme jaune vers +10", "pvp": "Arme jaune Abyssale vers +10" },
+        { "group": "Armor", "pve": "Armures jaunes +8/+10, stats secondaires orientées classe", "pvp": "Armures Abyssales +8/+10" },
         { "group": "Accessory", "pve": "Relance des stats secondaires vers tes stats prioritaires", "pvp": "Relance des stats secondaires vers tes stats JcJ" },
-        { "group": "Special", "pve": "Runes rouges", "pvp": "Runes rouges" }
+        { "group": "Special", "pve": "Runes et amulette au meilleur grade disponible", "pvp": "Runes et amulette au meilleur grade disponible" }
       ],
-      "tips": ["Le gain par point d'enchantement baisse : compare avec la relance des stats secondaires."]
+      "tips": ["Le gain par point d'enchantement baisse : compare avec la relance des stats secondaires.", "Orange et rouge n'apparaissent pas encore chez les joueurs EU observés : ajuste ce palier quand ils arriveront."]
     }
   ]
 }

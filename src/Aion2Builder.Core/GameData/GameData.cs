@@ -40,6 +40,8 @@ public sealed record ClassProfile
     public List<string> Aliases { get; init; } = [];
     public required string Role { get; init; }
     public Dictionary<GameMode, Dictionary<string, double>> WeightOverrides { get; init; } = [];
+    /// <summary>Répartition visée propre à la classe (remplace celle du rôle, famille par famille).</summary>
+    public Dictionary<GameMode, Dictionary<StatCategory, double>> TargetOverrides { get; init; } = [];
     public Dictionary<GameMode, List<string>> CoreSkills { get; init; } = [];
     public List<string> Notes { get; init; } = [];
     public string? SkillsSource { get; init; }
@@ -76,6 +78,8 @@ public sealed record ProgressionStage
     public int MaxLevel { get; init; } = int.MaxValue;
     public int MinItemLevel { get; init; }
     public string TargetGrade { get; init; } = "Legend";
+    /// <summary>Enchantement visé à ce palier pour les pièces à garder (au moins le niveau sûr).</summary>
+    public int? EnchantTarget { get; init; }
     public string Goal { get; init; } = "";
     public List<StageGear> Gear { get; init; } = [];
     public List<string> Tips { get; init; } = [];
@@ -234,6 +238,12 @@ public sealed class GameDatabase
         var weights = new Dictionary<string, double>(baseProfile.Weights, StringComparer.OrdinalIgnoreCase);
         if (cls.WeightOverrides.TryGetValue(mode, out var over))
             foreach (var (k, v) in over) weights[k] = v;
+        if (cls.TargetOverrides.TryGetValue(mode, out var targetOver))
+        {
+            var targets = new Dictionary<StatCategory, double>(baseProfile.Targets);
+            foreach (var (k, v) in targetOver) targets[k] = v;
+            baseProfile = baseProfile with { Targets = targets };
+        }
         return new ResolvedProfile(cls, role, mode, baseProfile, weights);
     }
 

@@ -96,12 +96,12 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
                 source = sourceNow;
                 priority = (35 + 3 * gap) * gw;
             }
-            else if (EnchantCap(item, keepRank) is var cap && item.MaxEnchantLevel > item.EnchantLevel && item.EnchantLevel < cap)
+            else if (EnchantCap(item, keepRank, stage) is var cap && item.MaxEnchantLevel > item.EnchantLevel && item.EnchantLevel < cap)
             {
                 var target = Math.Min(cap, item.MaxEnchantLevel);
                 var cost = EnchantCost(item.EnchantLevel, target);
                 status = SlotStatus.Enchant;
-                advice = (cap < prog.Enchant.SafeLevel ? "Pièce de transition (remplacée au palier suivant) : " : "À garder : ")
+                advice = (db.Grade(item.Grade).Rank < keepRank ? "Pièce de transition (remplacée au palier suivant) : " : "À garder : ")
                          + $"enchante +{item.EnchantLevel} → +{target} (coût relatif {Fmt.Num(cost)}).";
                 source = sourceNext;
                 priority = (15 + 30.0 * (target - item.EnchantLevel) / (cost + 1)) * gw;
@@ -122,11 +122,13 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
     }
 
     /// <summary>Niveau d'enchantement rentable : sûr pour une pièce gardée, plafonné pour une pièce de transition.</summary>
-    public int EnchantCap(EquippedItem item, int keepRank) =>
-        db.Grade(item.Grade).Rank >= keepRank ? db.Progression.Enchant.SafeLevel : db.Progression.Enchant.TransitionalMax;
+    public int EnchantCap(EquippedItem item, int keepRank, ProgressionStage stage) =>
+        db.Grade(item.Grade).Rank >= keepRank
+            ? Math.Max(db.Progression.Enchant.SafeLevel, stage.EnchantTarget ?? 0)
+            : db.Progression.Enchant.TransitionalMax;
 
-    int EnchantGoal(string slot, EquippedItem item, int keepRank) =>
-        db.Progression.SlotRules.GetValueOrDefault(slot)?.EnchantTarget is { } t ? t : Math.Min(EnchantCap(item, keepRank), item.MaxEnchantLevel);
+    int EnchantGoal(string slot, EquippedItem item, int keepRank, ProgressionStage stage) =>
+        db.Progression.SlotRules.GetValueOrDefault(slot)?.EnchantTarget is { } t ? t : Math.Min(EnchantCap(item, keepRank, stage), item.MaxEnchantLevel);
 
     public double EnchantCost(int from, int to)
     {
@@ -171,7 +173,7 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
         if (enchants.Count > 0)
             findings.Add(new Finding(Area.Enchant, Severity.Advice, $"Enchantements rentables ({enchants.Count} pièce(s))",
                 "Pièces sous leur niveau d'enchantement rentable (sûr pour celles à garder, plafonné pour celles de transition) : " +
-                string.Join(" · ", enchants.Take(6).Select(s => $"{s.SlotName} +{s.Item!.EnchantLevel} → +{EnchantGoal(s.Slot, s.Item, keepRank)}")),
+                string.Join(" · ", enchants.Take(6).Select(s => $"{s.SlotName} +{s.Item!.EnchantLevel} → +{EnchantGoal(s.Slot, s.Item, keepRank, stage)}")),
                 $"Enchante dans cet ordre (meilleur gain par ressource d'abord) : {string.Join(", ", enchants.Take(4).Select(s => s.SlotName))}.",
                 enchants[0].Priority));
 
