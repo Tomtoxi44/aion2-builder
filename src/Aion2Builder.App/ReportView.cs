@@ -15,12 +15,12 @@ sealed class ReportView(GameDatabase db, AdviceReport r)
     public TabControl Build(int selectedTab)
     {
         var tabs = new TabControl();
-        tabs.Items.Add(new TabItem { Header = "Plan d'action", Content = Scroll(ActionPlan()) });
-        tabs.Items.Add(new TabItem { Header = "Stats", Content = Scroll(Stats()) });
-        tabs.Items.Add(new TabItem { Header = "Équipement", Content = Scroll(Gear()) });
-        tabs.Items.Add(new TabItem { Header = "Compétences", Content = Scroll(Skills()) });
-        tabs.Items.Add(new TabItem { Header = "Daevanion", Content = Scroll(Daevanion()) });
-        tabs.Items.Add(new TabItem { Header = "Détails", Content = Scroll(Details()) });
+        tabs.Items.Add(new TabItem { FontSize = 15, Header = "Plan d'action", Content = Scroll(ActionPlan()) });
+        tabs.Items.Add(new TabItem { FontSize = 15, Header = "Stats", Content = Scroll(Stats()) });
+        tabs.Items.Add(new TabItem { FontSize = 15, Header = "Équipement", Content = Scroll(Gear()) });
+        tabs.Items.Add(new TabItem { FontSize = 15, Header = "Compétences", Content = Scroll(Skills()) });
+        tabs.Items.Add(new TabItem { FontSize = 15, Header = "Daevanion", Content = Scroll(Daevanion()) });
+        tabs.Items.Add(new TabItem { FontSize = 15, Header = "Détails", Content = Scroll(Details()) });
         tabs.SelectedIndex = Math.Clamp(selectedTab, 0, tabs.ItemCount - 1);
         return tabs;
     }
@@ -64,17 +64,17 @@ sealed class ReportView(GameDatabase db, AdviceReport r)
             Text(s.Def.Name, 12, wrap: false),
             Text(s.Display, 12, wrap: false),
             Text(Fmt.Pct(s.Share), 12, color: s.Deficit > 0.02 ? Bad : s.Weight <= db.Settings.Stats.LowWeight && s.Share >= db.Settings.Stats.WastedShare ? Warn : null, wrap: false),
-            Text(Fmt.Pct(s.ExpectedShare), 12, color: Muted, wrap: false),
+            Text(s.TargetDisplay, 12, color: Muted, wrap: false),
             Text(s.Weight.ToString("0.00"), 12, color: Muted, wrap: false),
             Text(string.Join(", ", s.Sources.Take(3).Select(x => x.Source)), 11, color: Muted),
         });
         return Stack(10,
             Card(Stack(8,
-                Text("Répartition du budget de stats", 15, true),
-                Text("Ce que tu contrôles : équipement, Daevanion, titres, stats divines. Le trait blanc marque la cible de ta classe.", 12, color: Muted),
+                Text("Répartition des stats ajustables", 15, true),
+                Text("Ce que tu peux changer : stats secondaires, Daevanion, titres, stats divines (les stats fixes des pièces sont hors calcul). Le trait blanc marque la cible de ta classe.", 12, color: Muted),
                 Table("Auto,Auto,Auto", cats),
-                Text($"Efficacité : {Fmt.Pct(sp.Efficiency)} du budget dans des stats utiles à ta classe en {GameDatabase.ModeName(r.Mode)}.", 13))),
-            Card(Table("Auto,Auto,Auto,Auto,Auto,*", rows, ["Stat", "Total", "Budget", "Visé", "Poids", "Principales sources"])),
+                Text($"Efficacité : {Fmt.Pct(sp.Efficiency)} de tes stats ajustables dans des stats utiles à ta classe en {GameDatabase.ModeName(r.Mode)}.", 13))),
+            Card(Table("Auto,Auto,Auto,Auto,Auto,*", rows, ["Stat", "Total", "Part ajustable", "Repère", "Poids", "Principales sources"])),
             Stack(0, r.Findings.Where(f => f.Area == Area.Stats && f.Severity != Severity.Info).Select(f => FindingCard(f)).ToArray()));
     }
 
@@ -138,6 +138,11 @@ sealed class ReportView(GameDatabase db, AdviceReport r)
         });
         panel.Children.Add(Card(Stack(6, Text("Plateaux", 15, true), Table("Auto,Auto,Auto,Auto,Auto", summary))));
 
+        var boards = new WrapPanel { Orientation = Orientation.Horizontal };
+        foreach (var b in d.Boards.Where(b => b.Relevant && b.Board.Nodes.Count > 0))
+            boards.Children.Add(new Border { Margin = new Thickness(0, 0, 12, 12), Child = Card(BoardGrid(b.Board, d), bottom: 0) });
+        panel.Children.Add(boards);
+
         foreach (var pool in d.ByPool)
         {
             var list = Stack(2, Text($"Prochaines cases — {db.Settings.Daevanion.PoolNames.GetValueOrDefault(pool.Key, pool.Key)}", 15, true),
@@ -147,11 +152,6 @@ sealed class ReportView(GameDatabase db, AdviceReport r)
                     12, color: s.IsPassage ? Muted : null));
             panel.Children.Add(Card(list));
         }
-
-        var boards = new WrapPanel { Orientation = Orientation.Horizontal };
-        foreach (var b in d.Boards.Where(b => b.Relevant && b.Board.Nodes.Count > 0))
-            boards.Children.Add(new Border { Margin = new Thickness(0, 0, 12, 12), Child = Card(BoardGrid(b.Board, d), bottom: 0) });
-        panel.Children.Add(boards);
         return panel;
     }
 

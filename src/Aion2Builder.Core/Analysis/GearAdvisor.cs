@@ -27,7 +27,8 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
         var index = prog.Stages.IndexOf(stage);
         var next = index + 1 < prog.Stages.Count ? prog.Stages[index + 1] : null;
         var targetRank = db.Grade(stage.TargetGrade).Rank;
-        var safe = prog.Enchant.SafeLevel;
+        // Une pièce qui ne passera pas le palier suivant est de transition : enchantement plafonné.
+        var keepRank = db.Grade((next ?? stage).TargetGrade).Rank;
 
         var bySlot = c.Equipment.GroupBy(i => i.Slot).ToDictionary(g => g.Key, g => g.First());
         var powers = prog.RequiredSlots.Select(s => bySlot.GetValueOrDefault(s)).Where(i => i is { HasDetail: true })
@@ -74,12 +75,13 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
                 source = sourceNow;
                 priority = (35 + 3 * gap) * gw;
             }
-            else if (item.MaxEnchantLevel > item.EnchantLevel && item.EnchantLevel < safe)
+            else if (EnchantCap(item, keepRank) is var cap && item.MaxEnchantLevel > item.EnchantLevel && item.EnchantLevel < cap)
             {
-                var target = Math.Min(safe, item.MaxEnchantLevel);
+                var target = Math.Min(cap, item.MaxEnchantLevel);
                 var cost = EnchantCost(item.EnchantLevel, target);
                 status = SlotStatus.Enchant;
-                advice = $"À garder : enchante +{item.EnchantLevel} → +{target} (coût relatif {Fmt.Num(cost)}).";
+                advice = (cap < prog.Enchant.SafeLevel ? "Pièce de transition (remplacée au palier suivant) : " : "À garder : ")
+                         + $"enchante +{item.EnchantLevel} → +{target} (coût relatif {Fmt.Num(cost)}).";
                 source = sourceNext;
                 priority = (15 + 30.0 * (target - item.EnchantLevel) / (cost + 1)) * gw;
             }
@@ -97,6 +99,10 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
         }
         return new GearPlan(stage, next, median, slots);
     }
+
+    /// <summary>Niveau d'enchantement rentable : sûr pour une pièce gardée, plafonné pour une pièce de transition.</summary>
+    public int EnchantCap(EquippedItem item, int keepRank) =>
+        db.Grade(item.Grade).Rank >= keepRank ? db.Progression.Enchant.SafeLevel : db.Progression.Enchant.TransitionalMax;
 
     public double EnchantCost(int from, int to)
     {
@@ -136,20 +142,20 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
                 $"{s.Item!.Name} ({db.Grade(s.Item.Grade).Name}, niv. {s.Power}). {s.Advice}",
                 s.NextSource is null ? null : $"Va chercher : {s.NextSource}", s.Priority));
 
+        var keepRank = db.Grade((plan.NextStage ?? stage).TargetGrade).Rank;
         var enchants = plan.Slots.Where(s => s.Status == SlotStatus.Enchant).OrderByDescending(s => s.Priority).ToList();
         if (enchants.Count > 0)
             findings.Add(new Finding(Area.Enchant, Severity.Advice, $"Enchantements rentables ({enchants.Count} pièce(s))",
-                "Pièces à garder sur ce palier, sous le niveau d'enchantement sûr : " +
-                string.Join(" · ", enchants.Take(6).Select(s => $"{s.SlotName} +{s.Item!.EnchantLevel} → +{Math.Min(db.Progression.Enchant.SafeLevel, s.Item.MaxEnchantLevel)}")),
+                "Pièces sous leur niveau d'enchantement rentable (sûr pour celles à garder, plafonné pour celles de transition) : " +
+                string.Join(" · ", enchants.Take(6).Select(s => $"{s.SlotName} +{s.Item!.EnchantLevel} → +{Math.Min(EnchantCap(s.Item, keepRank), s.Item.MaxEnchantLevel)}")),
                 $"Enchante dans cet ordre (meilleur gain par ressource d'abord) : {string.Join(", ", enchants.Take(4).Select(s => s.SlotName))}.",
                 enchants[0].Priority));
 
-        var targetRank = db.Grade(stage.TargetGrade).Rank;
-        var overInvested = plan.Slots.Where(s => s.Item is { } i && db.Grade(i.Grade).Rank < targetRank
+        var overInvested = plan.Slots.Where(s => s.Item is { } i && db.Grade(i.Grade).Rank < keepRank
                                                  && i.EnchantLevel > db.Progression.Enchant.TransitionalMax).ToList();
         if (overInvested.Count > 0)
             findings.Add(new Finding(Area.Enchant, Severity.Info, "Pièces de transition déjà bien enchantées",
-                $"{string.Join(", ", overInvested.Select(s => $"{s.SlotName} +{s.Item!.EnchantLevel}"))} : elles seront remplacées à ce palier, n'y remets plus de ressources."));
+                $"{string.Join(", ", overInvested.Select(s => $"{s.SlotName} +{s.Item!.EnchantLevel}"))} : ce sont des pièces de transition (remplacées d'ici le palier suivant), n'y remets plus de ressources."));
 
         foreach (var s in plan.Slots.Where(s => s.Item is { RandomSubStats: true } && s.PoorStats.Count > 0).OrderBy(s => s.Fit).Take(2))
             findings.Add(new Finding(Area.Gear, Severity.Advice, $"{s.SlotName} : stats secondaires peu adaptées",

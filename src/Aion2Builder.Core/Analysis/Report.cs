@@ -15,12 +15,19 @@ public sealed record Finding(Area Area, Severity Severity, string Title, string 
 
 // ----- Stats -----
 
-public sealed record StatSource(string Source, Effect Effect);
+/// <param name="Fixed">Stat principale d'une pièce : imposée par le type de pièce, pas un choix du joueur.</param>
+public sealed record StatSource(string Source, Effect Effect, bool Fixed = false);
 
-public sealed record StatTotal(StatDef Def, double Flat, double Percent, double Budget, double Weight, double Share, double ExpectedShare, List<StatSource> Sources)
+/// <summary>
+/// <see cref="Budget"/> compte tout ; <see cref="ChoiceBudget"/>, <see cref="Share"/> et <see cref="ExpectedShare"/> ne portent que sur
+/// ce que le joueur peut changer (stats secondaires, Daevanion, titres, stats divines), pas les stats fixes des pièces.
+/// </summary>
+public sealed record StatTotal(StatDef Def, double Flat, double Percent, double Budget, double ChoiceBudget, double Weight, double Share, double ExpectedShare, List<StatSource> Sources)
 {
     /// <summary>Positif = il en manque par rapport à la répartition idéale de la classe.</summary>
     public double Deficit => ExpectedShare - Share;
+    /// <summary>Repère affiché : part minimale visée si la stat manque, ✓ si une stat prioritaire est bien servie.</summary>
+    public string TargetDisplay => Deficit > 0.01 ? $"≥ {Fmt.Pct(ExpectedShare)}" : Weight >= 0.6 && Share > 0 ? "✓" : "";
     public string Display => Def.Kind == StatKind.Percent || Flat == 0
         ? $"{Fmt.Num(Percent)} %" + (Flat > 0 ? $" + {Fmt.Num(Flat)}" : "")
         : Fmt.Num(Flat) + (Percent > 0 ? $" (+{Fmt.Num(Percent)} %)" : "");
@@ -33,7 +40,7 @@ public sealed record CategoryShare(StatCategory Category, double Budget, double 
 
 /// <param name="OtherModeBudget">Budget des stats réservées à l'autre mode (ex. "ATQ JcJ" vu en JcE), non compté ici.</param>
 public sealed record StatProfile(GameMode Mode, List<StatTotal> Stats, List<CategoryShare> Categories, double TotalBudget,
-    double Efficiency, double OtherModeBudget, List<string> Unrecognized)
+    double ChoiceBudget, double Efficiency, double OtherModeBudget, List<string> Unrecognized)
 {
     public StatTotal? Get(string key) => Stats.FirstOrDefault(s => s.Def.Key == key);
 }
@@ -90,7 +97,7 @@ public sealed record AdviceReport(
 {
     /// <summary>Les conseils actionnables, du plus rentable au moins rentable.</summary>
     public IEnumerable<Finding> ActionPlan => Findings.Where(f => f.Action is not null && f.Severity != Severity.Info)
-        .OrderByDescending(f => f.Priority);
+        .OrderByDescending(f => f.Priority * f.Severity switch { Severity.Critical => 1.5, Severity.Important => 1.2, _ => 1.0 });
 }
 
 public static class Fmt

@@ -46,10 +46,11 @@ Région, serveur, nom → « Importer depuis le site officiel ». Les personnage
 
 ## Comment l'algorithme raisonne
 
-1. **Budget de stats.** Toutes les stats que tu contrôles (équipement, Daevanion, titres équipés, stats principales et
-   divines) sont ramenées à une unité commune calée sur les cases Daevanion communes du jeu
-   (ATQ +3 = DÉF +30 = PV +100 = PM +50 = CRIT +5). Un « % d'ATQ » s'applique à ton ATQ plate.
-   Les stats « JcJ » ne comptent qu'en vue JcJ, et inversement.
+1. **Budget de stats.** Les stats sont ramenées à une unité commune calée sur les cases Daevanion communes du jeu
+   (ATQ +3 = DÉF +30 = PV +100 = PM +50 = CRIT +5). Un « % d'ATQ » s'applique à ton ATQ plate. La répartition porte
+   sur ce que tu peux changer (stats secondaires, Daevanion, titres équipés, stats divines) : les stats fixes d'une
+   pièce (la DÉF d'une armure) viennent avec elle et restent hors répartition. Les stats « JcJ » ne comptent qu'en
+   vue JcJ, et inversement.
 2. **Profil de classe.** Chaque classe hérite d'un rôle (DPS, tank, soigneur, soutien) avec, par mode, un poids par stat et
    une répartition visée Attaque / Défense / Survie / Utilité. On compare ta répartition à la cible, on repère les stats
    qui prennent de la place sans servir la classe, et celles qui manquent.

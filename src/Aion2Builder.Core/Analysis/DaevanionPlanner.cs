@@ -80,7 +80,7 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
                 {
                     open[pick.Board.Id].Add((n.Row, n.Col));
                     var passage = n != target && values[n.Id] < 0.5 * NodeCost(n) * pick.Ratio;
-                    steps.Add(new PlannedNode(steps.Count + 1, pool, pick.Board, n, values[n.Id], NodeCost(n), passage));
+                    steps.Add(new PlannedNode(planned + 1, pool, pick.Board, n, values[n.Id], NodeCost(n), passage));
                     planned++;
                 }
             }

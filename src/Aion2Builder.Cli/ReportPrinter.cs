@@ -21,18 +21,18 @@ sealed class ReportPrinter(GameDatabase db)
             Console.WriteLine($"    → {f.Action}");
         }
 
-        Section("Répartition des stats (ce que tu contrôles)");
+        Section("Répartition des stats ajustables (stats secondaires, Daevanion, titres, stats divines)");
         foreach (var cat in r.Stats.Categories)
         {
             var bar = Bar(cat.Share, 24);
             var marker = Math.Abs(cat.Gap) <= db.Settings.Stats.CategoryTolerance ? "ok" : cat.Gap > 0 ? "trop" : "manque";
             Console.WriteLine($"  {GameDatabase.CategoryName(cat.Category),-9} {bar} {Fmt.Pct(cat.Share),5}  visé {Fmt.Pct(cat.Target),5}  {marker}");
         }
-        Console.WriteLine($"  Efficacité : {Fmt.Pct(r.Stats.Efficiency)} du budget dans des stats utiles à ta classe.");
+        Console.WriteLine($"  Efficacité : {Fmt.Pct(r.Stats.Efficiency)} de tes stats ajustables dans des stats utiles à ta classe (stats fixes des pièces hors calcul).");
         Console.WriteLine();
-        Console.WriteLine($"  {"Stat",-30} {"Total",-16} {"Budget",7} {"Visé",7} {"Poids",6}");
+        Console.WriteLine($"  {"Stat",-30} {"Total",-16} {"Ajustable",9} {"Repère",8} {"Poids",6}");
         foreach (var s in r.Stats.Stats.Where(s => s.Budget > 0 || s.ExpectedShare >= 0.03).Take(18))
-            Console.WriteLine($"  {s.Def.Name,-30} {s.Display,-16} {Fmt.Pct(s.Share),7} {Fmt.Pct(s.ExpectedShare),7} {s.Weight,6:0.00}");
+            Console.WriteLine($"  {s.Def.Name,-30} {s.Display,-16} {Fmt.Pct(s.Share),9} {s.TargetDisplay,8} {s.Weight,6:0.00}");
 
         Section($"Équipement — palier « {r.Gear.Stage.Name} »" + (r.Gear.NextStage is null ? "" : $" → « {r.Gear.NextStage.Name} » à {r.Gear.NextStage.MinItemLevel}"));
         foreach (var s in r.Gear.Slots.OrderByDescending(s => s.Priority))

@@ -16,8 +16,12 @@ public sealed class StatAnalyzer(GameDatabase db)
     public static IEnumerable<StatSource> Sources(CharacterSnapshot c, GameDatabase db)
     {
         foreach (var item in c.Equipment)
-            foreach (var e in item.MainStats.Concat(item.SubStats))
+        {
+            foreach (var e in item.MainStats)
+                yield return new StatSource($"{db.SlotName(item.Slot)} · {item.Name}", e, Fixed: true);
+            foreach (var e in item.SubStats)
                 yield return new StatSource($"{db.SlotName(item.Slot)} · {item.Name}", e);
+        }
         foreach (var board in c.Boards)
             foreach (var node in board.Nodes.Where(n => n.Open))
                 foreach (var e in node.Effects.Where(e => e.IsStat))
@@ -39,39 +43,44 @@ public sealed class StatAnalyzer(GameDatabase db)
             .GroupBy(s => s.Effect.StatKey!).ToDictionary(g => g.Key, g => g.ToList());
 
         var defs = db.Stats.Where(s => s.Category != StatCategory.Primary).ToList();
+        static double Sum(IEnumerable<StatSource> s, bool percent) => s.Where(x => x.Effect.IsPercent == percent).Sum(x => x.Effect.Value);
         var raw = defs.Select(d =>
         {
             var sources = byKey.GetValueOrDefault(d.Key) ?? [];
-            var flat = sources.Where(s => !s.Effect.IsPercent).Sum(s => s.Effect.Value);
-            var pct = sources.Where(s => s.Effect.IsPercent).Sum(s => s.Effect.Value);
-            return (Def: d, Flat: flat, Pct: pct, Budget: Budget(d, flat, pct), Sources: sources);
+            var flat = Sum(sources, false);
+            var pct = Sum(sources, true);
+            // Part ajustable : sans les stats fixes des pièces ; ses % s'appliquent quand même au total plat.
+            var choice = sources.Where(s => !s.Fixed).ToList();
+            var choiceBudget = (d.Unit > 0 ? Sum(choice, false) / d.Unit : 0) + Budget(d, flat, Sum(choice, true)) - Budget(d, flat, 0);
+            return (Def: d, Flat: flat, Pct: pct, Budget: Budget(d, flat, pct), Choice: choiceBudget, Sources: sources);
         }).ToList();
 
         var total = raw.Sum(r => r.Budget);
+        var choiceTotal = raw.Sum(r => r.Choice);
         var weightByCategory = defs.GroupBy(d => d.Category).ToDictionary(g => g.Key, g => g.Sum(d => profile.Weight(d.Key)));
         var stats = raw.Select(r =>
         {
             var w = profile.Weight(r.Def.Key);
             var catWeight = weightByCategory.GetValueOrDefault(r.Def.Category);
             var expected = catWeight > 0 ? profile.Target(r.Def.Category) * w / catWeight : 0;
-            return new StatTotal(r.Def, r.Flat, r.Pct, r.Budget, w, total > 0 ? r.Budget / total : 0, expected,
+            return new StatTotal(r.Def, r.Flat, r.Pct, r.Budget, r.Choice, w, choiceTotal > 0 ? r.Choice / choiceTotal : 0, expected,
                 r.Sources.OrderByDescending(s => s.Effect.Value).ToList());
         }).OrderByDescending(s => s.Budget).ToList();
 
         var categories = new[] { StatCategory.Offense, StatCategory.Defense, StatCategory.Sustain, StatCategory.Utility }
             .Select(cat =>
             {
-                var b = stats.Where(s => s.Def.Category == cat).Sum(s => s.Budget);
-                return new CategoryShare(cat, b, total > 0 ? b / total : 0, profile.Target(cat));
+                var b = stats.Where(s => s.Def.Category == cat).Sum(s => s.ChoiceBudget);
+                return new CategoryShare(cat, b, choiceTotal > 0 ? b / choiceTotal : 0, profile.Target(cat));
             }).ToList();
 
         var maxWeight = Math.Max(0.01, profile.Weights.Values.DefaultIfEmpty(1).Max());
-        var efficiency = total > 0 ? stats.Sum(s => s.Budget * s.Weight) / total / maxWeight : 0;
+        var efficiency = choiceTotal > 0 ? stats.Sum(s => s.ChoiceBudget * s.Weight) / choiceTotal / maxWeight : 0;
 
         var otherMode = all.Where(s => s.Effect.IsStat && !Applies(s.Effect, profile.Mode))
             .Sum(s => db.Stat(s.Effect.StatKey!) is { } d ? Budget(d, s.Effect.IsPercent ? 0 : s.Effect.Value, s.Effect.IsPercent ? s.Effect.Value : 0) : 0);
 
-        return new StatProfile(profile.Mode, stats, categories, total, efficiency, otherMode, unrecognized);
+        return new StatProfile(profile.Mode, stats, categories, total, choiceTotal, efficiency, otherMode, unrecognized);
     }
 
     /// <summary>Points de budget d'une stat : un % d'une stat plate s'applique au total plat déjà acquis.</summary>
@@ -103,7 +112,7 @@ public sealed class StatAnalyzer(GameDatabase db)
         var findings = new List<Finding>();
         var s = db.Settings.Stats;
         var who = $"un {p.Class.Name} en {GameDatabase.ModeName(p.Mode)}";
-        if (sp.TotalBudget <= 0)
+        if (sp.ChoiceBudget <= 0)
         {
             findings.Add(new Finding(Area.Stats, Severity.Info, "Pas de stats lisibles",
                 "Le site officiel n'a renvoyé aucune stat d'équipement ou de Daevanion pour ce personnage."));
@@ -111,12 +120,12 @@ public sealed class StatAnalyzer(GameDatabase db)
         }
 
         findings.Add(new Finding(Area.Stats, Severity.Info, $"Efficacité des stats : {Fmt.Pct(sp.Efficiency)}",
-            $"Part de ton budget de stats (équipement, Daevanion, titres, stats divines) placée dans des stats utiles pour {who}."));
+            $"Part de tes stats ajustables (stats secondaires, Daevanion, titres, stats divines) placée dans des stats utiles pour {who}. Les stats fixes des pièces (DÉF d'une armure, ATQ d'une arme) sont hors calcul : elles viennent avec la pièce."));
 
         // 1. Répartition Attaque / Défense / Survie / Utilité.
         var over = sp.Categories.Where(c => c.Gap > s.CategoryTolerance).OrderByDescending(c => c.Gap).ToList();
         var under = sp.Categories.Where(c => c.Gap < -s.CategoryTolerance).OrderBy(c => c.Gap).ToList();
-        string Line(CategoryShare c) => $"{GameDatabase.CategoryName(c.Category)} : {Fmt.Pct(c.Share)} du budget (≈ {Fmt.Pct(c.Target)} visé)";
+        string Line(CategoryShare c) => $"{GameDatabase.CategoryName(c.Category)} : {Fmt.Pct(c.Share)} de tes stats ajustables (≈ {Fmt.Pct(c.Target)} visé)";
         if (over.Count > 0 && under.Count > 0)
         {
             var o = over[0];
@@ -125,7 +134,7 @@ public sealed class StatAnalyzer(GameDatabase db)
             var take = sp.Stats.Where(x => x.Def.Category == u.Category).OrderByDescending(x => x.Deficit * x.Weight).First();
             var big = Math.Max(o.Gap, -u.Gap) > 2 * s.CategoryTolerance;
             findings.Add(new Finding(Area.Stats, big ? Severity.Important : Severity.Advice,
-                $"Trop de {GameDatabase.CategoryName(o.Category)}, pas assez de {GameDatabase.CategoryName(u.Category)}",
+                $"Trop {GameDatabase.Of(o.Category)}, pas assez {GameDatabase.Of(u.Category)}",
                 $"{Line(o)}. {Line(u)}. Repères pour {who}.",
                 $"Sur tes prochaines pièces, relances de stats secondaires et pierres de mana, remplace « {give.Def.Name} » par « {take.Def.Name} » ({Where(take)}).",
                 big ? 70 : 45));
@@ -133,12 +142,12 @@ public sealed class StatAnalyzer(GameDatabase db)
         else
         {
             foreach (var o in over)
-                findings.Add(new Finding(Area.Stats, Severity.Advice, $"Beaucoup de {GameDatabase.CategoryName(o.Category)}",
+                findings.Add(new Finding(Area.Stats, Severity.Advice, $"Beaucoup {GameDatabase.Of(o.Category)}",
                     $"{Line(o)}.", $"Réoriente une partie vers « {Best(sp).Def.Name} ».", 35));
             foreach (var u in under)
             {
                 var take = sp.Stats.Where(x => x.Def.Category == u.Category).OrderByDescending(x => x.Deficit * x.Weight).First();
-                findings.Add(new Finding(Area.Stats, Severity.Advice, $"Pas assez de {GameDatabase.CategoryName(u.Category)}",
+                findings.Add(new Finding(Area.Stats, Severity.Advice, $"Pas assez {GameDatabase.Of(u.Category)}",
                     $"{Line(u)}.", $"Cherche « {take.Def.Name} » ({Where(take)}).", 40));
             }
         }
@@ -146,8 +155,8 @@ public sealed class StatAnalyzer(GameDatabase db)
         // 2. Stats qui prennent de la place sans servir la classe.
         foreach (var w in sp.Stats.Where(x => x.Weight <= s.LowWeight && x.Share >= s.WastedShare).Take(3))
         {
-            var from = string.Join(", ", w.Sources.Take(3).Select(x => x.Source));
-            findings.Add(new Finding(Area.Stats, Severity.Advice, $"{w.Def.Name} peu utile ({Fmt.Pct(w.Share)} du budget)",
+            var from = string.Join(", ", w.Sources.Where(x => !x.Fixed).Take(3).Select(x => x.Source));
+            findings.Add(new Finding(Area.Stats, Severity.Advice, $"{w.Def.Name} peu utile ({Fmt.Pct(w.Share)} de tes stats ajustables)",
                 $"Pour {who}, « {w.Def.Name} » rapporte peu. Elle vient surtout de : {from}.",
                 "Remplace-la en priorité lors des relances de stats secondaires ou au prochain changement de pièce.",
                 25 + 100 * w.Share));
@@ -158,7 +167,7 @@ public sealed class StatAnalyzer(GameDatabase db)
             .OrderByDescending(x => x.Deficit * x.Weight).Take(3).ToList();
         if (wanted.Count > 0)
             findings.Add(new Finding(Area.Stats, Severity.Advice, $"Stats à aller chercher : {string.Join(", ", wanted.Select(x => x.Def.Name))}",
-                string.Join(" · ", wanted.Select(x => $"{x.Def.Name} : {Fmt.Pct(x.Share)} du budget (≈ {Fmt.Pct(x.ExpectedShare)} visé)")),
+                string.Join(" · ", wanted.Select(x => $"{x.Def.Name} : {Fmt.Pct(x.Share)} des stats ajustables (≈ {Fmt.Pct(x.ExpectedShare)} visé)")),
                 $"Vise-les sur tes cases Daevanion, tes stats secondaires et tes pierres de mana — {Where(wanted[0])}.",
                 50 + 100 * wanted.Sum(x => x.Deficit * x.Weight)));
 

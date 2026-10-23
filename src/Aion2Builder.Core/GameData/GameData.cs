@@ -198,6 +198,9 @@ public sealed class GameDatabase
         _ => "Stats principales",
     };
 
+    /// <summary>"d'Attaque", "de Défense"… pour les phrases.</summary>
+    public static string Of(StatCategory c) => c is StatCategory.Offense or StatCategory.Utility ? $"d'{CategoryName(c)}" : $"de {CategoryName(c)}";
+
     public static string ModeName(GameMode m) => m == GameMode.PvP ? "JcJ (PvP)" : "JcE (PvE)";
 
     /// <summary>Minuscules, apostrophes et espaces normalisés : "Augmentation de l’ATQ" == "augmentation de l'atq".</summary>

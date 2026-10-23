@@ -48,7 +48,7 @@ public sealed class SkillAdvisor(GameDatabase db)
                 var avg = s.IsActive ? avgActive : avgPassive;
                 advice = new(s, SkillStatus.LevelUp, isCore,
                     $"Niveau {s.Level} contre {Fmt.Num(avg)} en moyenne pour tes {(s.IsActive ? "actives équipées" : "passives")}.{nodesText}",
-                    nodes, 30 + 5 * (avg - s.Level) + (isCore ? 15 : 0));
+                    nodes, 25 + Math.Min(25, 2.5 * (avg - s.Level)) + (isCore ? 15 : 0));
             }
             else if (s.IsActive && s.Acquired && !s.Equipped && s.Level >= set.WastedLevelThreshold)
                 advice = new(s, SkillStatus.Wasted, isCore, $"Niveau {s.Level} mais pas dans ta barre : ressources immobilisées.", nodes, 0);

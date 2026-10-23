@@ -37,15 +37,20 @@ static class Ui
 
     public static IBrush ScoreBrush(int score) => score >= 75 ? Good : score >= 50 ? Warn : Bad;
 
-    public static TextBlock Text(string text, double size = 13, bool bold = false, IBrush? color = null, bool wrap = true) => new()
+    public static TextBlock Text(string text, double size = 13, bool bold = false, IBrush? color = null, bool wrap = true)
     {
-        Text = text,
-        FontSize = size,
-        FontWeight = bold ? FontWeight.SemiBold : FontWeight.Normal,
-        Foreground = color,
-        TextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap,
-        VerticalAlignment = VerticalAlignment.Center,
-    };
+        var block = new TextBlock
+        {
+            Text = text,
+            FontSize = size,
+            FontWeight = bold ? FontWeight.SemiBold : FontWeight.Normal,
+            TextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        // Ne pas écrire Foreground = null : cela masquerait la couleur héritée du thème.
+        if (color is not null) block.Foreground = color;
+        return block;
+    }
 
     public static Border Card(Control child, IBrush? accent = null, double bottom = 8) => new()
     {
