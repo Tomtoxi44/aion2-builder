@@ -49,7 +49,7 @@ public sealed class Advisor(GameDatabase db)
         // Part des niveaux visés atteints, pondérée par l'importance de chaque compétence.
         var useful = skills.Skills.Where(a => a.Skill.Acquired && a.Priority > 0).ToList();
         var skillScore = useful.Count == 0 ? 0 : 100 * useful.Sum(a => Math.Min(a.Base, a.Target) * a.Priority) / useful.Sum(a => a.Target * a.Priority)
-                         - 15 * skills.Skills.Count(a => a.Kind == SkillKind.Active && a.Priority >= 0.85 && a.Skill.Acquired && !a.Skill.Equipped);
+                         - 15 * skills.Skills.Count(a => a.Kind == SkillKind.Active && a.Priority >= 0.85 && a.Skill.Acquired && !a.InBar);
 
         var boards = dae.Boards.Where(b => b.Relevant && b.Board.Unlocked && b.Board.TotalNodes > 0).ToList();
         var daeScore = boards.Count == 0 ? 0 : boards.Average(b => b.Board.OpenPercent);

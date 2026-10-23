@@ -25,6 +25,11 @@ public sealed partial class SkillAdvisor(GameDatabase db)
 
     bool CommonPvp(SkillInfo s) => db.Settings.Skills.CommonPvpSkills.Any(n => Norm(n) == Norm(s.Name));
 
+    /// <summary>Compétences sur une touche fixe (ex. Dissipation de choc) : le site les dit toujours « non équipées ».</summary>
+    bool FixedSlot(SkillInfo s) => db.Settings.Skills.FixedSlotSkills.Any(n => Norm(n) == Norm(s.Name));
+
+    public bool InBar(SkillInfo s) => s.Equipped || FixedSlot(s);
+
     /// <summary>Importance de la compétence pour ce profil : 0 = inutile, 1 = indispensable.</summary>
     public double Priority(SkillInfo s, ResolvedProfile p)
     {
@@ -36,7 +41,7 @@ public sealed partial class SkillAdvisor(GameDatabase db)
             SkillKind.Passive => set.UnknownPassivePriority,
             SkillKind.Stigma => s.Equipped ? set.UnknownStigmaPriority : 0.2,
             // Sans fiche de classe, la barre du joueur fait foi : une active non équipée ne sert pas.
-            _ => s.Equipped ? set.UnknownActivePriority : 0.05,
+            _ => InBar(s) ? set.UnknownActivePriority : 0.05,
         };
     }
 
@@ -107,7 +112,7 @@ public sealed partial class SkillAdvisor(GameDatabase db)
 
         var skills = rows.Select(r => new SkillAdvice(r.Skill, KindOf(r.Skill), r.Known?.Role ?? DefaultRole(r.Skill),
                 r.Known?.Why ?? DefaultWhy(r.Skill, p), r.Known is not null, r.Known?.Unverified ?? false, r.Priority,
-                r.Base, r.Bonus, r.Target, r.Rec, openable.GetValueOrDefault(Norm(r.Skill.Name))))
+                r.Base, r.Bonus, r.Target, r.Rec, openable.GetValueOrDefault(Norm(r.Skill.Name)), InBar(r.Skill)))
             .OrderBy(s => s.Kind).ThenByDescending(s => s.Priority).ToList();
 
         // Stigmas : les plus utiles occupent les emplacements, montés jusqu'au niveau visé.
@@ -128,11 +133,11 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         return new SkillPlan(skills, stigmas, spent, inputs.UnspentSkillPoints, p.Class.Skills.Count > 0, p.Class.SkillsSource);
     }
 
-    static string DefaultRole(SkillInfo s) => KindOf(s) switch
+    string DefaultRole(SkillInfo s) => KindOf(s) switch
     {
         SkillKind.Passive => "Passif",
         SkillKind.Stigma => "Stigma",
-        _ => s.Equipped ? "Dans ta barre" : "Hors de ta barre",
+        _ => InBar(s) ? "Dans ta barre" : "Hors de ta barre",
     };
 
     string DefaultWhy(SkillInfo s, ResolvedProfile p)
@@ -143,7 +148,7 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         {
             SkillKind.Passive => "Passif actif en permanence une fois appris (pas de fiche détaillée pour cette classe).",
             SkillKind.Stigma => s.Equipped ? "Stigma équipé (pas de fiche détaillée pour cette classe)." : "Stigma non équipé.",
-            _ => s.Equipped
+            _ => InBar(s)
                 ? "Dans ta barre : considérée comme faisant partie de ta rotation (pas de fiche détaillée pour cette classe)."
                 : "Pas dans ta barre : les points investis ne servent à rien tant qu'elle n'est pas équipée.",
         };
@@ -180,7 +185,7 @@ public sealed partial class SkillAdvisor(GameDatabase db)
                     : "Mets les points récupérés dans cet ordre (la plus importante d'abord).",
                 55 + 5 * add.Sum(a => a.Delta * a.Priority) / 3));
 
-        foreach (var a in plan.Skills.Where(a => a.Kind == SkillKind.Active && a.Priority >= 0.85 && a.Skill.Acquired && !a.Skill.Equipped))
+        foreach (var a in plan.Skills.Where(a => a.Kind == SkillKind.Active && a.Priority >= 0.85 && a.Skill.Acquired && !a.InBar))
             findings.Add(new Finding(Area.Skills, Severity.Important, $"Équipe « {a.Skill.Name} »",
                 $"{a.Role} : {a.Why}", $"Mets « {a.Skill.Name} » dans ta barre {mode}.", 75));
         foreach (var a in plan.Skills.Where(a => a.Priority >= 0.85 && !a.Skill.Acquired))

@@ -146,7 +146,7 @@ sealed class ReportView(GameDatabase db, AdviceReport r, PlayerInputs inputs, Ac
             : Chip(a.Delta > 0 ? $"+{a.Delta} → {a.RecommendedBase}" : $"{a.Delta} → {a.RecommendedBase}", a.Delta > 0 ? Good : Bad);
         var rows = sk.Skills.Select(a => new Control[]
         {
-            Text(a.Kind == SkillKind.Passive ? "Passive" : a.Skill.Equipped ? "Active ✓" : "Active", 12, color: Muted, wrap: false),
+            Text(a.Kind == SkillKind.Passive ? "Passive" : a.InBar ? "Active ✓" : "Active", 12, color: Muted, wrap: false),
             Tip(Text(a.Skill.Name, 12, true, a.Skill.Acquired ? null : Muted, wrap: false),
                 $"Priorité {GameDatabase.ModeName(r.Mode)} : {a.Priority:0.00} (0 = inutile, 1 = indispensable)\nNiveau visé : {a.Target}"),
             Text(a.Role, 12, wrap: false),

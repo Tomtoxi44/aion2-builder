@@ -68,7 +68,7 @@ public enum SkillKind { Active, Passive, Stigma }
 /// </summary>
 public sealed record SkillAdvice(
     SkillInfo Skill, SkillKind Kind, string Role, string Why, bool Known, bool Unverified, double Priority,
-    int Base, int Bonus, int Target, int RecommendedBase, int OpenableNodes)
+    int Base, int Bonus, int Target, int RecommendedBase, int OpenableNodes, bool InBar)
 {
     public int Delta => RecommendedBase - Base;
     public int Total => Base + Bonus;

@@ -22,6 +22,8 @@
     "specialtyLevels": [8, 12, 16, 20],
     "pointSources": "≈ 203 points au niveau 45, jusqu'à 122 avec les 61 donjons scellés et 59 avec les quêtes régionales (≈ 384 au total d'après un guide antérieur au lancement Global).",
     "commonPvpSkills": ["Dissipation de choc"],
+    "_fixedSlotSkills": "Compétences sur une touche fixe, hors barre : le site les montre toujours « non équipées » (vérifié sur 9 personnages).",
+    "fixedSlotSkills": ["Dissipation de choc"],
     "unknownActivePriority": 0.7,
     "unknownPassivePriority": 0.6,
     "unknownStigmaPriority": 0.6,

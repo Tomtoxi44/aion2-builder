@@ -14,7 +14,8 @@ public sealed class ServerCache(string? dir = null)
 
     public string Directory { get; } = dir ?? Path.Combine(AppPaths.Root, "servers");
 
-    string PathOf(string region) => Path.Combine(Directory, $"{region.Trim().ToLowerInvariant()}.json");
+    // Noms français (ceux du jeu en français) ; le suffixe invalide les anciens fichiers en noms anglais.
+    string PathOf(string region) => Path.Combine(Directory, $"{region.Trim().ToLowerInvariant()}.fr.json");
 
     /// <summary>Liste en cache, même ancienne ; vide si jamais lue.</summary>
     public List<ServerInfo> Load(string region)

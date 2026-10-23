@@ -126,6 +126,7 @@ public sealed record SkillSettings
     public List<int> SpecialtyLevels { get; init; } = [8, 12, 16, 20];
     public string PointSources { get; init; } = "";
     public List<string> CommonPvpSkills { get; init; } = [];
+    public List<string> FixedSlotSkills { get; init; } = [];
     public double UnknownActivePriority { get; init; } = 0.7;
     public double UnknownPassivePriority { get; init; } = 0.6;
     public double UnknownStigmaPriority { get; init; } = 0.6;

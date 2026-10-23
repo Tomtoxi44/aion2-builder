@@ -38,9 +38,10 @@ public sealed class ArmoryClient(HttpClient http) : IDisposable
 
     public void Dispose() => http.Dispose();
 
-    public async Task<List<ServerInfo>> Servers(string region, CancellationToken ct = default)
+    /// <summary>Serveurs de la région. Les noms varient selon la langue (fr : Eldra, Nai… ; en : Ludra, Quai…).</summary>
+    public async Task<List<ServerInfo>> Servers(string region, CancellationToken ct = default, string lang = Lang)
     {
-        using var doc = JsonDocument.Parse(await Get($"{Site}/en-us/api/gameinfo/servers?lang=en-US&region={Region(region)}", ct));
+        using var doc = JsonDocument.Parse(await Get($"{Site}/en-us/api/gameinfo/servers?lang={lang}&region={Region(region)}", ct));
         return doc.RootElement.GetProperty("serverList").EnumerateArray()
             .Select(s => new ServerInfo(s.GetProperty("serverId").GetInt32(), s.GetProperty("serverName").GetString() ?? "",
                 s.TryGetProperty("raceId", out var race) && race.ValueKind == JsonValueKind.Number ? race.GetInt32() : 0))
@@ -55,7 +56,9 @@ public sealed class ArmoryClient(HttpClient http) : IDisposable
         if (!string.IsNullOrWhiteSpace(serverName))
         {
             var servers = await Servers(region, ct);
-            serverId = servers.FirstOrDefault(s => s.Name.Equals(serverName.Trim(), StringComparison.OrdinalIgnoreCase))?.Id
+            int? Find(List<ServerInfo> list) => list.FirstOrDefault(s => s.Name.Equals(serverName.Trim(), StringComparison.OrdinalIgnoreCase))?.Id;
+            // Nom français d'abord (celui du jeu en français), puis nom anglais.
+            serverId = Find(servers) ?? Find(await Servers(region, ct, "en-US"))
                        ?? throw new ArmoryException($"Serveur « {serverName} » inconnu en région {region}. Serveurs : {string.Join(", ", servers.Select(s => s.Name))}");
         }
         var url = $"https://api-search.plaync.com/aion2global/search/v2/character?keyword={Uri.EscapeDataString(name.Trim())}" +
