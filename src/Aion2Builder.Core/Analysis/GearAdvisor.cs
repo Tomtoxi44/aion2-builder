@@ -31,9 +31,12 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
         var keepRank = db.Grade((next ?? stage).TargetGrade).Rank;
 
         var bySlot = c.Equipment.GroupBy(i => i.Slot).ToDictionary(g => g.Key, g => g.First());
-        var powers = prog.RequiredSlots.Select(s => bySlot.GetValueOrDefault(s)).Where(i => i is { HasDetail: true })
-            .Select(i => i!.Power).OrderBy(x => x).ToList();
-        var median = powers.Count == 0 ? 0 : powers[powers.Count / 2];
+        static int Median(List<int> values) => values.Count == 0 ? 0 : values.OrderBy(x => x).ElementAt(values.Count / 2);
+        var detailed = prog.RequiredSlots.Select(s => (Slot: s, Item: bySlot.GetValueOrDefault(s))).Where(x => x.Item is { HasDetail: true }).ToList();
+        // Médiane hors runes / amulette (leur échelle de niveau est différente) ; chaque famille est comparée à elle-même.
+        var median = Median(detailed.Where(x => db.SlotGroup(x.Slot) != "Special").Select(x => x.Item!.Power).ToList());
+        var groupMedians = detailed.GroupBy(x => db.SlotGroup(x.Slot) ?? "Armor")
+            .ToDictionary(g => g.Key, g => g.Count() >= 3 ? Median(g.Select(x => x.Item!.Power).ToList()) : g.Key == "Special" ? 0 : median);
 
         var slots = new List<SlotPlan>();
         foreach (var slot in prog.RequiredSlots.Concat(prog.OptionalSlots))
@@ -57,7 +60,8 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
 
             var (fit, poor) = Fit(item, sp, p);
             var rank = db.Grade(item.Grade).Rank;
-            var gap = item.HasDetail && median > 0 ? median - item.Power : 0;
+            var reference = groupMedians.GetValueOrDefault(group, median);
+            var gap = item.HasDetail && reference > 0 ? reference - item.Power : 0;
             SlotStatus status;
             string advice;
             string? source;
@@ -85,14 +89,15 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
             else if (rank > 0 && rank < targetRank)
             {
                 status = SlotStatus.Replace;
-                advice = $"Pièce de grade {db.Grade(item.Grade).Name.ToLowerInvariant()} : à ce palier, vise le {db.Grade(stage.TargetGrade).Name.ToLowerInvariant()}.";
-                source = sourceNow;
+                advice = $"Pièce {db.Grade(item.Grade).Name} : à ce palier, vise le grade {db.Grade(stage.TargetGrade).Name}.";
+                // Source du palier qui apporte le grade suivant (pas celle du palier d'optimisation).
+                source = prog.Stages.FirstOrDefault(s => db.Grade(s.TargetGrade).Rank > rank)?.Gear.FirstOrDefault(g => g.Group == group)?.For(p.Mode) ?? sourceNow;
                 priority = (40 + 3 * Math.Max(gap, 0) + 10 * (targetRank - rank)) * gw;
             }
             else if (gap >= db.Settings.Gear.WeakSlotGap)
             {
                 status = SlotStatus.Weak;
-                advice = $"Niveau d'objet {item.Power} contre {median} en médiane : c'est ta pièce en retard.";
+                advice = $"Niveau d'objet {item.Power} contre {reference} en médiane pour tes {group switch { "Weapon" => "armes", "Armor" => "pièces d'armure", "Accessory" => "accessoires", _ => "runes et amulette" }} : c'est ta pièce en retard.";
                 source = sourceNow;
                 priority = (35 + 3 * gap) * gw;
             }
