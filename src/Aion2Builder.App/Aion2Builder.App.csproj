@@ -8,6 +8,8 @@
     <AssemblyName>Aion2Builder</AssemblyName>
     <!-- Icône du .exe (Explorateur, raccourci) ; la fenêtre la relit comme ressource intégrée (pas de ressource Avalonia). -->
     <ApplicationIcon>Assets/app.ico</ApplicationIcon>
+    <!-- Compilation locale : 0.0.0 (pas de mise à jour proposée). GitHub passe -p:Version=1.0.N. -->
+    <Version>0.0.0</Version>
   </PropertyGroup>
 
   <!--

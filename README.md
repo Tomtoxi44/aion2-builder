@@ -31,6 +31,21 @@ Après une mise à jour du code, ferme l'application et relance `publier.cmd`. L
 (installé avec le SDK). Si Windows refuse de le lancer (« Une stratégie de contrôle d'application a bloqué ce
 fichier »), c'est Smart App Control : voir la dernière section.
 
+### Sur un PC sans le projet (mise à jour automatique)
+
+À chaque push sur `main`, GitHub compile un exe autonome (pas de .NET à installer), numéroté `v1.0.<n>`, et le dépose
+sur Aion 2 Todo.
+
+1. Télécharge-le une fois : <https://aion2-todo-7275.azurewebsites.net/api/downloads/builder/file>, et range-le dans
+   un dossier à toi (pas dans `Program Files` : l'application doit pouvoir remplacer son exe).
+2. Au lancement puis toutes les 6 h, l'application regarde s'il existe une version plus récente : un bouton
+   « ⬆ v1.0.n disponible » apparaît en haut à droite. Un clic la télécharge, vérifie son empreinte, remplace l'exe et
+   relance l'application (l'ancienne version est effacée au lancement suivant). « Aide → Vérifier les mises à jour »
+   le fait à la demande. La version en cours est affichée en bas à droite.
+
+Une compilation locale (`publier.cmd`) porte la version « build locale » et ne propose pas de mise à jour. L'exe n'est
+pas signé : si Smart App Control est actif sur ce PC, Windows le bloque.
+
 ## Utilisation en ligne de commande
 
 ```bash

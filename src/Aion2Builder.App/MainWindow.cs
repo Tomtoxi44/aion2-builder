@@ -14,6 +14,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using static Aion2Builder.App.Ui;
 
 namespace Aion2Builder.App;
@@ -87,6 +88,9 @@ public sealed class MainWindow : Window
     string loadStep = "";
     TextBlock? loadText;
     string? importError;
+    // Mise à jour proposée par Aion 2 Todo (vérifiée au lancement puis toutes les 6 h).
+    Updater.Release? update;
+    bool installing;
 
     public MainWindow()
     {
@@ -124,6 +128,11 @@ public sealed class MainWindow : Window
             if (e.Key == Key.K && e.KeyModifiers.HasFlag(KeyModifiers.Control)) { e.Handled = true; ShowImport(); }
         };
         Opened += async (_, _) => await LoadServersAsync(force: false);
+        Updater.CleanOld();
+        Opened += async (_, _) => await CheckUpdateAsync(manual: false);
+        var updateTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(6) };
+        updateTimer.Tick += async (_, _) => await CheckUpdateAsync(manual: false);
+        updateTimer.Start();
 
         var last = prefs.LastFile is not null ? store.List().FirstOrDefault(s => s.Path == prefs.LastFile) : null;
         if (last is not null && TryLoad(last.Path) is { } snapshot)
@@ -293,7 +302,8 @@ public sealed class MainWindow : Window
                 Menu("Fichier", ("Importer un personnage…  Ctrl+K", ShowImport), ("Quitter", Close)),
                 Menu("Personnage", ("Actualiser depuis le site officiel", () => _ = RefreshAsync()), ("Changer de personnage", ShowImport)),
                 Menu("Données", ("Recharger les données", ReloadData), ("Actualiser les familiers (Aion 2 Todo)", () => _ = PetsAsync(null)), ("Ouvrir le dossier des données", OpenDataFolder)),
-                Menu("Aide", ("Comment c'est calculé ?", () => Update(st => { st.Screen = report is null ? Screen.Import : Screen.Home; st.HomeHow = true; }))),
+                Menu("Aide", ("Comment c'est calculé ?", () => Update(st => { st.Screen = report is null ? Screen.Import : Screen.Home; st.HomeHow = true; })),
+                    ("Vérifier les mises à jour", () => _ = CheckUpdateAsync(manual: true))),
             },
         };
 
@@ -302,6 +312,14 @@ public sealed class MainWindow : Window
             Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center,
             Children = { ThemeButton(), T("mode", 12, Tok.Muted, mono: true), ModeSwitch() },
         };
+        if (update is { } available)
+        {
+            var label = installing ? "mise à jour…" : $"⬆ {available.Label} disponible";
+            var pill = Clickable(T(label, 12, Tok.OnAccent, FontWeight.SemiBold, mono: true), () => _ = InstallUpdateAsync(), Accent.Main, padding: new Thickness(10, 3));
+            pill.CornerRadius = new CornerRadius(4);
+            ToolTip.SetTip(pill, $"Nouvelle version sur Aion 2 Todo (tu as {Updater.CurrentLabel}) : clic pour la télécharger et relancer l'application.");
+            right.Children.Insert(0, pill);
+        }
         DockPanel.SetDock(right, Dock.Right);
         return new Border
         {
@@ -488,6 +506,7 @@ public sealed class MainWindow : Window
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16, VerticalAlignment = VerticalAlignment.Center };
         if (current is not null) right.Children.Add(T($"importé {current.FetchedAtUtc.ToLocalTime():dd/MM HH:mm}", 11, Tok.StatusText, mono: true));
         right.Children.Add(T(dataSource, 11, Tok.StatusText, mono: true));
+        right.Children.Add(T(Updater.CurrentLabel, 11, Tok.StatusText, mono: true));
         DockPanel.SetDock(right, Dock.Right);
         return new Border { Background = Accent.Bar, Padding = new Thickness(12, 0), Child = new DockPanel { Children = { right, left } } };
     }
@@ -763,6 +782,43 @@ public sealed class MainWindow : Window
                 loading = null;
                 RenderHits();
             }
+        }
+    }
+
+    async Task CheckUpdateAsync(bool manual)
+    {
+        if (installing) return;
+        if (Updater.Current is null)
+        {
+            if (manual) SetStatus("build locale (publier.cmd) : mets-la à jour avec git pull puis publier.cmd");
+            return;
+        }
+        if (manual) SetStatus("Recherche d'une mise à jour sur Aion 2 Todo…");
+        try { update = await Updater.Check(); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            if (manual) SetStatus($"Aion 2 Todo ne répond pas : {ex.Message}", error: true);
+            return;
+        }
+        if (manual && update is null) SetStatus($"Aion 2 Builder est à jour ({Updater.CurrentLabel})");
+        Render();
+    }
+
+    async Task InstallUpdateAsync()
+    {
+        if (update is not { } release || installing) return;
+        installing = true;
+        Render();
+        try
+        {
+            await Updater.Install(release, new Progress<string>(m => SetStatus(m)));
+            Close(); // la nouvelle version est lancée
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
+        {
+            installing = false;
+            SetStatus($"Mise à jour impossible : {ex.Message}", error: true);
+            Render();
         }
     }
 

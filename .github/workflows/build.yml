@@ -14,3 +14,50 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - run: dotnet build Aion2Builder.slnx -c Release
+
+  # À chaque push sur main : exe autonome (sans .NET à installer), version 1.0.<numéro du run>, déposé sur
+  # Aion 2 Todo où l'application vérifie et télécharge ses mises à jour. Sous Windows : l'icône de l'exe
+  # ne peut être ajoutée que par une compilation Windows.
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: windows-latest
+    env:
+      VERSION: 1.0.${{ github.run_number }}
+      BUILDER_UPLOAD_KEY: ${{ secrets.BUILDER_UPLOAD_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publication
+        run: >
+          dotnet publish src/Aion2Builder.App -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+          -p:DebugType=None -p:Version=${{ env.VERSION }} -o publish
+
+      # L'exe doit démarrer et rester ouvert : pas de version cassée proposée en mise à jour.
+      - name: Test de démarrage
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath publish\Aion2Builder.exe -PassThru
+          Start-Sleep -Seconds 15
+          if ($p.HasExited) { throw "L'exe s'est arrêté au démarrage (code $($p.ExitCode))" }
+          $p.Kill()
+          Get-Item publish\Aion2Builder.exe | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Aion2Builder-${{ env.VERSION }}
+          path: publish/Aion2Builder.exe
+
+      - name: Dépôt sur Aion 2 Todo
+        if: env.BUILDER_UPLOAD_KEY != ''
+        shell: pwsh
+        run: |
+          curl.exe --fail-with-body -sS --retry 3 --retry-all-errors --max-time 600 -X PUT `
+            -H "X-Upload-Key: $env:BUILDER_UPLOAD_KEY" -H "Content-Type: application/octet-stream" `
+            --data-binary "@publish/Aion2Builder.exe" `
+            "https://aion2-todo-7275.azurewebsites.net/api/downloads/builder?version=$env:VERSION"
+          if ($LASTEXITCODE -ne 0) { throw "Dépôt refusé ou site injoignable" }
