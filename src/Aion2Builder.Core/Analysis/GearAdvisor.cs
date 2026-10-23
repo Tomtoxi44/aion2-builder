@@ -119,8 +119,6 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
                 priority = 5;
             }
 
-            if (poor.Count > 0 && item.RandomSubStats)
-                advice += $" Stats secondaires peu utiles : {string.Join(", ", poor)}.";
             slots.Add(new SlotPlan(slot, name, group, item, item.Power, status, advice, source, fit, poor, priority));
         }
         return new GearPlan(stage, next, median, slots);
@@ -187,11 +185,6 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
         if (overInvested.Count > 0)
             findings.Add(new Finding(Area.Enchant, Severity.Info, "Pièces de transition déjà bien enchantées",
                 $"{string.Join(", ", overInvested.Select(s => $"{s.SlotName} +{s.Item!.EnchantLevel}"))} : ce sont des pièces de transition (remplacées d'ici le palier suivant), n'y remets plus de ressources."));
-
-        foreach (var s in plan.Slots.Where(s => s.Item is { RandomSubStats: true } && s.PoorStats.Count > 0).OrderBy(s => s.Fit).Take(2))
-            findings.Add(new Finding(Area.Gear, Severity.Advice, $"{s.SlotName} : stats secondaires peu adaptées",
-                $"{s.Item!.Name} porte {string.Join(", ", s.PoorStats)}, peu utile(s) pour un {p.Class.Name} en {GameDatabase.ModeName(p.Mode)} (adéquation {Fmt.Pct(s.Fit)}).",
-                "Relance ces stats secondaires si possible, sinon priorise cette pièce au prochain remplacement.", 20 + 30 * (1 - s.Fit)));
 
         if (stage.Tips.Count > 0)
             findings.Add(new Finding(Area.Gear, Severity.Info, "Conseils du palier", string.Join(" ", stage.Tips)));

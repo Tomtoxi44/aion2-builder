@@ -20,6 +20,10 @@ public sealed record StatDef
     /// <summary>À quoi sert la stat en jeu (infobulles).</summary>
     public string Desc { get; init; } = "";
     public List<string> Where { get; init; } = [];
+    /// <summary>Stat principale : stat dont elle augmente le pourcentage (Force → ATQ), pour juger une ligne de gravure.</summary>
+    public string? Proxy { get; init; }
+    /// <summary>Poids par rôle et par mode quand le rôle ne le précise pas (stats ajoutées après coup).</summary>
+    public Dictionary<string, Dictionary<GameMode, double>> RoleWeights { get; init; } = [];
 }
 
 public sealed record StatCatalogFile(List<StatDef> Stats);
@@ -93,6 +97,7 @@ public sealed record EnchantRules(List<double> CostByLevel, int SafeLevel, int T
 
 public sealed record ProgressionFile
 {
+    public EngravingRules Engraving { get; init; } = new();
     public List<GradeDef> Grades { get; init; } = [];
     public Dictionary<string, string> SlotGroups { get; init; } = [];
     public Dictionary<string, string> GroupNames { get; init; } = [];
@@ -102,6 +107,18 @@ public sealed record ProgressionFile
     public Dictionary<string, SlotRule> SlotRules { get; init; } = [];
     public required EnchantRules Enchant { get; init; }
     public List<ProgressionStage> Stages { get; init; } = [];
+}
+
+/// <summary>Gravures d'âme et pierres gravées : seuils de verdict et options possibles par type de pièce.</summary>
+public sealed record EngravingRules
+{
+    public double GoodWeight { get; init; } = 0.5;
+    public double PoorWeight { get; init; } = 0.25;
+    public double ResetBelowRate { get; init; } = 50;
+    public Dictionary<string, List<string>> SoulPools { get; init; } = [];
+    public List<string> WeaponPool { get; init; } = [];
+    public List<string> StonePool { get; init; } = [];
+    public List<string> StoneGrades { get; init; } = [];
 }
 
 /// <summary>Règle propre à un emplacement (ex. la ceinture noble, qui évolue au lieu d'être remplacée).</summary>
@@ -238,6 +255,10 @@ public sealed class GameDatabase
         var weights = new Dictionary<string, double>(baseProfile.Weights, StringComparer.OrdinalIgnoreCase);
         if (cls.WeightOverrides.TryGetValue(mode, out var over))
             foreach (var (k, v) in over) weights[k] = v;
+        // Stats ajoutées au catalogue avec un poids par rôle (ATQ CRIT, DÉF frontale…).
+        foreach (var stat in Stats)
+            if (!weights.ContainsKey(stat.Key) && stat.RoleWeights.TryGetValue(role.Key, out var byMode) && byMode.TryGetValue(mode, out var w))
+                weights[stat.Key] = w;
         if (cls.TargetOverrides.TryGetValue(mode, out var targetOver))
         {
             var targets = new Dictionary<StatCategory, double>(baseProfile.Targets);

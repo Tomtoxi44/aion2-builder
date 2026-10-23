@@ -21,6 +21,8 @@ public sealed class StatAnalyzer(GameDatabase db)
                 yield return new StatSource($"{db.SlotName(item.Slot)} · {item.Name}", e, Fixed: true);
             foreach (var e in item.SubStats)
                 yield return new StatSource($"{db.SlotName(item.Slot)} · {item.Name}", e);
+            foreach (var stone in item.Stones)
+                yield return new StatSource($"{db.SlotName(item.Slot)} · pierre {stone.Effect.Raw}", stone.Effect);
         }
         foreach (var board in c.Boards)
             foreach (var node in board.Nodes.Where(n => n.Open))

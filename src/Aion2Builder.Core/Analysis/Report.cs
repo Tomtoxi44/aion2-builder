@@ -136,7 +136,7 @@ public sealed record AreaScores(int Stats, int Gear, int Skills, int Daevanion)
 
 public sealed record AdviceReport(
     CharacterSnapshot Character, ResolvedProfile Profile, GameMode Mode,
-    StatProfile Stats, GearPlan Gear, SkillPlan Skills, DaevanionPlan Daevanion,
+    StatProfile Stats, GearPlan Gear, SkillPlan Skills, DaevanionPlan Daevanion, EngravingPlan Engravings,
     List<Finding> Findings, AreaScores Scores)
 {
     /// <summary>Les conseils actionnables, du plus rentable au moins rentable.</summary>

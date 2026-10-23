@@ -169,6 +169,15 @@ public static partial class ArmoryMapper
             SubStats = Stats("subStats"),
             SubSkills = Array(d, "subSkills").Select(s => $"{Str(s, "name")} +{Int(s, "level")}").ToList(),
             Sources = Strings(d, "sources"),
+            Stones = Array(d, "magicStoneStat")
+                .Select(s => new ItemStone(parser.FromItemStat(Str(s, "id") ?? "", Str(s, "name") ?? "", Str(s, "value"), null, null),
+                    Str(s, "grade") ?? "Common", (Str(s, "icon") ?? "").Contains("SoulStone", StringComparison.OrdinalIgnoreCase)))
+                .ToList(),
+            SoulBindRate = Str(d, "soulBindRate") is { } rate ? EffectParser.ParseNumber(rate) : null,
+            SoulLineCount = Int(d, "subStatCount"),
+            SetName = d.TryGetProperty("set", out var set) ? Str(set, "name") : null,
+            ActiveSetBonuses = d.TryGetProperty("set", out var s2) ? Array(s2, "bonuses").Where(b => Int(b, "degree") <= Int(s2, "equippedCount"))
+                .SelectMany(b => Strings(b, "descriptions").Select(x => $"{Int(b, "degree")} pièces : {x}")).ToList() : [],
         };
     }
 

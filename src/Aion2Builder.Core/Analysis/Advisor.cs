@@ -19,17 +19,20 @@ public sealed class Advisor(GameDatabase db)
         var skills = skillAdvisor.Plan(c, profile, inputs);
         var planner = new DaevanionPlanner(db, stats);
         var daevanion = planner.Plan(c, profile, sp, inputs);
+        var engravingAdvisor = new EngravingAdvisor(db);
+        var engravings = engravingAdvisor.Plan(c, profile, gear, sp);
 
         var findings = new List<Finding>();
         findings.AddRange(stats.Findings(sp, profile, c));
         findings.AddRange(gearAdvisor.Findings(gear, c, profile));
         findings.AddRange(skillAdvisor.Findings(skills, c, profile));
         findings.AddRange(planner.Findings(daevanion, c, profile));
+        findings.AddRange(engravingAdvisor.Findings(engravings, profile));
         if (profile.Class.Notes.Count > 0)
             findings.Add(new Finding(Area.General, Severity.Info, $"Repères {profile.Class.Name} ({profile.Role.Name})", string.Join(" ", profile.Class.Notes)));
 
         var ordered = findings.OrderBy(f => f.Severity).ThenByDescending(f => f.Priority).ToList();
-        return new AdviceReport(c, profile, mode, sp, gear, skills, daevanion, ordered, Scores(sp, gear, skills, daevanion, c, mode));
+        return new AdviceReport(c, profile, mode, sp, gear, skills, daevanion, engravings, ordered, Scores(sp, gear, skills, daevanion, c, mode));
     }
 
     static AreaScores Scores(StatProfile sp, GearPlan gear, SkillPlan skills, DaevanionPlan dae, CharacterSnapshot c, GameMode mode)

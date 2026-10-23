@@ -16,6 +16,31 @@
     "Bracelet1": "Accessory", "Bracelet2": "Accessory", "Belt": "Accessory",
     "Rune1": "Special", "Rune2": "Special", "Amulet": "Special"
   },
+  "engraving": {
+    "_note": "Gravures d'âme (options aléatoires, « lien d'âme » de 0 à 100 %) et pierres gravées. Options et pierres possibles relevées sur des pièces réelles (Templiers EU, oct. 2026) : liste incomplète, complétée par celles vues sur tes propres pièces. Une ligne est « bonne » si sa stat a une importance >= goodWeight pour ta classe, « mauvaise » sous poorWeight.",
+    "goodWeight": 0.5,
+    "poorWeight": 0.25,
+    "resetBelowRate": 50,
+    "soulPools": {
+      "Anneaux": ["Block", "Critical", "Defense", "Flight", "Evasion", "AGI", "HP", "Accuracy", "CriticalResist", "MPRegen"],
+      "Boucles d'oreilles": ["Block", "Critical", "Flight", "Evasion", "MP", "HP", "Accuracy", "CriticalResist", "MPRegen"],
+      "Colliers": ["Attack", "Critical", "Flight", "MP", "CriticalResist", "HPRegen"],
+      "Bracelets": ["Critical", "Evasion", "MP", "MPRegen"],
+      "Capes": ["Block", "Critical", "Defense", "MP", "Accuracy", "CriticalResist", "MPRegen", "WIS"],
+      "Casques": ["Block", "Defense", "MP", "StatusResist", "MPRegen", "DamageTolerance"],
+      "Épaulettes": ["Attack", "Defense", "MP", "HP", "MPRegen"],
+      "Torses": ["BackDefense", "MP", "MPRegen"],
+      "Bas": ["Defense", "MP", "MPRegen"],
+      "Gants": ["Defense", "MP", "MPRegen"],
+      "Chaussures": ["Defense", "MP", "MPRegen"],
+      "Garde-bras": ["BackAttack", "Block", "WeaponDamageBoost", "Critical", "MP", "Accuracy", "MultiHit", "CombatSpeed"],
+      "Épées": ["CriticalAttack", "BackAttack", "Block", "STR", "CombatSpeed", "WeaponDamageBoost"]
+    },
+    "_weaponPool": "Pour une arme dont le type n'a pas encore été observé (orbe, arc, dague…) ; VIT de combat et Boost de DGT arme d'après les guides.",
+    "weaponPool": ["CriticalAttack", "BackAttack", "Block", "STR", "CombatSpeed", "WeaponDamageBoost", "Accuracy", "Critical"],
+    "stonePool": ["Attack", "Defense", "HP", "MP", "Critical", "Accuracy", "Block", "Evasion", "CriticalResist"],
+    "stoneGrades": ["Common", "Rare", "Legend", "Unique"]
+  },
   "groupNames": { "Weapon": "Arme", "Armor": "Armure", "Accessory": "Accessoire", "Special": "Rune / amulette" },
   "slotNames": {
     "MainHand": "Arme", "SubHand": "Main secondaire", "Helmet": "Casque", "Shoulder": "Épaulettes", "Torso": "Torse", "Pants": "Jambières",

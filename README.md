@@ -6,6 +6,7 @@ en vue JcE (PvE) ou JcJ (PvP)** :
 - ce qui est optimisé ou non dans ta répartition de stats (ex. « trop de Défense, pas assez de PV »),
 - quelle pièce aller chercher **au palier suivant** (on ne saute pas directement au dernier stuff), pièce la plus faible d'abord,
 - quoi enchanter et quoi ne plus enchanter (pièces de transition),
+- quelles **gravures d'âme** et pierres revoir pièce par pièce (lien d'âme, options inutiles, pierres à changer), et dans quel ordre,
 - quelles compétences monter, équiper, ou arrêter de monter,
 - quelles cases **Daevanion** ouvrir et dans quel ordre (chemins compris), par réserve de points (plateaux communs, Ariel en JcE, Azphel en JcJ),
 - un plan d'action classé par **rentabilité** (gain attendu / ressources dépensées).
@@ -94,6 +95,15 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
      sont marqués « faisable maintenant »).
    Les niveaux de compétence valent selon l'importance de la compétence, les stats selon leur poids et l'équilibre des
    familles (une famille déjà au-dessus de sa cible vaut moins).
+6. **Gravures d'âme et pierres.** Chaque option de pièce et chaque pierre est jugée selon l'importance de sa stat pour
+   ta classe et le mode : ✓ utile (≥ 0,5), ~ moyenne, ✕ à remplacer (< 0,25) ; une stat principale (Force…) vaut un peu
+   moins que la stat qu'elle augmente (ATQ). Le **lien d'âme** (0 à 100 %) fait monter les options vers leur maximum et
+   les verrouille à 100 %. D'où l'ordre économe : sur les pièces que tu gardes, d'abord **synchroniser** la ligne ✕
+   (une seule mauvaise ligne) ou **réinitialiser** (au moins deux mauvaises lignes et lien d'âme sous 50 %, il repart de
+   0), ensuite seulement monter le lien d'âme ; rien sur les pièces à remplacer. Les options et pierres à viser sont
+   celles possibles sur ce type de pièce (`progression.json` → `engraving`, complété par celles vues sur tes pièces),
+   classées par importance et relevées si leur famille de stats est en manque. Les pierres comptent dans ta répartition
+   de stats. Écran Équipement : code **G** sur une pièce à revoir, tableau des gravures sous la silhouette.
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par
@@ -122,8 +132,10 @@ pas remplie.
 
 - Les adresses du site officiel ne sont pas documentées et peuvent changer sans préavis. En cas de souci,
   `import --raw <dossier>` garde les réponses pour diagnostic.
-- Le site n'expose ni les stats de base de la classe, ni les pierres de mana serties : l'analyse porte sur ce qui est
-  visible et contrôlable.
+- Le site n'expose pas les stats de base de la classe : l'analyse porte sur ce qui est visible et contrôlable.
+- Les **familiers** ne sont pas encore pris en compte (le site officiel ne les montre pas) : leurs stats manquent à la
+  répartition.
+- Les options possibles par type de pièce sont relevées sur des pièces réelles : la liste peut être incomplète.
 
 ## Compiler sous Windows avec Smart App Control
 

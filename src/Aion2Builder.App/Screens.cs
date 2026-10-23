@@ -65,7 +65,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     public (Control Content, Control? Inspector) Build() => s.Screen switch
     {
         Screen.Home => (Doll(), HomeInspector()),
-        Screen.Gear => (Doll(), GearInspector()),
+        Screen.Gear => (GearScreen(), GearInspector()),
         Screen.Stats => (Stats(), StatInspector()),
         Screen.Skills => (Skills(), SkillInspector()),
         Screen.Daeva => (Daeva(), DaevaInspector()),
@@ -213,9 +213,12 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     Border SlotTile(SlotPlan p, bool selected)
     {
         var (code, color) = StatusCode(p.Status);
+        var engraving = r.Engravings.For(p.Slot);
         var bar = new Border { Width = 3, Height = 30, Background = GradeBrush(p.Item), Margin = new Thickness(0, 0, 9, 0) };
-        var codeText = T(code, 11, color, FontWeight.SemiBold, mono: true);
-        codeText.Margin = new Thickness(9, 0, 0, 0);
+        // « G » : gravures d'âme ou pierres à revoir, en plus du statut de la pièce.
+        var codeText = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(9, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        if (engraving is { NeedsWork: true }) codeText.Children.Add(T("G", 11, Tok.Warn, FontWeight.SemiBold, mono: true));
+        if (engraving is not { NeedsWork: true } || p.Status != SlotStatus.Ok) codeText.Children.Add(T(code, 11, color, FontWeight.SemiBold, mono: true));
         DockPanel.SetDock(bar, Dock.Left);
         DockPanel.SetDock(codeText, Dock.Right);
         var power = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
@@ -231,8 +234,158 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var tip = p.Item is null
             ? $"{p.SlotName} : emplacement vide"
             : $"{p.Item.Name} — {db.Grade(p.Item.Grade).Name}, niveau d'objet {p.Power}, +{p.Item.EnchantLevel}\n" +
-              string.Join("\n", p.Item.MainStats.Concat(p.Item.SubStats).Select(e => e.Raw));
+              string.Join("\n", p.Item.MainStats.Select(e => e.Raw)) +
+              (engraving is null ? "" : EngravingTip(engraving));
         return Tip(tile, tip);
+    }
+
+    static string EngravingTip(ItemEngraving e)
+    {
+        var text = "";
+        if (e.HasSoulBinding)
+            text += $"\nGravures d'âme · lien d'âme {Fmt.Num(e.SoulBindRate ?? 0)} %\n" + string.Join("\n", e.SoulLines.Select(EngravingAdvisor.Describe));
+        else if (e.SoulLines.Count > 0)
+            text += "\nOptions fixes\n" + string.Join("\n", e.SoulLines.Select(EngravingAdvisor.Describe));
+        if (e.Stones.Count > 0 || e.StoneSlots > 0)
+            text += $"\nPierres {e.Stones.Count}/{e.StoneSlots}\n" + string.Join("\n", e.Stones.Select(EngravingAdvisor.Describe));
+        return e.NeedsWork ? text + "\nG = gravures à revoir (détail dans l'inspecteur)" : text;
+    }
+
+    static IBrush VerdictBrush(LineVerdict v) => v switch { LineVerdict.Good => Tok.Good, LineVerdict.Poor => Tok.Bad, _ => Tok.Warn };
+
+    static string VerdictIcon(LineVerdict v) => v switch { LineVerdict.Good => "✓", LineVerdict.Poor => "✕", _ => "~" };
+
+    static IBrush ActionBrush(ItemEngraving e) => e.Action switch
+    {
+        SoulAction.Reset => Tok.Bad,
+        SoulAction.Sync => Tok.Warn,
+        SoulAction.RaiseRate => Tok.Info,
+        SoulAction.Skip => Tok.Muted,
+        SoulAction.Locked when e.PoorLines.Any() => Tok.Warn,
+        _ => Tok.Good,
+    };
+
+    static IBrush TodoBrush(ItemEngraving e) => e.Action switch
+    {
+        SoulAction.Reset => Tok.Bad,
+        SoulAction.Sync => Tok.Warn,
+        SoulAction.Skip => Tok.Muted,
+        _ => e.StoneAdvice is not null ? Tok.Warn : e.Action == SoulAction.RaiseRate ? Tok.Info : Tok.Muted,
+    };
+
+    /// <summary>Action courte pour le tableau des gravures.</summary>
+    static string ActionShort(ItemEngraving e)
+    {
+        var soul = e.Action switch
+        {
+            SoulAction.Reset => "Réinitialiser",
+            SoulAction.Sync => $"Synchroniser « {e.PoorLines.OrderBy(l => l.Weight).First().StatName} »",
+            SoulAction.RaiseRate => "Monter le lien d'âme",
+            SoulAction.Locked => "Verrouillée",
+            SoulAction.Skip => "Rien : pièce à remplacer",
+            _ => null,
+        };
+        var empty = e.StoneSlots - e.Stones.Count;
+        var stones = e.StoneAdvice is null ? null
+            : empty > 0 ? $"graver {empty} pierre(s)"
+            : e.Stones.Any(x => x.Verdict == LineVerdict.Poor) ? "changer des pierres" : "monter le grade des pierres";
+        return string.Join(" · ", new[] { soul, stones }.Where(x => x is not null)) is { Length: > 0 } t ? t : "—";
+    }
+
+    /// <summary>Encadré de conseil : fond « frame » et bordure gauche de la couleur du verdict.</summary>
+    static Border Callout(string text, IBrush color) => new()
+    {
+        Padding = new Thickness(12, 10), Background = Tok.Frame, BorderBrush = color, BorderThickness = new Thickness(2, 0, 0, 0),
+        Child = T(text, 13, wrap: true).WithLineHeight(1.5),
+    };
+
+    Control EngravingRow(EngravingLine l)
+    {
+        var tip = l.Effect.StatKey is null ? $"{l.Effect.Raw} : effet non reconnu, non jugé."
+            : l.Verdict switch
+            {
+                LineVerdict.Good => $"{l.StatName} : utile à ta classe (importance {l.Weight:0.00}).",
+                LineVerdict.Poor => $"{l.StatName} : sert peu à ta classe (importance {l.Weight:0.00}) : à remplacer.",
+                _ => $"{l.StatName} : utilité moyenne pour ta classe (importance {l.Weight:0.00}).",
+            };
+        var grade = l.Grade is null ? new TextBlock() : T(db.Grade(l.Grade).Name, 11, Tok.B(db.Grade(l.Grade).Color), mono: true);
+        return Tip(ColumnsSpaced("14,*,Auto", 6, T(VerdictIcon(l.Verdict), 12, VerdictBrush(l.Verdict), FontWeight.SemiBold, mono: true),
+            T(l.Effect.Raw, 12, Tok.Text2, mono: true, wrap: true), grade), tip);
+    }
+
+    /// <summary>Gravures d'âme, pierres et panoplie de la pièce sélectionnée.</summary>
+    Control EngravingSection(ItemEngraving e)
+    {
+        var panel = new StackPanel { Spacing = 14 };
+        if (e.HasSoulBinding)
+        {
+            var rate = e.SoulBindRate ?? 0;
+            var header = new DockPanel();
+            var rateText = T($"lien d'âme {Fmt.Num(rate)} %", 11, rate >= 100 ? Tok.Good : Tok.Text2, mono: true);
+            DockPanel.SetDock(rateText, Dock.Right);
+            header.Children.Add(rateText);
+            header.Children.Add(Label("Gravures d'âme"));
+            var soul = new StackPanel { Spacing = 4 };
+            soul.Children.Add(Tip(header, "Lien d'âme : progression des gravures d'âme vers leur valeur maximale. À 100 %, toutes les lignes sont " +
+                "au maximum et ne se changent plus. Synchroniser remplace une ligne ; réinitialiser relance tout et remet le lien à 0 %."));
+            soul.Children.Add(Bar(rate / 100, rate >= 100 ? Tok.Good : Accent.Main, 3, track: Tok.Border).WithMargin(0, 2, 0, 4));
+            foreach (var l in e.SoulLines) soul.Children.Add(EngravingRow(l));
+            panel.Children.Add(soul);
+        }
+        else if (e.SoulLines.Count > 0)
+        {
+            var fixedLines = new StackPanel { Spacing = 4, Children = { Tip(Label("Options fixes"), "Options sans lien d'âme : déjà à leur valeur, elles ne se gravent pas. Pour en changer, il faut changer de pièce.") } };
+            foreach (var l in e.SoulLines) fixedLines.Children.Add(EngravingRow(l));
+            panel.Children.Add(fixedLines);
+        }
+        if (e.HasSoulBinding || e.Action == SoulAction.Skip) panel.Children.Add(Callout(e.SoulAdvice, ActionBrush(e)));
+        if (e.StoneSlots > 0 || e.Stones.Count > 0)
+        {
+            var stones = new StackPanel { Spacing = 4, Children = { Label($"{e.StoneKind} · {e.Stones.Count}/{e.StoneSlots}") } };
+            foreach (var l in e.Stones) stones.Children.Add(EngravingRow(l));
+            for (var i = e.Stones.Count; i < e.StoneSlots; i++)
+                stones.Children.Add(ColumnsSpaced("14,*", 6, T("○", 12, Tok.Bad, mono: true), T("emplacement libre", 12, Tok.Faint, mono: true)));
+            panel.Children.Add(stones);
+            if (e.StoneAdvice is not null) panel.Children.Add(Callout(e.StoneAdvice, e.Stones.Count < e.StoneSlots ? Tok.Bad : Tok.Warn));
+            if (e.StoneUpgrade is not null) panel.Children.Add(T(e.StoneUpgrade, 12, Tok.Muted, wrap: true).WithLineHeight(1.45));
+        }
+        if (e.Item.SetName is { } set)
+        {
+            var bonuses = new StackPanel { Spacing = 3, Children = { Label($"Panoplie · {set}") } };
+            foreach (var b in e.Item.ActiveSetBonuses) bonuses.Children.Add(T(b, 12, Tok.Text2, wrap: true).WithLineHeight(1.4));
+            if (e.Item.ActiveSetBonuses.Count == 0) bonuses.Children.Add(T("Aucun bonus actif.", 12, Tok.Muted));
+            bonuses.Children.Add(T("Bonus souvent conditionnels : non comptés dans les stats.", 11, Tok.Faint, wrap: true));
+            panel.Children.Add(bonuses);
+        }
+        return panel;
+    }
+
+    /// <summary>Écran Équipement : la silhouette, puis le tableau des gravures (pièces à revoir en tête).</summary>
+    Control GearScreen()
+    {
+        var panel = new StackPanel { Children = { Doll() } };
+        var items = r.Engravings.Items;
+        if (items.Count == 0) return panel;
+        var todo = items.Count(e => e.NeedsWork);
+        panel.Children.Add(SectionHeader($"Gravures · {todo} pièce(s) à revoir", T("✓ utile   ~ moyen   ✕ à remplacer", 11, Tok.Muted, mono: true), 20, topBorder: true));
+        panel.Children.Add(T("Ordre économe : corrige d'abord les ✕ des pièces que tu gardes (arme en tête), monte ensuite le lien d'âme des pièces " +
+            "aux bonnes options, puis les pierres. Rien sur les pièces à remplacer.", 12, Tok.Text2, wrap: true).WithLineHeight(1.45).WithMargin(20, 10, 20, 8));
+        const string cols = "120,90,110,60,*";
+        panel.Children.Add(TableHeader(cols, "Pièce", "Lien d'âme", "Options", "Pierres", "À faire"));
+        var selected = SelectedSlot?.Slot;
+        foreach (var e in items.OrderByDescending(e => e.NeedsWork).ThenByDescending(e => e.Priority))
+        {
+            var options = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+            foreach (var l in e.SoulLines) options.Children.Add(T(VerdictIcon(l.Verdict), 12, VerdictBrush(l.Verdict), FontWeight.SemiBold, mono: true));
+            var rate = e.HasSoulBinding ? $"{Fmt.Num(e.SoulBindRate ?? 0)} %" : e.SoulLines.Count > 0 ? "fixes" : "—";
+            var stones = e.StoneSlots > 0 ? $"{e.Stones.Count}/{e.StoneSlots}" : "—";
+            var stoneColor = e.Stones.Count < e.StoneSlots ? Tok.Bad : e.Stones.Any(x => x.Verdict == LineVerdict.Poor) ? Tok.Warn : Tok.Text2;
+            panel.Children.Add(Tip(TableRow(Columns(cols,
+                    T(e.SlotName, 13), T(rate, 13, !e.HasSoulBinding ? Tok.Muted : (e.SoulBindRate ?? 0) >= 100 ? Tok.Good : Tok.Text, mono: true), options,
+                    T(stones, 13, stoneColor, mono: true), T(ActionShort(e), 12, TodoBrush(e))),
+                e.Slot == selected, () => update(st => st.Slot = e.Slot)), $"{e.Item.Name}{EngravingTip(e)}"));
+        }
+        return panel;
     }
 
     Control HomeInspector()
@@ -316,10 +469,17 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         body.Children.Add(Field("Où chercher", p.NextSource ?? r.Gear.Stage.Gear.FirstOrDefault(g => g.Group == p.Group)?.For(r.Mode) ?? "—", Tok.Text2));
         if (item is { HasDetail: true })
         {
-            var stats = new StackPanel { Spacing = 3, Children = { Label("Stats de la pièce") } };
-            foreach (var e in item.MainStats.Concat(item.SubStats))
+            var stats = new StackPanel { Spacing = 3, Children = { Label("Stats de base") } };
+            foreach (var e in item.MainStats)
                 stats.Children.Add(T(e.Raw, 12, Tok.Text2, mono: true, wrap: true));
             body.Children.Add(stats);
+            if (r.Engravings.For(p.Slot) is { } engraving) body.Children.Add(EngravingSection(engraving));
+            else if (item.SubStats.Count > 0)
+            {
+                var subs = new StackPanel { Spacing = 3, Children = { Label("Gravures d'âme") } };
+                foreach (var e in item.SubStats) subs.Children.Add(T(e.Raw, 12, Tok.Text2, mono: true, wrap: true));
+                body.Children.Add(subs);
+            }
         }
         panel.Children.Add(body);
         return panel;

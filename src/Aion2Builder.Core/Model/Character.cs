@@ -43,9 +43,22 @@ public sealed record EquippedItem
     public List<string> SubSkills { get; init; } = [];
     public List<string> Sources { get; init; } = [];
 
+    /// <summary>Pierres gravées (pierres de mana sur arme et armure, pierres d'âme sur les accessoires).</summary>
+    public List<ItemStone> Stones { get; init; } = [];
+    /// <summary>Lien d'âme (0 à 100 %) : progression des gravures d'âme ; à 100 % elles sont au maximum et verrouillées.</summary>
+    public double? SoulBindRate { get; init; }
+    /// <summary>Nombre de lignes de gravure d'âme de la pièce (0 = pas de gravure d'âme).</summary>
+    public int SoulLineCount { get; init; }
+    public string? SetName { get; init; }
+    /// <summary>Bonus de panoplie actifs (texte du site ; souvent conditionnels, non comptés dans les stats).</summary>
+    public List<string> ActiveSetBonuses { get; init; } = [];
+
     /// <summary>Niveau d'objet effectif : niveau de base + bonus d'enchantement.</summary>
     public int Power => ItemLevel + EnchantLevel;
 }
+
+/// <summary>Pierre gravée dans une pièce, avec son grade (Common, Rare, Legend, Unique).</summary>
+public sealed record ItemStone(Effect Effect, string Grade, bool IsSoulStone);
 
 public sealed record ExtraGear(string Kind, string Name, string Grade, int Level, int EnchantLevel, string? Icon);
 

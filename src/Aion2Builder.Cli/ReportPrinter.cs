@@ -40,9 +40,25 @@ sealed class ReportPrinter(GameDatabase db)
         {
             var item = s.Item is null ? "—" : $"{s.Item.Name} — {db.Grade(s.Item.Grade).Name}, niv. {s.Power}, +{s.Item.EnchantLevel}";
             Colored(SlotColor(s.Status), $"  {s.SlotName,-19} {Fmt.Status(s.Status),-12} {item}");
-            if (s.Status != SlotStatus.Ok || s.PoorStats.Count > 0) Console.WriteLine($"  {"",-19} {s.Advice}");
+            if (s.Status != SlotStatus.Ok) Console.WriteLine($"  {"",-19} {s.Advice}");
             if (s.Status is SlotStatus.Empty or SlotStatus.Replace or SlotStatus.Weak && s.NextSource is not null)
                 Console.WriteLine($"  {"",-19} → {s.NextSource}");
+        }
+
+        if (r.Engravings.Items.Count > 0)
+        {
+            Section("Gravures d'âme et pierres — ✓ utile · ~ moyen · ✕ à remplacer");
+            foreach (var e in r.Engravings.Items.OrderByDescending(e => e.NeedsWork).ThenByDescending(e => e.Priority))
+            {
+                var rate = e.HasSoulBinding ? $"lien d'âme {Fmt.Num(e.SoulBindRate ?? 0)} %" : "";
+                var stones = e.StoneSlots > 0 ? $"{e.StoneKind} {e.Stones.Count}/{e.StoneSlots}" : "";
+                Colored(e.NeedsWork ? ConsoleColor.Yellow : ConsoleColor.Gray, $"  {e.SlotName,-19} {rate,-20} {stones}");
+                if (e.SoulLines.Count > 0) Console.WriteLine($"  {"",-19} {(e.HasSoulBinding ? "" : "options fixes : ")}{string.Join(" · ", e.SoulLines.Select(EngravingAdvisor.Describe))}");
+                if (e.Stones.Count > 0) Console.WriteLine($"  {"",-19} {string.Join(" · ", e.Stones.Select(EngravingAdvisor.Describe))}");
+                if (e.Action != SoulAction.None) Console.WriteLine($"  {"",-19} → {e.SoulAdvice}");
+                if (e.StoneAdvice is not null) Console.WriteLine($"  {"",-19} → {e.StoneAdvice}");
+                if (e.StoneUpgrade is not null) Console.WriteLine($"  {"",-19}   {e.StoneUpgrade}");
+            }
         }
 
         Section($"Compétences — {r.Skills.SpentPoints} points investis + {r.Skills.UnspentPoints} non dépensés (niveau acheté max {db.Settings.Skills.BaseMax})");
