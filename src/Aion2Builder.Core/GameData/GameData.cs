@@ -55,6 +55,8 @@ public sealed record ClassProfile
     public Dictionary<GameMode, PlayGuide> Play { get; init; } = [];
     /// <summary>Build « conçu » à partir des seules données des sorts ; null tant qu'il n'est pas rédigé.</summary>
     public DesignedBuild? Designed { get; init; }
+    /// <summary>Repères mesurés sur des joueurs niveau 45 de la classe (niveau d'objet, puissance, cases Daevanion).</summary>
+    public ClassBenchmark? Benchmark { get; init; }
 }
 
 /// <summary>Une phase de rotation (ouverture, burst, boucle…) : compétences dans l'ordre et consigne.</summary>
@@ -77,6 +79,23 @@ public sealed record PlayGuide
 /// spécialisations), sans guide ni profil de joueur. Ses fiches remplacent celles des joueurs compétence par compétence ;
 /// les compétences absentes gardent la fiche des joueurs.
 /// </summary>
+/// <summary>
+/// Échantillon de joueurs niveau 45 de la classe (valeurs triées) : sert à situer un personnage (« devant 30 % d'entre eux »).
+/// </summary>
+public sealed record ClassBenchmark
+{
+    public string Source { get; init; } = "";
+    public List<int> ItemLevel { get; init; } = [];
+    public List<int> CombatPower { get; init; } = [];
+    public List<int> DaevanionNodes { get; init; } = [];
+
+    /// <summary>Part de l'échantillon sous la valeur (les égalités comptent pour moitié), de 0 à 1.</summary>
+    public static double Percentile(List<int> sample, int value) =>
+        sample.Count == 0 ? 0 : (sample.Count(x => x < value) + 0.5 * sample.Count(x => x == value)) / sample.Count;
+
+    public static int Median(List<int> sample) => sample.Count == 0 ? 0 : sample.OrderBy(x => x).ElementAt(sample.Count / 2);
+}
+
 public sealed record DesignedBuild
 {
     public string Summary { get; init; } = "";

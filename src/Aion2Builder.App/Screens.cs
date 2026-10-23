@@ -43,7 +43,8 @@ sealed class UiState
 /// Le rapport (<see cref="AdviceReport"/>) ne change pas ; seuls la présentation et la navigation changent.
 /// </summary>
 sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, UiState s,
-    Action<Action<UiState>> update, Action<PlayerInputs> onInputs, string? petKeyHint, Action<string?> onPets)
+    Action<Action<UiState>> update, Action<PlayerInputs> onInputs, string? petKeyHint, Action<string?> onPets,
+    IReadOnlyList<ProgressPoint> progress)
 {
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
@@ -206,7 +207,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var i = 0;
         foreach (var (label, v, screen) in AreaScores)
         {
-            var tile = Clickable(new StackPanel { Spacing = 2, Children = { T(v.ToString(), 22, Tok.Score(v), FontWeight.SemiBold, mono: true), T(label, 11, Tok.Muted) } },
+            var tile = Clickable(new StackPanel { Spacing = 2, Children = { T(v.ToString(), 22, Tok.Score(v), FontWeight.SemiBold, mono: true), T(Nav.First(n => n.Screen == screen).Short, 11, Tok.Muted) } },
                 () => GoTo(screen), Tok.Panel, Tok.TileHover, new Thickness(12, 8));
             tile.CornerRadius = new CornerRadius(4);
             tile.BorderBrush = Tok.Border;
@@ -515,6 +516,51 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 () => GoTo(screen)));
         }
         panel.Children.Add(new Border { Padding = new Thickness(14), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = scores });
+
+        // Comparaison aux joueurs de la classe (niveau 45) : position dans l'échantillon, de 0 à 100 %.
+        if (r.Profile.Class.Benchmark is { ItemLevel.Count: > 0 } bench && c.Level >= 45)
+        {
+            panel.Children.Add(SectionHeader("Comparé aux joueurs", Tip(T($"{bench.ItemLevel.Count} {r.Profile.Class.Name}s", 11, Tok.Muted, mono: true), bench.Source)));
+            var rows = new StackPanel { Spacing = 8, Margin = new Thickness(14, 12) };
+            var nodes = r.Daevanion.Boards.Where(b => b.Pool == DaevanionPlanner.NormalPool).Sum(b => b.Board.OpenNodes);
+            foreach (var (label, mine, sample) in new[] { ("Niveau d'objet", c.ItemLevel, bench.ItemLevel), ("Puissance", c.CombatPower, bench.CombatPower), ("Cases Daevanion", nodes, bench.DaevanionNodes) })
+            {
+                if (sample.Count == 0) continue;
+                var pct = ClassBenchmark.Percentile(sample, mine);
+                var color = pct >= 0.6 ? Tok.Good : pct >= 0.3 ? Tok.Warn : Tok.Bad;
+                rows.Children.Add(Tip(new StackPanel
+                {
+                    Spacing = 3,
+                    Children =
+                    {
+                        ColumnsSpaced("*,Auto", 8, T(label, 12, Tok.Muted), T($"{mine} · médiane {ClassBenchmark.Median(sample)}", 12, mono: true)),
+                        ColumnsSpaced("*,64", 8, Bar(pct, color, 4, track: Tok.Border), T($"devant {Fmt.Pct(pct)}", 11, color, mono: true)),
+                    },
+                }, $"{label} : {mine}. Échantillon : {string.Join(", ", sample)}."));
+            }
+            panel.Children.Add(rows);
+        }
+
+        // Progression : un point par import qui a changé quelque chose (niveau, niveau d'objet, puissance de combat).
+        if (progress.Count >= 2)
+        {
+            static string Delta(int d) => d == 0 ? "" : d > 0 ? $" (+{d})" : $" ({d})";
+            var first = progress[0];
+            var last = progress[^1];
+            panel.Children.Add(SectionHeader("Progression", T($"{progress.Count} imports", 11, Tok.Muted, mono: true)));
+            var rows = new StackPanel { Spacing = 5, Margin = new Thickness(14, 10) };
+            rows.Children.Add(T($"depuis le {first.FetchedAtUtc.ToLocalTime():dd/MM} : obj {Delta(last.ItemLevel - first.ItemLevel).Trim()} · pc {Delta(last.CombatPower - first.CombatPower).Trim()}",
+                12, last.ItemLevel > first.ItemLevel || last.CombatPower > first.CombatPower ? Tok.Good : Tok.Text2, mono: true));
+            for (var i = progress.Count - 1; i >= Math.Max(0, progress.Count - 6); i--)
+            {
+                var p = progress[i];
+                var prev = i > 0 ? progress[i - 1] : null;
+                rows.Children.Add(ColumnsSpaced("86,*", 8, T(p.FetchedAtUtc.ToLocalTime().ToString("dd/MM HH:mm"), 11, Tok.Muted, mono: true),
+                    T($"niv. {p.Level} · obj {p.ItemLevel}{Delta(p.ItemLevel - (prev?.ItemLevel ?? p.ItemLevel))} · pc {p.CombatPower}{Delta(p.CombatPower - (prev?.CombatPower ?? p.CombatPower))}",
+                        11, Tok.Text2, mono: true)));
+            }
+            panel.Children.Add(rows);
+        }
 
         panel.Children.Add(Collapsible("Comment c'est calculé ?", HowText, s.HomeHow, () => update(st => st.HomeHow = !st.HomeHow), new Thickness(14, 12, 14, 14)));
         return panel;

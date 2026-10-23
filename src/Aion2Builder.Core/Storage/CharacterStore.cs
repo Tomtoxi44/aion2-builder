@@ -6,6 +6,9 @@ namespace Aion2Builder.Storage;
 
 public sealed record SavedCharacter(string Key, string Name, string ServerName, string Region, string ClassCode, int Level, int ItemLevel, DateTime FetchedAtUtc, string Path);
 
+/// <summary>Un import, pour suivre la progression : niveau, niveau d'objet, puissance de combat.</summary>
+public sealed record ProgressPoint(DateTime FetchedAtUtc, int Level, int ItemLevel, int CombatPower);
+
 /// <summary>Personnages importés, un fichier JSON chacun, pour travailler hors ligne et comparer dans le temps.</summary>
 public sealed class CharacterStore(string? dir = null)
 {
@@ -16,7 +19,32 @@ public sealed class CharacterStore(string? dir = null)
         System.IO.Directory.CreateDirectory(Directory);
         var path = Path.Combine(Directory, $"{Sanitize(snapshot.FileKey)}.json");
         File.WriteAllText(path, JsonSerializer.Serialize(snapshot, GameDataStore.Json));
+        AddProgress(snapshot);
         return path;
+    }
+
+    string ProgressPath(CharacterSnapshot c) => Path.Combine(Directory, "history", $"{Sanitize(c.FileKey)}.progress.json");
+
+    /// <summary>Imports successifs du personnage, du plus ancien au plus récent (un point par import qui change quelque chose).</summary>
+    public List<ProgressPoint> Progress(CharacterSnapshot c)
+    {
+        var path = ProgressPath(c);
+        try { return File.Exists(path) ? JsonSerializer.Deserialize<List<ProgressPoint>>(File.ReadAllText(path), GameDataStore.Json) ?? [] : []; }
+        catch (Exception ex) when (ex is JsonException or IOException) { return []; }
+    }
+
+    void AddProgress(CharacterSnapshot c)
+    {
+        var points = Progress(c);
+        var point = new ProgressPoint(c.FetchedAtUtc, c.Level, c.ItemLevel, c.CombatPower);
+        if (points.Count > 0 && points[^1] with { FetchedAtUtc = point.FetchedAtUtc } == point) return; // rien de neuf
+        points.Add(point);
+        try
+        {
+            System.IO.Directory.CreateDirectory(Path.GetDirectoryName(ProgressPath(c))!);
+            File.WriteAllText(ProgressPath(c), JsonSerializer.Serialize(points.TakeLast(200).ToList(), GameDataStore.Json));
+        }
+        catch (IOException) { /* historique non vital */ }
     }
 
     public CharacterSnapshot Load(string path) =>

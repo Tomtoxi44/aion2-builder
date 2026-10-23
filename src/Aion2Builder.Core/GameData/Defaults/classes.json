@@ -124,6 +124,7 @@
         "PvP": { "Accuracy": 0.9, "Critical": 0.85, "CombatSpeed": 0.85, "StatusResist": 0.8, "HP": 0.9, "Block": 0.4 }
       },
       "coreSkills": { "PvE": [], "PvP": [] },
+      "benchmark": { "source": "24 Gladiateurs niveau 45 des serveurs EU, trouvés par la recherche du site officiel le 23/10/2026", "itemLevel": [659, 840, 852, 965, 974, 986, 1028, 1066, 1094, 1179, 1196, 1278, 1289, 1305, 1408, 1503, 1570, 1581, 1601, 1718, 1732, 1953, 2276, 2550], "combatPower": [37080, 40245, 44105, 44770, 44989, 47175, 48112, 48700, 53351, 56386, 61694, 62600, 63589, 65640, 66762, 68022, 69851, 73943, 75499, 82199, 85891, 92934, 111052, 144715], "daevanionNodes": [104, 105, 106, 110, 111, 111, 123, 134, 165, 167, 173, 174, 206, 209, 214, 217, 233, 237, 237, 239, 242, 244, 249, 254] },
       "notes": ["Gravures d'arme et de garde-bras : Boost de DGT arme, VIT de combat, Boost de DGT, Force ; ailleurs CRIT et Boost de DGT, avec un peu de Précision. Coup puissant (chance de double dégâts) par la Sagesse. Si les PM manquent : PM max, régénération de PM et cases Daevanion « PM +50 ».", "Ouverture de boss : Position de charge + Bénédiction de Zikel, Frappe bondissante, Coup féroce anéantissant, puis la boucle Fracas / Explosion de fureur avec Coup féroce lacérant entre les deux ; Blocage ciblé sur la première attaque du boss. Coup féroce lacérant et Fracas sur deux lignes séparées pour les entrelacer.", "Daevanion JcE : +4 à Fracas, Coup féroce lacérant, Coup féroce anéantissant et Préparation d'attaque. JcJ : +4 à Contrainte aérienne, Fracas, Dissipation de choc et Épée dévastatrice."],
       "skillsSource": "Guide Gladiateur aion2-guides.info (tests de joueurs : Arthars, Ulfhednar, aLuckyRO), noms et effets français de metabot.gg, et compétences réellement montées par 24 Gladiateurs niveau 45 (serveurs EU, niveau d'objet 659 à 2550). Les entrées « à valider » ne sont pas décrites par les guides.",
       "play": {
@@ -269,8 +270,9 @@
         "PvP": { "PowerfulHit": 0.6, "StatusResist": 0.9 }
       },
       "coreSkills": { "PvE": [], "PvP": [] },
+      "benchmark": { "source": "24 Templiers niveau 45 des serveurs EU, trouvés par la recherche du site officiel le 23/10/2026", "itemLevel": [754, 793, 863, 863, 871, 1027, 1042, 1054, 1056, 1150, 1264, 1270, 1483, 1488, 1519, 1860, 2192, 2275, 2318, 2370, 2430, 2558, 2631, 2670], "combatPower": [36407, 36764, 43219, 46669, 49457, 49853, 50727, 53696, 55823, 58550, 62369, 69617, 70209, 71212, 76419, 86661, 97253, 100689, 103226, 115377, 118568, 122735, 139801, 152807], "daevanionNodes": [85, 93, 95, 123, 126, 141, 146, 146, 162, 165, 177, 188, 192, 192, 224, 225, 239, 241, 241, 247, 247, 248, 251, 255] },
       "notes": ["Tank qui frappe : PV, DÉF et Tolérance aux DGT pour tenir, mais les guides poussent aussi Coup puissant (chance de double dégâts), Boost de DGT arme et la Précision (≈ 900 en Conquête, 1300 en Sanctuaire).", "Daevanion : Nezekan puis Zikel d'abord (ATQ, VIT de combat, DÉF, Précision, +1 Châtiment / Annihilation / Coup puissant au bouclier / Frappe d'égide), sans éparpiller les points."],
-      "skillsSource": "Guide Templier games.gg + compétences réellement montées par 8 Templiers niveau 45 (serveurs EU, niveau d'objet 1027 à 2582). Les entrées « à valider » ne sont pas décrites par le guide.",
+      "skillsSource": "Guide Templier games.gg + compétences réellement montées par 24 Templiers niveau 45 (serveurs EU, niveau d'objet 754 à 2670). Les entrées « à valider » ne sont pas décrites par le guide.",
       "play": {
         "PvE": {
           "rotation": [
@@ -380,21 +382,21 @@
           "why": "Cité parmi les compétences prioritaires des cases Daevanion du Templier (GamesFuze) et maximisé par les Templiers observés ; effet exact non décrit par les guides." },
 
         { "name": "Provocation", "kind": "Stigma", "role": "Menace forcée", "priority": { "PvE": 1.0, "PvP": 0.3 }, "target": { "PvE": 15, "PvP": 1 },
-          "why": "Force la cible à t'attaquer : l'outil d'aggro de base du tank, à garder équipé en JcE (niveau 15 visé par le guide)." },
+          "why": "Force la cible à t'attaquer : l'outil d'aggro de base du tank, à garder équipé en JcE (niveau 15 visé par le guide) ; équipée par 11 Templiers observés sur 24." },
         { "name": "Bouclier de l'anéantissement", "kind": "Stigma", "role": "Ligne de macro dédiée", "priority": { "PvE": 0.85, "PvP": 0.7 }, "target": { "PvE": 5, "PvP": 5 },
-          "why": "A sa propre ligne de macro avec Jugement et Annihilation ; le stigma le plus équipé par les Templiers observés (6 sur 8)." },
+          "why": "A sa propre ligne de macro avec Jugement et Annihilation ; équipé par 15 Templiers observés sur 24." },
         { "name": "Armure de noblesse", "kind": "Stigma", "role": "Buff d'ouverture", "priority": { "PvE": 0.75, "PvP": 0.75 }, "target": { "PvE": 5, "PvP": 5 },
-          "why": "Lancée à la main en début de combat selon un guide ; équipée par 5 Templiers sur 8." },
+          "why": "Lancée à la main en début de combat selon un guide ; le stigma le plus équipé par les Templiers observés (18 sur 24)." },
         { "name": "Bannière de champ de bataille", "kind": "Stigma", "role": "Buff de groupe", "priority": { "PvE": 0.6, "PvP": 0.6 }, "target": { "PvE": 1, "PvP": 1 },
-          "why": "Dans la sélection recommandée du guide, au niveau 1 ; équipée par 5 Templiers sur 8." },
+          "why": "Dans la sélection recommandée du guide, au niveau 1 ; équipée par 13 Templiers observés sur 24." },
         { "name": "Armure double", "kind": "Stigma", "role": "Réduction de dégâts", "priority": { "PvE": 0.6, "PvP": 0.6 }, "target": { "PvE": 5, "PvP": 5 },
           "why": "+30 % de Tolérance aux DGT JcE (+15 % en JcJ) : bon temps de survie contre les gros coups." },
         { "name": "Épée d'exécution", "kind": "Stigma", "role": "Dégâts (ligne Bouclier de l'anéantissement)", "priority": { "PvE": 0.55, "PvP": 0.4 }, "target": { "PvE": 5, "PvP": 5 },
           "why": "Termine la ligne de macro du Bouclier de l'anéantissement (niveau 5 selon le guide)." },
         { "name": "Châtiment du Seigneur Empyréen", "kind": "Stigma", "role": "Amélioration long terme", "priority": { "PvE": 0.5, "PvP": 0.55 }, "target": { "PvE": 15, "PvP": 15 },
-          "why": "Amélioration à long terme (niveau 15) selon le guide, pas une priorité immédiate ; équipé par 4 Templiers sur 8." },
-        { "name": "Bouclier de protection", "kind": "Stigma", "role": "Protection", "priority": { "PvE": 0.5, "PvP": 0.5 }, "target": { "PvE": 5, "PvP": 5 },
-          "why": "À valider : effet non décrit ; à utiliser à la main hors macro selon un guide, équipé par 4 Templiers sur 8." },
+          "why": "Amélioration à long terme (niveau 15) selon le guide, pas une priorité immédiate ; équipé par 10 Templiers observés sur 24." },
+        { "name": "Bouclier de protection", "kind": "Stigma", "role": "Blocage garanti", "priority": { "PvE": 0.5, "PvP": 0.5 }, "target": { "PvE": 5, "PvP": 5 },
+          "why": "Double un instant la réduction des dégâts du blocage et garantit un blocage (recharge 20 s), puis rend PM et endurance ; à utiliser à la main hors macro selon un guide. Hors du set du guide, mais équipé par 15 Templiers observés sur 24, autant que Bouclier de l'anéantissement." },
         { "name": "Protection du compagnon", "kind": "Stigma", "role": "Partage des dégâts", "priority": { "PvE": 0.35, "PvP": 0.55 }, "target": { "PvE": 1, "PvP": 5 },
           "why": "Partage les dégâts avec les membres du groupe : surtout utile en JcJ pour protéger un allié." },
         { "name": "Bouclier de Nezekan", "kind": "Stigma", "role": "Protection de groupe", "priority": { "PvE": 0.4, "PvP": 0.4 }, "target": { "PvE": 5, "PvP": 5 },
@@ -411,6 +413,7 @@
         "PvP": { "Critical": 0.85, "BackAttack": 0.7, "Evasion": 0.7, "MultiHit": 0.65, "StatusResist": 0.8 }
       },
       "coreSkills": { "PvE": [], "PvP": [] },
+      "benchmark": { "source": "24 Assassins niveau 45 des serveurs EU, trouvés par la recherche du site officiel le 23/10/2026", "itemLevel": [805, 810, 886, 1066, 1142, 1323, 1364, 1367, 1376, 1382, 1500, 1541, 1616, 1644, 1681, 1726, 1733, 1759, 1957, 2420, 2680, 2697, 2700, 2719], "combatPower": [35349, 41360, 41946, 46345, 52143, 64849, 65350, 66771, 67136, 68663, 69077, 69255, 70096, 76468, 78586, 83171, 83797, 93091, 96261, 129840, 135316, 150323, 153763, 154095], "daevanionNodes": [93, 114, 117, 122, 151, 175, 176, 187, 188, 193, 193, 195, 209, 213, 223, 237, 247, 253, 254, 255, 257, 258, 259, 266] },
       "notes": ["CRIT avant tout (≈ 1 300 pour 50 % de critiques, ≈ 1 900 pour 95 % selon un guide) : Coup au cœur ne se déclenche et ne se recharge que sur un critique. Ensuite Multi-coups, VIT de combat, Coup puissant, Boost de DGT CRIT et de dos.", "Toujours frapper de dos. Burst : Clone illusoire + Pacte de célérité, Embuscade, Croc sauvage, Dague de Triniel, puis Explosion de glyphe → Coup au cœur ; Entaille rapide entre les deux.", "Daevanion JcE : Nezekan (VIT de combat, recharge), Zikel, Vaizel (Boost de DGT CRIT), Triniel (Multi-coups), Ariel ; +4 niveaux à Coup au cœur, Tempête déferlante, Entaille rapide, Attaque surprise et Explosion de glyphe. JcJ : Azphel, +4 à Chute de l'ombre, Embuscade et Entaille tourbillonnante."],
       "skillsSource": "Guides Assassin (games.gg, aion2-guides.info), noms et effets français de metabot.gg, et compétences réellement montées par 24 Assassins niveau 45 (serveurs EU, niveau d'objet 805 à 2719). Les entrées « à valider » ne sont pas décrites par les guides.",
       "play": {
@@ -550,6 +553,7 @@
         "PvP": { "Accuracy": 0.95, "MoveSpeed": 0.55, "Evasion": 0.6, "StatusResist": 0.75 }
       },
       "coreSkills": { "PvE": [], "PvP": [] },
+      "benchmark": { "source": "24 Rôdeurs niveau 45 des serveurs EU, trouvés par la recherche du site officiel le 23/10/2026", "itemLevel": [770, 836, 855, 912, 938, 1051, 1143, 1265, 1328, 1426, 1479, 1575, 1652, 1698, 1782, 1800, 1948, 1958, 1974, 2132, 2231, 2296, 2648, 2731], "combatPower": [39768, 39969, 41179, 41788, 41978, 50190, 53469, 63418, 64062, 65977, 72875, 74980, 75757, 78538, 81683, 85333, 94880, 96209, 97087, 99221, 103075, 103322, 154487, 167969], "daevanionNodes": [93, 94, 104, 110, 114, 115, 171, 176, 184, 189, 190, 216, 220, 229, 231, 243, 244, 245, 246, 248, 253, 254, 260, 270] },
       "notes": ["Précision d'abord : environ 1 100 à 1 200 selon un guide (si tu rates des tirs, rien d'autre ne compte). Le CRIT plafonne à 50 % sur les serveurs occidentaux : inutile d'en empiler. Gravures d'arme et de garde-bras : VIT de combat, Boost de DGT arme, Boost de DGT, Force ; casque et cape : Coup puissant et ATQ.", "Rotation : Flèche à marque (Minutie : +300 CRIT, +35 % pour Visée de flèche), buffs Pouvoir de Vaizel + Arc de bénédiction + Tir de soutien, Flèche à traquenard puis Flèche déchirante, Flèche de tempête, Flèche perçante et Tir rapide ; Visée de flèche toujours chargée au maximum, sous Minutie. Tir précis tenu sur le clic gauche. Relancer Flèche à marque une seconde avant la fin de Minutie.", "Daevanion JcE : +4 à Visée de flèche, Flèche perçante, Tir précis et Flèche déchirante. JcJ : +4 à Flèche oppressive, Flèche à traquenard, Dissipation de choc, Flèche à marque et Visée de flèche."],
       "skillsSource": "Guide Rôdeur aion2-guides.info (sets de joueurs : JOHNPAL, Fubgun, Card), noms et effets français de metabot.gg, et compétences réellement montées par 24 Rôdeurs niveau 45 (serveurs EU, niveau d'objet 770 à 2731). Pas de guide JcJ pour cette classe : les priorités JcJ sont déduites des effets et du chemin Daevanion JcJ. Les entrées « à valider » ne sont pas décrites par les guides.",
       "play": {
@@ -694,6 +698,7 @@
         "PvP": { "MP": 0.25, "StatusHit": 0.7, "StatusResist": 0.8 }
       },
       "coreSkills": { "PvE": [], "PvP": [] },
+      "benchmark": { "source": "24 Sorciers niveau 45 des serveurs EU, trouvés par la recherche du site officiel le 23/10/2026", "itemLevel": [798, 906, 992, 999, 1026, 1033, 1074, 1126, 1166, 1196, 1305, 1310, 1319, 1379, 1381, 1446, 1655, 1717, 1859, 1987, 2210, 2260, 2275, 2383], "combatPower": [37234, 40735, 42690, 44904, 45705, 49807, 50592, 56368, 56833, 62399, 62983, 63261, 65392, 66261, 66961, 67830, 74702, 76433, 85234, 92658, 100794, 109449, 113994, 128535], "daevanionNodes": [93, 103, 105, 120, 125, 130, 145, 180, 182, 184, 185, 190, 195, 202, 206, 212, 217, 222, 245, 249, 252, 255, 259, 279] },
       "notes": ["ATQ, VIT de combat et réduction de recharge d'abord, puis Précision, CRIT, Coup puissant et Coup parfait. Garde tes PM au-dessus de 50 % : Robe de la terre (CRIT) et Grâce d'amélioration (Boost de DGT) en dépendent.", "Rotation : Vœu de concentration, Amélioration des éléments, Explosion à retardement puis Entrave d'hiver (+20 % de Boost de DGT JcE pendant 5 s), Feu de l'enfer chargé à 3 dans cette fenêtre, Rideau de feu + Tempête de givre, puis Vent glacial, Flamme explosive, Harpon de feu ; Flèche de feu quand tout est en recharge. Feu de l'enfer à la main, hors macro.", "Daevanion JcE : Nezekan (VIT de combat, recharge), puis ATQ et Boost de DGT, puis Boost de DGT CRIT ; pas de Multi-coups ni de nœuds défensifs. +4 niveaux à Vœu de concentration, Flamme explosive, Harpon de feu, Flèche de feu, Vent glacial, Entrave d'hiver, Rafale de flammes, Feu de l'enfer, Marque de feu, Robe de la terre et Grâce d'amélioration. JcJ : +4 à Harpon de feu, Entrave d'hiver et Gel."],
       "skillsSource": "Guide Sorcier aion2-guides.info (tests de joueurs : EUTOPIA, Krix Domi, aLuckyRO), set d'arène de games.gg, noms et effets français de metabot.gg, et compétences réellement montées par 24 Sorciers niveau 45 (serveurs EU, niveau d'objet 798 à 2383). Les entrées « à valider » ne sont pas décrites par les guides.",
       "play": {
@@ -828,64 +833,68 @@
     },
     {
       "code": "ELEMENTALIST", "name": "Spiritualiste", "aliases": ["Spiritmaster", "Elementalist"], "role": "dps",
-      "weightOverrides": { "PvE": { "MP": 0.2, "MPRegen": 0.25, "HP": 0.3 }, "PvP": { "MP": 0.2, "StatusHit": 0.7 } },
-      "coreSkills": {
-        "PvE": ["Combustion", "Fusion des éléments", "Coup d'esprit", "Avènement d'esprit", "Protection d'esprit", "Communion d'esprit"],
-        "PvP": ["Combustion", "Fusion des éléments", "Protection d'esprit", "Communion d'esprit"]
+      "weightOverrides": {
+        "PvE": { "PowerfulHit": 0.95, "CooldownReduction": 0.85, "Accuracy": 0.85, "DamageBoost": 0.85, "Critical": 0.7, "CriticalDamage": 0.7, "MP": 0.25, "MPRegen": 0.25, "HP": 0.3 },
+        "PvP": { "Accuracy": 0.9, "StatusResist": 0.85, "HP": 0.85, "StatusHit": 0.7, "MP": 0.2 }
       },
-      "skillsSource": "Guides communautaires Spiritmaster (Mmoexp, Vortex Gaming, GamesFuze ; données KR/TW traduites). Les entrées « à valider » ne sont pas documentées par ces guides.",
+      "coreSkills": { "PvE": [], "PvP": [] },
+      "benchmark": { "source": "24 Spiritualistes niveau 45 des serveurs EU, trouvés par la recherche du site officiel le 23/10/2026", "itemLevel": [878, 957, 980, 985, 1037, 1095, 1267, 1282, 1334, 1343, 1344, 1391, 1403, 1436, 1467, 1500, 1582, 1774, 1931, 2186, 2206, 2335, 2604, 2667], "combatPower": [44413, 44474, 47606, 48633, 49634, 53185, 61176, 61955, 63719, 67421, 68421, 69808, 71610, 72141, 72271, 72750, 73516, 76717, 91197, 105360, 106405, 106527, 127538, 159899], "daevanionNodes": [85, 113, 127, 148, 164, 169, 173, 175, 178, 182, 189, 189, 194, 198, 203, 219, 222, 226, 248, 249, 252, 256, 259, 259] },
+      "notes": ["Coup puissant (chance de double dégâts) d'abord : Concentration mentale au maximum, puis Réduction du temps de recharge (≈ 20 %) et Précision (≈ 1 500) selon le guide. Les esprits copient tes stats au moment de l'invocation : lance tes buffs avant d'invoquer.", "Rotation : Bénédiction ardente, Protection d'esprit améliorée, Invocation : Esprit ancien, puis la ligne des esprits (Fusion des éléments en priorité, Esprit de l'eau, de la terre, du feu) et la ligne de dégâts (Corrosion, Malédiction, Domination spatiale, Combustion) ; Choc de givre tenu sur le clic gauche pour garder ses 5 charges. Macro : Protection d'esprit améliorée → Fusion des éléments → Corrosion.", "Daevanion JcE : +4 à Fusion des éléments, Combustion, Esprit du feu, Choc de givre et Esprit de l'eau, +4 aux passifs Concentration mentale et Coup d'esprit. JcJ : +4 à Malédiction, Combustion, Dissipation de choc, Choc de givre et Fusion des éléments."],
+      "skillsSource": "Guide Spiritualiste aion2-guides.info (adapté des guides TW/KR, recoupé avec les guides globaux le 23/10/2026), noms et effets de metabot.gg, et compétences réellement montées par 24 Spiritualistes niveau 45 (serveurs EU, niveau d'objet 878 à 2667). Les entrées « à valider » ne sont pas décrites par les guides.",
       "play": {
         "PvE": {
           "rotation": [
-            { "name": "Ouverture", "steps": ["Attaque conjointe : Malédiction", "Invocation : Esprit de l'eau", "Domination spatiale", "Invocation : Esprit ancien", "Fusion des éléments"], "note": "Malédiction d'abord (combo avec Esprit ancien), Domination spatiale juste après une invocation, Fusion des éléments dès les 4 éléments réunis." },
-            { "name": "Boucle", "steps": ["Combustion", "Choc de givre", "Attaque conjointe : Malédiction", "Invocation : Esprit du vent"], "note": "Combustion en dégâts principaux (clic droit), Choc de givre (clic gauche) pour les buffs et les PM ; Malédiction gardée active." },
-            { "name": "Avant le burst", "steps": ["Attaque conjointe : Corrosion", "Fusion des éléments"], "note": "Corrosion baisse toutes les résistances de la cible." }
+            { "name": "Ouverture", "steps": ["Bénédiction ardente", "Protection d'esprit améliorée", "Invocation : Esprit ancien"], "note": "Les buffs d'abord : un esprit copie tes stats au moment où il est invoqué." },
+            { "name": "Ligne des esprits", "steps": ["Invocation : Esprit du feu", "Invocation : Esprit de la terre", "Invocation : Esprit de l'eau", "Fusion des éléments"], "note": "Fusion des éléments en bas de la ligne (priorité la plus haute), puis Eau, Terre, Feu." },
+            { "name": "Ligne de dégâts", "steps": ["Combustion", "Domination spatiale", "Attaque conjointe : Malédiction", "Attaque conjointe : Corrosion"], "note": "Corrosion en priorité, puis Malédiction, Domination spatiale, Combustion." },
+            { "name": "Remplissage", "steps": ["Choc de givre"], "note": "Tenu sur le clic gauche : garde 5 charges (+2 % d'ATQ chacune à la spécialisation 12) ; une attaque de base de plus vaut mieux qu'une invocation en retard." }
           ],
-          "tips": ["Évite d'enchaîner Combustion sur les boss qui bougent beaucoup (incantation longue).", "Esprit de l'eau puis Esprit du vent : les deux esprits que les guides jugent les plus rentables.", "Bénédiction ardente : buff de dégâts pour le groupe."]
+          "tips": ["Macro : Protection d'esprit améliorée → Fusion des éléments → Corrosion, 10 ms par étape.", "Le guide demande moins de 60 ms de latence et au moins 65 % de VIT de combat pour entrelacer les attaques de base.", "Esprit du vent : le plus faible, à ignorer selon le guide (les joueurs observés l'équipent pourtant souvent)."]
         },
         "PvP": {
           "rotation": [
-            { "name": "Contrôle", "steps": ["Cri de l'âme", "Domination spatiale"], "note": "Peur et baisse de DÉF, puis ralentissement pour garder la distance." },
-            { "name": "Burst", "steps": ["Invocation : Esprit ancien", "Attaque conjointe : Malédiction", "Fusion des éléments"], "note": "Esprit ancien avec Malédiction, le burst universel des guides." }
+            { "name": "On t'engage", "steps": ["Dissipation de choc"], "note": "Sur le premier contrôle dur." },
+            { "name": "Tu engages", "steps": ["Protection d'esprit améliorée", "Pouvoir de Kaisinel", "Invocation : Esprit de la terre", "Attaque conjointe : Malédiction", "Invocation : Esprit ancien", "Attaque conjointe : Corrosion"], "note": "Corrosion après la potion adverse." },
+            { "name": "Macro", "steps": ["Fusion des éléments", "Invocation : Esprit de la terre"], "note": "Cri de l'âme si l'Esprit de la terre ne contrôle pas, ou une fois la Dissipation adverse partie." }
           ],
-          "tips": ["Drainage en choix défensif.", "Dissipation de choc sur le premier contrôle."]
+          "tips": ["Extorsion de magie sur l'invincibilité d'un Gladiateur ou d'un Clerc, et juste après le buff d'un Rôdeur.", "Ordre : Substitut quand un Assassin engage ou quand un Sorcier te gèle."]
         }
       },
       "designed": {
-        "summary": "Le Spiritualiste vit de ses esprits : chaque compétence d'esprit lance Domination spatiale (86 % d'ATQ sur 4 cibles) et donne un élément pour Fusion des éléments. Les 4 invocations (toutes à 15 s de recharge) montent donc ensemble, avec Revitalisation d'esprit qui les fait revenir plus vite et Avènement d'esprit, actif en permanence. Drainage (206 % toutes les 30 s) remplace Assaut anéantissant, deux fois moins rentable.",
-        "method": "Données des sorts au niveau 1 (metabot.gg, noms anglais rapprochés des noms français) : dégâts par seconde = % d'ATQ ÷ temps de recharge (× nombre de cibles), pondérés par leurs conditions (compétence d'esprit pour Domination spatiale, dégâts sur la durée pour Renversement consécutif, déséquilibre pour Rafale continue) ; buffs comptés par leur temps actif. Certaines descriptions sont coupées sur la source : ces effets ne sont pas comptés. Sans guide ni profil de joueur.",
+        "summary": "Le Spiritualiste vit de ses esprits : chaque compétence d'esprit lance Domination spatiale (86 % d'ATQ sur 4 cibles) et donne un élément pour Fusion des éléments. Les 4 invocations montent donc ensemble, Esprit du vent compris, avec Avènement d'esprit actif en permanence. Drainage (206 % toutes les 30 s) remplace Bénédiction ardente, plafonnée par sa recharge interne d'une seconde.",
+        "method": "Données des sorts au niveau 1 (metabot.gg) : dégâts par seconde = % d'ATQ ÷ temps de recharge (× nombre de cibles), pondérés par leurs conditions (compétence d'esprit pour Domination spatiale, dégâts sur la durée pour Renversement consécutif, déséquilibre pour Rafale continue) ; buffs comptés par leur temps actif et leurs recharges internes. Les descriptions coupées sur la source ne sont pas comptées. Sans guide ni profil de joueur.",
         "skills": [
           { "name": "Domination spatiale", "kind": "Active", "role": "Zone à chaque compétence d'esprit", "priority": { "PvE": 0.9, "PvP": 0.8 }, "target": { "PvE": 10, "PvP": 10 },
             "why": "86 % d'ATQ sur 4 cibles chaque fois qu'un esprit utilise une compétence : avec 4 invocations toutes les 15 s, au moins 4 déclenchements par cycle, soit environ 23 % d'ATQ par seconde sur une cible. Plus que n'importe quelle invocation seule." },
-          { "name": "Invocation : Esprit de la terre", "kind": "Active", "role": "Invocation (élément + Domination)", "priority": { "PvE": 0.65, "PvP": 0.55 }, "target": { "PvE": 10, "PvP": 10 },
-            "why": "135 % d'ATQ sur une cible toutes les 15 s (9 % par seconde, presque autant que l'Esprit de l'eau, 145 %), plus un déclenchement de Domination spatiale et un élément pour Fusion des éléments." },
-          { "name": "Invocation : Esprit du feu", "kind": "Active", "role": "Invocation (élément + Domination)", "priority": { "PvE": 0.6, "PvP": 0.4 }, "target": { "PvE": 8, "PvP": 5 },
-            "why": "120 % d'ATQ sur 4 cibles toutes les 15 s : 8 % par seconde sur un boss, 32 % sur un pack. Comme les autres esprits, elle lance Domination spatiale et donne un élément : la laisser au niveau 1 retire une source de Fusion des éléments." },
-          { "name": "Rafale continue", "kind": "Active", "role": "Dégâts sur cible déséquilibrée", "priority": { "PvE": 0.25, "PvP": 0.3 }, "target": { "PvE": 3, "PvP": 5 },
+          { "name": "Invocation : Esprit de la terre", "kind": "Active", "role": "Invocation (élément + Domination)", "priority": { "PvE": 0.75, "PvP": 0.85 }, "target": { "PvE": 10, "PvP": 10 },
+            "why": "135 % d'ATQ toutes les 15 s (9 % par seconde, presque autant que l'Esprit de l'eau, 145 %), plus un déclenchement de Domination spatiale et un élément pour Fusion des éléments." },
+          { "name": "Invocation : Esprit du vent", "kind": "Active", "role": "Invocation (élément + Domination)", "priority": { "PvE": 0.6, "PvP": 0.4 }, "target": { "PvE": 8, "PvP": 3 },
+            "why": "111 % d'ATQ sur 4 cibles toutes les 15 s : le plus faible des esprits sur une cible (7 % par seconde), mais il lance Domination spatiale et donne un élément comme les autres : sans lui, une source de Fusion des éléments en moins." },
+          { "name": "Rafale continue", "kind": "Active", "role": "Dégâts sur cible déséquilibrée", "priority": { "PvE": 0.25, "PvP": 0.2 }, "target": { "PvE": 3, "PvP": 1 },
             "why": "82,5 % d'ATQ, seulement sur une cible déséquilibrée : quelques secondes par combat. Combustion (67 % sur 4 cibles) fait mieux le reste du temps." },
           { "name": "Avènement d'esprit", "kind": "Passive", "role": "Dégâts après une invocation", "priority": { "PvE": 0.9, "PvP": 0.7 }, "target": { "PvE": 10, "PvP": 10 },
             "why": "Pendant 10 s après une invocation, 50 % de chance de 26 % d'ATQ en plus à chaque coup. Avec 4 invocations à 15 s de recharge, la fenêtre est ouverte en permanence : environ +13 % d'ATQ sur chaque Combustion." },
-          { "name": "Revitalisation d'esprit", "kind": "Passive", "role": "Invocations plus fréquentes", "priority": { "PvE": 0.8, "PvP": 0.6 }, "target": { "PvE": 10, "PvP": 10 },
+          { "name": "Revitalisation d'esprit", "kind": "Passive", "role": "Invocations plus fréquentes", "priority": { "PvE": 0.85, "PvP": 0.75 }, "target": { "PvE": 10, "PvP": 10 },
             "why": "11 % de chance à chaque coup de retirer 1 s aux invocations : à un coup par seconde, elles reviennent environ 10 % plus vite, donc 10 % de Domination spatiale, d'éléments et d'Avènement d'esprit en plus." },
-          { "name": "Concentration mentale", "kind": "Passive", "role": "Chance d'état mental", "priority": { "PvE": 0.45, "PvP": 0.6 }, "target": { "PvE": 5, "PvP": 8 },
-            "why": "+11 % de chance d'état mental (la peur de Cri de l'âme) et +0,3 % de Coup puissant : presque rien pour les dégâts en JcE ; plus utile en JcJ." },
-          { "name": "Drainage", "kind": "Stigma", "role": "Gros coup toutes les 30 s", "priority": { "PvE": 0.75, "PvP": 0.75 }, "target": { "PvE": 10, "PvP": 15 },
-            "why": "206 % d'ATQ toutes les 30 s (6,9 % par seconde) et −300 PM pour la cible : le meilleur stigma de dégâts directs après Esprit ancien. Assaut anéantissant (216 % toutes les 60 s) fait moitié moins." },
-          { "name": "Attaque conjointe : Assaut anéantissant", "kind": "Stigma", "role": "Attaque conjointe (60 s)", "priority": { "PvE": 0.45, "PvP": 0.35 }, "target": { "PvE": 5, "PvP": 5 },
-            "why": "100 % d'ATQ plus 116 % pour l'esprit, toutes les 60 s : 3,6 % d'ATQ par seconde, moitié moins que Drainage." }
+          { "name": "Concentration mentale", "kind": "Passive", "role": "Coup puissant", "priority": { "PvE": 0.6, "PvP": 0.6 }, "target": { "PvE": 8, "PvP": 8 },
+            "why": "+0,3 % de Coup puissant au niveau 1 (soit environ +0,3 % de dégâts) et +11 % de chance d'état mental : loin derrière Coup d'esprit (+6 % de Boost de DGT JcE au niveau 1, pour toi et l'esprit)." },
+          { "name": "Drainage", "kind": "Stigma", "role": "Gros coup toutes les 30 s", "priority": { "PvE": 0.9, "PvP": 0.6 }, "target": { "PvE": 10, "PvP": 5 },
+            "why": "206 % d'ATQ toutes les 30 s (6,9 % par seconde) et −300 PM pour la cible : le meilleur stigma de dégâts directs après Esprit ancien." },
+          { "name": "Bénédiction ardente", "kind": "Stigma", "role": "Dégâts en plus pendant 10 s", "priority": { "PvE": 0.6, "PvP": 0.3 }, "target": { "PvE": 10, "PvP": 5 },
+            "why": "Pendant 10 s toutes les 60 s, 50 % de chance de 41 % d'ATQ en plus par attaque, une fois par seconde au plus : au mieux 205 % d'ATQ par minute, soit 3,4 % par seconde, deux fois moins que Drainage." }
         ],
         "play": {
           "PvE": {
             "rotation": [
-              { "name": "Ouverture", "steps": ["Attaque conjointe : Malédiction", "Attaque conjointe : Corrosion", "Invocation : Esprit de l'eau", "Invocation : Esprit du vent", "Invocation : Esprit de la terre", "Invocation : Esprit du feu", "Fusion des éléments"], "note": "Les deux dégâts sur la durée d'abord (ils ouvrent Renversement consécutif), puis les 4 invocations : chacune lance Domination spatiale et donne un élément ; à 4 éléments, Fusion des éléments." },
-              { "name": "Burst (toutes les 90 s)", "steps": ["Invocation : Esprit ancien", "Fusion des éléments", "Drainage", "Fusion des éléments"], "note": "Pendant 30 s, chaque compétence de l'Esprit ancien donne l'état 4 éléments : Fusion des éléments à chaque fois." },
-              { "name": "Boucle", "steps": ["Combustion", "Attaque conjointe : Malédiction", "Choc de givre"], "note": "Combustion (67 % × 4) tant que les PM suivent, Choc de givre (+100 PM) quand ils baissent ; Malédiction toutes les 10 s, et chaque invocation dès qu'elle revient." }
+              { "name": "Ouverture", "steps": ["Protection d'esprit améliorée", "Invocation : Esprit ancien", "Attaque conjointe : Malédiction", "Attaque conjointe : Corrosion", "Invocation : Esprit de l'eau", "Invocation : Esprit du feu", "Invocation : Esprit de la terre", "Invocation : Esprit du vent", "Fusion des éléments"], "note": "Le buff avant les invocations (les esprits copient tes stats), les deux dégâts sur la durée (Renversement consécutif), puis les 4 esprits : chacun lance Domination spatiale et donne un élément." },
+              { "name": "Burst", "steps": ["Invocation : Esprit ancien", "Fusion des éléments", "Drainage", "Fusion des éléments"], "note": "Pendant 30 s, chaque compétence de l'Esprit ancien donne l'état 4 éléments : Fusion des éléments à chaque fois." },
+              { "name": "Boucle", "steps": ["Combustion", "Attaque conjointe : Malédiction", "Choc de givre"], "note": "Combustion (67 % × 4) tant que les PM suivent, Choc de givre (+100 PM) quand ils baissent ; chaque invocation dès qu'elle revient, Drainage toutes les 30 s." }
             ],
             "tips": ["Relance chaque invocation dès qu'elle revient : c'est elle qui déclenche Domination spatiale, Avènement d'esprit et les éléments.", "Garde toujours un dégât sur la durée sur la cible (Malédiction, Corrosion) : Renversement consécutif ajoute 23,5 % d'ATQ une fois sur deux.", "Drainage toutes les 30 s : 206 % d'ATQ, ton meilleur stigma de dégâts directs après Esprit ancien."]
           },
           "PvP": {
             "rotation": [
-              { "name": "Contrôle", "steps": ["Cri de l'âme", "Invocation : Esprit de l'eau", "Domination spatiale"], "note": "Peur 5 s (70 %), puis l'invocation lance Domination spatiale et son ralentissement." },
+              { "name": "Contrôle", "steps": ["Cri de l'âme", "Invocation : Esprit de l'eau", "Domination spatiale"], "note": "Peur 5 s (70 %), puis l'invocation lance Domination spatiale." },
               { "name": "Burst", "steps": ["Invocation : Esprit ancien", "Attaque conjointe : Malédiction", "Fusion des éléments", "Drainage"], "note": "Drainage retire aussi 300 PM : vise un soigneur ou un lanceur de sorts." }
             ],
             "tips": ["Dissipation de choc sur le premier contrôle.", "Garde la distance : tout le kit tire à 20 m."]
@@ -893,81 +902,86 @@
         },
         "differences": [
           "Domination spatiale monte (0,90 contre 0,70) : 86 % sur 4 cibles à chaque compétence d'esprit, environ 23 % d'ATQ par seconde avec les 4 invocations.",
-          "Les 4 invocations montent ensemble (Esprit du feu au niveau 8 au lieu de 1, Esprit de la terre 0,65 contre 0,50) : chacune donne un élément et un déclenchement de Domination spatiale.",
-          "Avènement d'esprit (0,90 contre 0,80) et Revitalisation d'esprit (0,80 contre 0,55) montent : la fenêtre de 10 s après invocation reste ouverte en permanence, et les invocations reviennent environ 10 % plus vite.",
-          "Concentration mentale baisse en JcE (0,45 contre 0,80) : +11 % de chance d'état mental et +0,3 % de Coup puissant, presque rien pour les dégâts.",
-          "Drainage remplace Assaut anéantissant dans le set JcE : 206 % toutes les 30 s contre 216 % toutes les 60 s."
+          "Esprit de la terre (0,75 contre 0,60) et Esprit du vent (0,60 contre 0,20) montent : chaque esprit donne un élément et un déclenchement de Domination spatiale.",
+          "Avènement d'esprit monte (0,90 contre 0,70) : la fenêtre de 10 s après une invocation reste ouverte en permanence.",
+          "Concentration mentale baisse (0,60 contre 1,0) : +0,3 % de Coup puissant au niveau 1, contre +6 % de Boost de DGT pour Coup d'esprit. Le guide la place pourtant en tête : à toi de comparer en jeu.",
+          "Drainage remplace Bénédiction ardente dans le set JcE : 206 % toutes les 30 s contre au plus 205 % par minute (recharge interne d'une seconde)."
         ]
       },
       "skills": [
-        { "name": "Combustion", "kind": "Active", "role": "Dégâts principaux", "priority": { "PvE": 1.0, "PvP": 0.9 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "Ta principale source de dégâts (clic droit) : chaque niveau augmente directement ton DPS. Évite de l'enchaîner sur les boss qui bougent beaucoup (incantation longue)." },
-        { "name": "Fusion des éléments", "kind": "Active", "role": "Burst", "priority": { "PvE": 1.0, "PvP": 1.0 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "Ton burst : utilisable une fois les 4 éléments réunis, c'est le pic de dégâts de ta rotation. À maximiser." },
-        { "name": "Attaque conjointe : Malédiction", "kind": "Active", "role": "Débuff + dégâts sur la durée", "priority": { "PvE": 0.95, "PvP": 0.9 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "Dégâts sur la durée et baisse des dégâts de la cible, à garder actif en permanence ; il alimente aussi Renversement consécutif et le combo avec Esprit ancien." },
-        { "name": "Choc de givre", "kind": "Active", "role": "Attaque de base / mana", "priority": { "PvE": 0.8, "PvP": 0.7 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "Attaque de base (clic gauche) : empile tes buffs et rend du PM. Son buff se débloque au niveau total 12 : les guides la poussent haut." },
-        { "name": "Domination spatiale", "kind": "Active", "role": "Zone + ralentissement", "priority": { "PvE": 0.7, "PvP": 0.8 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "Dégâts de zone et ralentissement lancés juste après une invocation ; à garder actif sur les packs, et contre les cibles mobiles en JcJ." },
-        { "name": "Cri de l'âme", "kind": "Active", "role": "Contrôle (peur) + baisse de DÉF", "priority": { "PvE": 0.15, "PvP": 0.85 }, "target": { "PvE": 1, "PvP": 8 },
-          "why": "Peur et baisse de DÉF pour créer de la distance : précieux en JcJ (le niveau 8 débloque sa première spécialisation). Contre les boss JcE il apporte peu : 1 point suffit." },
-        { "name": "Rafale continue", "kind": "Active", "role": "Remplissage", "priority": { "PvE": 0.35, "PvP": 0.35 }, "target": { "PvE": 5, "PvP": 5 },
-          "why": "Comble les trous entre deux compétences et frappe plus fort les cibles étourdies. Optionnelle : n'y mets des points qu'une fois les compétences clés au maximum." },
-        { "name": "Dissipation de choc", "kind": "Active", "role": "Libération des contrôles (emplacement fixe)", "priority": { "PvE": 0.45, "PvP": 1.0 }, "target": { "PvE": 8, "PvP": 8 },
-          "why": "Compétence commune : rend 20 % des PV et retire étourdissement, renversement, projection, saisie, gel et peur, puis 5 s d'immunité aux altérations. Indispensable en JcJ, utile en JcE contre les boss qui contrôlent. Le niveau 8 débloque sa première spécialisation." },
-        { "name": "Invocation : Esprit de l'eau", "kind": "Active", "role": "Invocation", "priority": { "PvE": 0.7, "PvP": 0.6 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "Ajoute des dégâts de corrosion et de malédiction : l'esprit que les guides jugent le plus rentable à monter." },
-        { "name": "Invocation : Esprit du vent", "kind": "Active", "role": "Invocation", "priority": { "PvE": 0.65, "PvP": 0.6 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "Attaques rapides qui déclenchent souvent Érosion (passif de coups critiques)." },
-        { "name": "Invocation : Esprit de la terre", "kind": "Active", "role": "Invocation", "priority": { "PvE": 0.5, "PvP": 0.55 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "À valider : rôle non détaillé par les guides consultés. Garde-la haute seulement si elle fait partie de ta rotation réelle." },
-        { "name": "Invocation : Esprit du feu", "kind": "Active", "role": "Invocation", "priority": { "PvE": 0.3, "PvP": 0.3 }, "target": { "PvE": 1, "PvP": 1 },
-          "why": "À valider : non citée par les guides consultés. Tant que les esprits prioritaires ne sont pas au max, inutile d'y mettre des points." },
+        { "name": "Fusion des éléments", "kind": "Active", "role": "Burst à 4 éléments", "priority": { "PvE": 1.0, "PvP": 1.0 }, "target": { "PvE": 10, "PvP": 10 },
+          "why": "Le burst : utilisable une fois les 4 éléments réunis (un par compétence d'esprit), à volonté pendant l'Esprit ancien. Spécialisations : 8 dégâts en plus au bout de 3 s, 12 version chargée (jusqu'à +200 %), 16 25 % de chance de garder les 4 éléments. +4 niveaux par le Daevanion JcE et JcJ ; niveau médian 14 chez les joueurs observés." },
+        { "name": "Combustion", "kind": "Active", "role": "Dégâts principaux", "priority": { "PvE": 1.0, "PvP": 0.95 }, "target": { "PvE": 10, "PvP": 10 },
+          "why": "67 % d'ATQ sur 4 cibles sans recharge (120 PM) : les dégâts continus. Spécialisations : 8 jusqu'à +12 % sur peu de cibles, 12 +20 % de vitesse de compétence, 16 enchaînement d'appel cendré. +4 niveaux par le Daevanion JcE et JcJ." },
+        { "name": "Invocation : Esprit du feu", "kind": "Active", "role": "Invocation la plus forte", "priority": { "PvE": 0.95, "PvP": 0.6 }, "target": { "PvE": 10, "PvP": 8 },
+          "why": "L'esprit le plus fort selon le guide : 120 % d'ATQ sur 4 cibles (recharge 15 s), un élément et un déclenchement de Domination spatiale. Spécialisations : 8 +20 % de DGT CRIT de feu, 16 +20 % de stats de feu. +4 niveaux par le Daevanion JcE." },
+        { "name": "Choc de givre", "kind": "Active", "role": "Attaque de base (charges d'ATQ, PM)", "priority": { "PvE": 0.9, "PvP": 0.9 }, "target": { "PvE": 10, "PvP": 10 },
+          "why": "Attaque de base (51,5 % d'ATQ, +100 PM), tenue sur le clic gauche. Spécialisations : 8 +50 % de multi-coups (JcJ : absorbe 1 % des PV), 12 +2 % d'ATQ par coup jusqu'à 5 charges. +4 niveaux par le Daevanion JcE et JcJ." },
+        { "name": "Invocation : Esprit de l'eau", "kind": "Active", "role": "Invocation (une cible)", "priority": { "PvE": 0.85, "PvP": 0.6 }, "target": { "PvE": 10, "PvP": 8 },
+          "why": "145 % d'ATQ sur une cible toutes les 15 s, un élément et un déclenchement de Domination spatiale. Spécialisations : 8 +10 % d'ATQ d'eau, 16 +20 % de stats d'eau. +4 niveaux par le Daevanion JcE." },
+        { "name": "Attaque conjointe : Malédiction", "kind": "Active", "role": "Dégâts sur la durée + affaiblissement", "priority": { "PvE": 0.85, "PvP": 0.95 }, "target": { "PvE": 10, "PvP": 10 },
+          "why": "75 % d'ATQ sur 4 cibles et Malédiction (recharge 10 s) : garde la cible sous dégâts sur la durée pour Renversement consécutif. JcE : +2 s de Malédiction ; JcJ : 8 +50 % de multi-coups, 12 −2 s de recharge, 16 ignore Blocage et Esquive. +4 niveaux par le Daevanion JcJ." },
+        { "name": "Domination spatiale", "kind": "Active", "role": "Zone à chaque compétence d'esprit", "priority": { "PvE": 0.7, "PvP": 0.7 }, "target": { "PvE": 8, "PvP": 8 },
+          "why": "86 % d'ATQ sur 4 cibles chaque fois qu'un esprit utilise une compétence. Optionnelle selon le guide (spécialisation 8 : dégâts différés ; 16 en JcJ : 30 % d'immobiliser 3 s), mais montée au niveau 13 en médiane chez les joueurs observés." },
+        { "name": "Invocation : Esprit de la terre", "kind": "Active", "role": "Invocation (provocation, tolérance)", "priority": { "PvE": 0.6, "PvP": 0.85 }, "target": { "PvE": 8, "PvP": 10 },
+          "why": "135 % d'ATQ sur une cible toutes les 15 s et un élément ; spécialisation 8 : +20 % de Tolérance aux DGT JcE (+10 % JcJ), 16 : +20 % de stats de terre. Utile en solo en JcE, au cœur de l'ouverture JcJ." },
+        { "name": "Rafale continue", "kind": "Active", "role": "Dégâts sur cible déséquilibrée", "priority": { "PvE": 0.45, "PvP": 0.15 }, "target": { "PvE": 6, "PvP": 1 },
+          "why": "82,5 % d'ATQ, seulement sur une cible déséquilibrée. Spécialisations : 12 multi-coups, 16 −1 s sur toutes les recharges. Optionnelle en JcE, inutile en JcJ ; les joueurs observés la montent quand même (médiane 11)." },
+        { "name": "Dissipation de choc", "kind": "Active", "role": "Libération des contrôles (emplacement fixe)", "priority": { "PvE": 0.45, "PvP": 1.0 }, "target": { "PvE": 8, "PvP": 10 },
+          "why": "Retire étourdissement, renversement, entrave aérienne, saisie, gel et peur, puis 5 s de ténacité. Spécialisations : 8 rend 20 % des PV, 12 +2 s de ténacité, 16 +50 % de Tolérance JcE / +25 % JcJ pendant la ténacité. +4 niveaux par le Daevanion JcJ." },
+        { "name": "Cri de l'âme", "kind": "Active", "role": "Peur (JcJ)", "priority": { "PvE": 0.15, "PvP": 0.7 }, "target": { "PvE": 1, "PvP": 8 },
+          "why": "100 % d'ATQ et 70 % de chance de peur 5 s (recharge 45 s). Inutile contre les boss ; en JcJ, 8 immobilise 5 s, 12 −10 s de recharge, 16 +2 s de peur." },
+        { "name": "Invocation : Esprit du vent", "kind": "Active", "role": "Invocation (la plus faible)", "priority": { "PvE": 0.35, "PvP": 0.2 }, "target": { "PvE": 3, "PvP": 1 },
+          "why": "111 % d'ATQ sur 4 cibles toutes les 15 s : l'esprit le plus faible, à ignorer selon le guide (gardé la première semaine pour réunir les éléments plus vite). Équipé pourtant par 19 joueurs observés sur 24." },
 
-        { "name": "Coup d'esprit", "kind": "Passive", "role": "ATQ (toi + esprits)", "priority": { "PvE": 1.0, "PvP": 1.0 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "Augmente ton ATQ et celle de tes esprits : passif n°1 à maximiser selon tous les guides." },
-        { "name": "Érosion", "kind": "Passive", "role": "CRIT + coup sur critique", "priority": { "PvE": 0.85, "PvP": 0.8 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "Augmente ton taux de CRIT et déclenche un gros coup sur critique ; se marie avec les attaques rapides de l'Esprit du vent." },
-        { "name": "Concentration mentale", "kind": "Passive", "role": "Précision des esprits", "priority": { "PvE": 0.8, "PvP": 0.75 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "Améliore la précision et la puissance des attaques de type esprit." },
-        { "name": "Renversement consécutif", "kind": "Passive", "role": "Dégâts supplémentaires", "priority": { "PvE": 0.8, "PvP": 0.75 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "Chance de dégâts supplémentaires sur une cible déjà touchée ; fonctionne avec Malédiction." },
-        { "name": "Avènement d'esprit", "kind": "Passive", "role": "Dégâts des esprits", "priority": { "PvE": 0.8, "PvP": 0.7 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "Chance de dégâts supplémentaires de tes esprits juste après une invocation." },
-        { "name": "Protection d'esprit", "kind": "Passive", "role": "DÉF (toi + esprits)", "priority": { "PvE": 0.55, "PvP": 0.9 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "DÉF pour toi et tes esprits : bien plus utile en JcJ qu'en JcE." },
-        { "name": "Revitalisation d'esprit", "kind": "Passive", "role": "Survie / régénération", "priority": { "PvE": 0.55, "PvP": 0.6 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "Les guides la placent juste après Coup d'esprit et Concentration : plus rentable à haut niveau, elle évite les pertes de DPS sur les mécaniques de boss." },
-        { "name": "Communion d'esprit", "kind": "Passive", "role": "Rotation des esprits", "priority": { "PvE": 0.6, "PvP": 0.55 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "Citée parmi les compétences de rotation à monter dans les guides Daevanion." },
-        { "name": "Unification des éléments", "kind": "Passive", "role": "Débuff de groupe", "priority": { "PvE": 0.4, "PvP": 0.3 }, "target": { "PvE": 10, "PvP": 5 },
-          "why": "À valider : semble correspondre au passif de débuff de groupe des guides, utile surtout si tu tiens ce rôle en groupe." },
-        { "name": "Pacte de revitalisation", "kind": "Passive", "role": "À valider", "priority": { "PvE": 0.3, "PvP": 0.4 }, "target": { "PvE": 1, "PvP": 5 },
-          "why": "À valider : non documenté par les guides consultés ; passe après tous les passifs de dégâts." },
+        { "name": "Concentration mentale", "kind": "Passive", "role": "Coup puissant", "priority": { "PvE": 1.0, "PvP": 0.75 }, "target": { "PvE": 10, "PvP": 8 },
+          "why": "Coup puissant (chance de double dégâts) et chance d'état mental : le premier passif à maximiser selon le guide. +4 niveaux par le Daevanion JcE ; niveau médian 14 chez les joueurs observés." },
+        { "name": "Coup d'esprit", "kind": "Passive", "role": "Boost de DGT (toi + esprit)", "priority": { "PvE": 0.95, "PvP": 0.9 }, "target": { "PvE": 10, "PvP": 10 },
+          "why": "+6 % de Boost de DGT JcE (+3 % JcJ) et Coup parfait, pour toi et ton esprit. Effet multiplié par 1,5 avec Protection d'esprit améliorée au niveau 10. +4 niveaux par le Daevanion JcE." },
+        { "name": "Unification des éléments", "kind": "Passive", "role": "Boost de DGT CRIT après une compétence d'esprit", "priority": { "PvE": 0.85, "PvP": 0.7 }, "target": { "PvE": 10, "PvP": 8 },
+          "why": "Après une compétence d'esprit, +1,1 % de Boost de DGT CRIT pendant 10 s, cumulable (toi et l'esprit). Troisième passif selon le guide, rentable une fois l'équipement CRIT en place." },
+        { "name": "Revitalisation d'esprit", "kind": "Passive", "role": "Invocations plus fréquentes", "priority": { "PvE": 0.8, "PvP": 0.75 }, "target": { "PvE": 10, "PvP": 10 },
+          "why": "11 % de chance à chaque coup de retirer 1 s aux invocations, et soin de l'esprit : plus d'invocations, donc plus de Fusion des éléments. Quatrième passif selon le guide." },
+        { "name": "Avènement d'esprit", "kind": "Passive", "role": "Dégâts après une invocation", "priority": { "PvE": 0.7, "PvP": 0.6 }, "target": { "PvE": 8, "PvP": 6 },
+          "why": "Pendant 10 s après une invocation, 50 % de chance de 26 % d'ATQ en plus à chaque coup. Alternative de début de jeu selon le guide ; effet ×1,5 avec Esprit ancien au niveau 10." },
+        { "name": "Renversement consécutif", "kind": "Passive", "role": "Dégâts sur cible sous dégâts sur la durée", "priority": { "PvE": 0.6, "PvP": 0.6 }, "target": { "PvE": 8, "PvP": 6 },
+          "why": "50 % de chance de 23,5 % d'ATQ en plus à chaque coup sur une cible qui subit des dégâts sur la durée (Malédiction, Corrosion). Alternative de début de jeu selon le guide." },
+        { "name": "Érosion", "kind": "Passive", "role": "CRIT + coup sur critique", "priority": { "PvE": 0.6, "PvP": 0.6 }, "target": { "PvE": 8, "PvP": 8 },
+          "why": "+100 CRIT et, sur un critique, 50 % de chance de 50,5 % d'ATQ en plus (une fois par seconde). Rentable seulement avec un équipement CRIT selon le guide." },
+        { "name": "Communion d'esprit", "kind": "Passive", "role": "Précision + soins", "priority": { "PvE": 0.5, "PvP": 0.6 }, "target": { "PvE": 6, "PvP": 6 },
+          "why": "+100 Précision et 10 % de chance de soigner toi et l'esprit à chaque attaque. Effet ×1,5 avec Protection d'esprit améliorée au niveau 15." },
+        { "name": "Protection d'esprit", "kind": "Passive", "role": "DÉF (toi + esprit)", "priority": { "PvE": 0.4, "PvP": 0.9 }, "target": { "PvE": 4, "PvP": 10 },
+          "why": "+2 % de DÉF pour toi et ton esprit : passif défensif n° 1 en JcJ contre le burst (≈ 20 selon le guide)." },
+        { "name": "Pacte de revitalisation", "kind": "Passive", "role": "RÉS aux altérations (JcJ)", "priority": { "PvE": 0.3, "PvP": 0.85 }, "target": { "PvE": 2, "PvP": 10 },
+          "why": "+17 % de RÉS aux altérations, plus encore sous contrôle : passif JcJ (≈ 20 selon le guide)." },
 
-        { "name": "Invocation : Esprit ancien", "kind": "Stigma", "role": "Burst (stigma)", "priority": { "PvE": 1.0, "PvP": 1.0 }, "target": { "PvE": 20, "PvP": 20 },
-          "why": "Burst universel JcE et JcJ, à combiner avec Malédiction : stigma n°1, à monter en premier." },
-        { "name": "Attaque conjointe : Corrosion", "kind": "Stigma", "role": "Débuff résistances + dégâts sur la durée", "priority": { "PvE": 0.85, "PvP": 0.75 }, "target": { "PvE": 20, "PvP": 15 },
-          "why": "Baisse toutes les résistances de la cible et inflige des dégâts sur la durée : second stigma à monter." },
-        { "name": "Bénédiction ardente", "kind": "Stigma", "role": "Buff de groupe", "priority": { "PvE": 0.7, "PvP": 0.35 }, "target": { "PvE": 5, "PvP": 5 },
-          "why": "Buff de dégâts pour tout le groupe (≈ +10 % de dégâts critiques selon un guide) ; 5 niveaux suffisent." },
-        { "name": "Attaque conjointe : Assaut anéantissant", "kind": "Stigma", "role": "Zone (chargée)", "priority": { "PvE": 0.55, "PvP": 0.35 }, "target": { "PvE": 10, "PvP": 5 },
-          "why": "Compétence chargée à dégâts de zone : bonne sur les packs de monstres, faible en JcJ." },
-        { "name": "Drainage", "kind": "Stigma", "role": "Défensif (vol de vie)", "priority": { "PvE": 0.35, "PvP": 0.75 }, "target": { "PvE": 5, "PvP": 15 },
-          "why": "Choix défensif cité par les guides : surtout intéressant en JcJ." },
-        { "name": "Nuage de malédiction", "kind": "Stigma", "role": "Débuff", "priority": { "PvE": 0.5, "PvP": 0.5 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "À valider : semble être l'option « ombre de malédiction » citée par un guide comme alternative." },
-        { "name": "Protection d'esprit améliorée", "kind": "Stigma", "role": "À valider", "priority": { "PvE": 0.4, "PvP": 0.55 }, "target": { "PvE": 5, "PvP": 10 },
-          "why": "À valider : non documenté par les guides consultés." },
-        { "name": "Pouvoir de Kaisinel", "kind": "Stigma", "role": "À valider", "priority": { "PvE": 0.3, "PvP": 0.3 }, "target": { "PvE": 1, "PvP": 1 }, "why": "À valider : non documenté par les guides consultés." },
-        { "name": "Cri de terreur", "kind": "Stigma", "role": "À valider", "priority": { "PvE": 0.2, "PvP": 0.45 }, "target": { "PvE": 1, "PvP": 5 }, "why": "À valider : non documenté par les guides consultés." },
-        { "name": "Extorsion de magie", "kind": "Stigma", "role": "À valider", "priority": { "PvE": 0.3, "PvP": 0.3 }, "target": { "PvE": 1, "PvP": 1 }, "why": "À valider : non documenté par les guides consultés." },
-        { "name": "Blocage magique", "kind": "Stigma", "role": "À valider", "priority": { "PvE": 0.25, "PvP": 0.4 }, "target": { "PvE": 1, "PvP": 5 }, "why": "À valider : non documenté par les guides consultés." },
-        { "name": "Terreur d'assaut", "kind": "Stigma", "role": "À valider", "priority": { "PvE": 0.2, "PvP": 0.4 }, "target": { "PvE": 1, "PvP": 5 }, "why": "À valider : non documenté par les guides consultés." },
-        { "name": "Ordre : Substitut", "kind": "Stigma", "role": "À valider", "priority": { "PvE": 0.25, "PvP": 0.35 }, "target": { "PvE": 1, "PvP": 1 }, "why": "À valider : non documenté par les guides consultés." }
-      ],
-      "notes": ["Daevanion : compétences d'esprit de la rotation d'abord, puis ATQ, CRIT, VIT de combat et réduction du temps de recharge.", "Ne prends les nœuds défensifs que s'ils sont sur le chemin."]
+        { "name": "Invocation : Esprit ancien", "kind": "Stigma", "role": "Burst (4 éléments en continu)", "priority": { "PvE": 1.0, "PvP": 1.0 }, "target": { "PvE": 20, "PvP": 20 },
+          "why": "Esprit ancien pendant 30 s (recharge 90 s) : chacune de ses compétences donne l'état 4 éléments, donc Fusion des éléments à répétition. Niveaux : 5 +10 % d'ATQ de l'esprit, 10 Avènement d'esprit ×1,5 pendant 30 s, 15 compétence après 5 attaques de base, 20 +20 % de stats. Équipé par 21 joueurs observés sur 24." },
+        { "name": "Protection d'esprit améliorée", "kind": "Stigma", "role": "Buff de dégâts et de tolérance", "priority": { "PvE": 0.95, "PvP": 0.95 }, "target": { "PvE": 20, "PvP": 20 },
+          "why": "+20 % de Boost de DGT JcE et de Tolérance aux DGT JcE (+10 % JcJ), avec soin régulier (recharge 1 min). Niveaux : 5 soin de 10 % des PV, 10 Coup d'esprit ×1,5, 15 Communion d'esprit ×1,5, 20 +25 % de Boost et de Tolérance JcE pour toi et l'esprit. Équipé par 22 joueurs observés sur 24." },
+        { "name": "Bénédiction ardente", "kind": "Stigma", "role": "Dégâts en plus pendant 10 s", "priority": { "PvE": 0.85, "PvP": 0.3 }, "target": { "PvE": 15, "PvP": 5 },
+          "why": "Pendant 10 s (recharge 1 min), 50 % de chance de 41 % d'ATQ en plus par attaque (une fois par seconde). Niveaux : 5 +100 Précision, 10 +100 CRIT, 15 +10 % de Boost de DGT CRIT, 20 −50 % de recharge des dégâts en plus. À lancer avant les invocations." },
+        { "name": "Attaque conjointe : Corrosion", "kind": "Stigma", "role": "Dégâts sur la durée + affaiblissement", "priority": { "PvE": 0.8, "PvP": 0.7 }, "target": { "PvE": 15, "PvP": 10 },
+          "why": "75 % d'ATQ sur 4 cibles et Corrosion 20 s (recharge 45 s). Niveaux : 5 +15 % de dégâts des esprits pendant la Corrosion, 10 −20 % de VIT de combat de la cible, 15 −70 % de soins reçus, 20 +10 s. Quatrième stigma JcE ; remplace Ordre : Substitut en JcJ « sans Substitut »." },
+        { "name": "Ordre : Substitut", "kind": "Stigma", "role": "Partage des dégâts (JcJ)", "priority": { "PvE": 0.15, "PvP": 0.85 }, "target": { "PvE": 1, "PvP": 10 },
+          "why": "Pendant 4 s, l'esprit encaisse la moitié des dégâts avec +20 % de Tolérance JcE (+10 % JcJ). Niveaux : 5 +2 s, 10 +10 % de Tolérance JcJ, 15 Protection d'esprit ×1,5, 20 soin de l'esprit. Set JcJ par défaut : quand un Assassin engage, quand un Sorcier gèle." },
+        { "name": "Extorsion de magie", "kind": "Stigma", "role": "Retrait de buffs (JcJ)", "priority": { "PvE": 0.15, "PvP": 0.8 }, "target": { "PvE": 1, "PvP": 10 },
+          "why": "180 % d'ATQ sur 4 cibles et retrait de 2 buffs (recharge 90 s). Niveaux : 5 jusqu'à 3 buffs, 10 sceau 5 s si 3 buffs retirés, 15 jusqu'à 5, 20 −30 s. Set JcJ par défaut, contre l'invincibilité et les buffs adverses." },
+        { "name": "Pouvoir de Kaisinel", "kind": "Stigma", "role": "Altérations et RÉS (JcJ)", "priority": { "PvE": 0.15, "PvP": 0.55 }, "target": { "PvE": 1, "PvP": 5 },
+          "why": "+20 % de chance d'altérations et de RÉS aux altérations pendant 10 s (recharge 1 min). Niveaux : 5 +150 Blocage et Esquive, 10 +15 % de RÉS, 15 +150 Précision. Set JcJ « utilitaire »." },
+        { "name": "Cri de terreur", "kind": "Stigma", "role": "Peur de zone (JcJ)", "priority": { "PvE": 0.15, "PvP": 0.5 }, "target": { "PvE": 1, "PvP": 5 },
+          "why": "150 % d'ATQ sur 4 cibles et 50 % de chance de peur 5 s (recharge 90 s). Niveaux : 5 immobilise 5 s, 10 jusqu'à +20 % sur plusieurs cibles, 15 +2 s de peur. Set JcJ « utilitaire »." },
+        { "name": "Attaque conjointe : Assaut anéantissant", "kind": "Stigma", "role": "Attaque conjointe (60 s)", "priority": { "PvE": 0.5, "PvP": 0.3 }, "target": { "PvE": 5, "PvP": 1 },
+          "why": "100 % d'ATQ plus 116 % pour l'esprit, toutes les 60 s. Non cité par les guides, mais équipé par 11 joueurs observés sur 24, souvent à la place de Corrosion." },
+        { "name": "Drainage", "kind": "Stigma", "role": "Gros coup + vol de PM", "priority": { "PvE": 0.4, "PvP": 0.45 }, "target": { "PvE": 5, "PvP": 5 },
+          "why": "206 % d'ATQ et −300 PM pour la cible (recharge 30 s). Niveaux : 5 +20 % de vitesse, 10 +5 % de PV absorbés, 15 bouclier de 30 % des PV, 20 étourdissement 3 s. Hors des sets du guide ; équipé par 6 joueurs observés sur 24." },
+        { "name": "Blocage magique", "kind": "Stigma", "role": "À valider", "priority": { "PvE": 0.15, "PvP": 0.4 }, "target": { "PvE": 1, "PvP": 5 },
+          "why": "À valider : 187 % d'ATQ et 75 % de chance de sceau 5 s (recharge 1 min) ; non cité par les guides, jamais équipé par les joueurs observés." },
+        { "name": "Nuage de malédiction", "kind": "Stigma", "role": "Zone + malédiction", "priority": { "PvE": 0.2, "PvP": 0.25 }, "target": { "PvE": 1, "PvP": 1 },
+          "why": "105 % d'ATQ sur 4 cibles puis 210 % de plus (recharge 90 s) : pas de place dans les sets de la saison 1 selon le guide." },
+        { "name": "Terreur d'assaut", "kind": "Stigma", "role": "À valider", "priority": { "PvE": 0.15, "PvP": 0.3 }, "target": { "PvE": 1, "PvP": 1 },
+          "why": "À valider : 164 % d'ATQ sur 4 cibles et 30 % de chance de peur 5 s (recharge 2 min) ; non cité par les guides." }
+      ]
     },
     {
       "code": "CLERIC", "name": "Clerc", "aliases": ["Cleric"], "role": "healer",
@@ -976,6 +990,7 @@
         "PvP": { "HealBoost": 0.8, "StatusResist": 0.85, "Accuracy": 0.85, "HP": 0.85, "Attack": 0.85, "Critical": 0.7, "CriticalDamage": 0.65, "DamageBoost": 0.7 }
       },
       "coreSkills": { "PvE": [], "PvP": [] },
+      "benchmark": { "source": "24 Clercs niveau 45 des serveurs EU, trouvés par la recherche du site officiel le 23/10/2026", "itemLevel": [743, 837, 878, 1045, 1136, 1201, 1241, 1363, 1607, 1659, 1699, 1799, 1825, 2038, 2126, 2146, 2147, 2204, 2256, 2288, 2365, 2579, 2605, 2617], "combatPower": [34753, 38586, 45560, 49428, 49455, 57590, 60903, 66698, 69628, 74403, 75621, 77938, 89075, 91195, 92206, 94343, 94641, 100245, 100894, 102826, 112317, 119557, 123582, 126478], "daevanionNodes": [92, 100, 124, 139, 144, 147, 166, 175, 191, 194, 210, 218, 220, 224, 234, 234, 241, 244, 245, 246, 250, 253, 262, 275] },
       "notes": ["Soigneur qui frappe : Soins améliorés convertit l'ATQ en Boost de soins, donc l'ATQ prime sur la DÉF, et Condamnation fait environ la moitié des dégâts. Repère de raid : au moins 1 000 Précision et 1 000 CRIT ; pas de RÉS aux altérations, d'Esquive ni de lignes défensives en JcE.", "Rotation : Enchaînement de douleur (marque la cible, sans quoi Condamnation ne part pas), Sceau d'affaiblissement, Prière de boost + Châtiment de la Terre (Condamnation toujours critique sur la cible au niveau 5), puis Condamnation à chaque recharge ; Fulguration chargée en début de combat et à chaque recharge ; Sanction de la terre entre les deux pour annuler les animations et récupérer des PM. Lumière de protection reste allumée (pas avec un Aède : son mantra la remplace).", "Daevanion JcE : +4 à Condamnation, Aura sacrée et Fulguration ; cases de compétences actives jusqu'au niveau 12 d'abord. JcJ : +4 à Halo de récupération, Enchaînement de douleur, Condamnation et Éclair de jugement. Éviter les cases « PM +50 »."],
       "skillsSource": "Guide Clerc aion2-guides.info (tests de joueurs : Whelps, Lucia, Kaeria, aLuckyRO), noms et effets français de metabot.gg, et compétences réellement montées par 24 Clercs niveau 45 (serveurs EU, niveau d'objet 743 à 2617). Les entrées « à valider » ne sont pas décrites par les guides.",
       "play": {
@@ -1113,6 +1128,7 @@
         "PvP": { "StatusResist": 0.8, "Accuracy": 0.85, "HP": 0.85, "Critical": 0.8 }
       },
       "coreSkills": { "PvE": [], "PvP": [] },
+      "benchmark": { "source": "24 Aèdes niveau 45 des serveurs EU, trouvés par la recherche du site officiel le 23/10/2026", "itemLevel": [827, 831, 860, 935, 1011, 1031, 1040, 1042, 1075, 1139, 1219, 1261, 1343, 1462, 1472, 1565, 1600, 1622, 1693, 1739, 1770, 1994, 2100, 2469], "combatPower": [39259, 40673, 43465, 43644, 47184, 47377, 52664, 53757, 54278, 54281, 63900, 65129, 66281, 70314, 72047, 73682, 77739, 80213, 83900, 86842, 90289, 94083, 98097, 126693], "daevanionNodes": [88, 93, 97, 139, 142, 144, 150, 155, 164, 173, 188, 189, 203, 204, 204, 205, 207, 210, 235, 236, 236, 237, 243, 264] },
       "notes": ["Soutien qui frappe : les passifs et les stigmas du guide visent les dégâts (ATQ, CRIT, Boost de DGT CRIT, Coup puissant), le Mantra de l'invincibilité porte le groupe. Précision nécessaire tôt, sinon les boss esquivent et parent. Pierres de mana : ATQ, CRIT, Précision. Anneaux : niveaux de Coup ombreux, Coup fracassant et Frappe tournoyante.", "Rotation : Pouvoir de la tempête, Frappe de ruée sur le boss, puis la ligne Coup ombreux (Coup percutant, Rage de Marchutan, Frappe tournoyante, Coup ombreux) et Frappe incandescente en remplissage ; Coup fracassant tenu sur le clic gauche entre les coups. Mantra de l'invincibilité et Mantra de sprint sont des interrupteurs à allumer une fois. Avec un Clerc, ton mantra remplace sa Lumière de protection.", "Daevanion JcE : +4 à Coup ombreux, Frappe incandescente, Coup fracassant et Frappe tournoyante. JcJ : +4 à Frappe déferlante, Dissipation de choc et Coup percutant. JcJ : ouvrir avec Coup percutant pour forcer la Dissipation de choc adverse, temporiser, puis étourdir, renverser et frapper."],
       "skillsSource": "Guide Aède aion2-guides.info (tests de joueurs : Grobs, Arthars), noms et effets français de metabot.gg, et compétences réellement montées par 24 Aèdes niveau 45 (serveurs EU, niveau d'objet 827 à 2469). Deux compétences s'appellent « Coup fracassant » : l'attaque de base (active) et un stigma JcJ. Les entrées « à valider » ne sont pas décrites par les guides.",
       "play": {

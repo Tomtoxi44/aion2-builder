@@ -104,6 +104,7 @@ public sealed class MainWindow : Window
     Overlay overlay;
     // Actualisation automatique : une seule tentative par personnage et par session.
     readonly HashSet<string> autoRefreshed = [];
+    List<ProgressPoint> progress = [];
 
     public MainWindow()
     {
@@ -273,6 +274,7 @@ public sealed class MainWindow : Window
     void Recompute()
     {
         if (current is null) { Render(); return; }
+        progress = store.Progress(current);
         try { report = new Advisor(db).Analyze(current, prefs.Mode, inputs, pets.Collection); }
         catch (InvalidOperationException ex) { report = null; SetStatus(ex.Message, error: true); state.Screen = Screen.Import; }
         Render();
@@ -628,7 +630,7 @@ public sealed class MainWindow : Window
     /// <summary>Fil d'Ariane, puis le contenu et l'inspecteur, séparés par une poignée qui règle la largeur de l'inspecteur.</summary>
     Control Page(AdviceReport r)
     {
-        var (content, inspector) = new ScreenViews(db, r, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key)).Build();
+        var (content, inspector) = new ScreenViews(db, r, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key), progress).Build();
         var grid = new Grid { RowDefinitions = new RowDefinitions("36,*") };
         grid.Children.Add(Breadcrumb(r, inspector is not null));
         var body = new Grid();
@@ -907,7 +909,7 @@ public sealed class MainWindow : Window
     Control HistoryHeader()
     {
         DockPanel.SetDock(historyCount, Dock.Right);
-        return new DockPanel { Margin = new Thickness(12, 8, 12, 4), Children = { historyCount, Label("Historique") } };
+        return new DockPanel { Margin = new Thickness(12, 8, 12, 4), Children = { historyCount, Label("Mes personnages · score") } };
     }
 
     /// <summary>
@@ -926,10 +928,18 @@ public sealed class MainWindow : Window
 
         if (all.Count == 0) { historyPanel.Children.Add(T("aucun personnage consulté pour l'instant", 13, Tok.Faint).WithMargin(12, 7)); return; }
         if (shown.Count == 0) { historyPanel.Children.Add(T($"aucun personnage consulté ne correspond à « {query} »", 13, Tok.Faint).WithMargin(12, 7)); return; }
+        ComputeOverviewScores(shown.Select(x => x.Character).ToList());
         foreach (var (s, viewedAt) in shown)
         {
             var date = T(viewedAt.ToLocalTime().ToString("dd/MM HH:mm"), 13, Tok.Muted, mono: true);
             DockPanel.SetDock(date, Dock.Right);
+            var known = overviewScores.TryGetValue(s.Path, out var sc) && sc.FetchedAtUtc == s.FetchedAtUtc && sc.Mode == prefs.Mode;
+            var score = Tip(T(known ? sc.Score.ToString() : "··", 13, known ? Tok.Score(sc.Score) : Tok.Faint, FontWeight.SemiBold, mono: true),
+                known ? $"Score global {ScreenViews.ModeLabel(prefs.Mode)} : {sc.Score}/100 · stats {sc.Stats} · équipement {sc.Gear} · compétences {sc.Skills} · Daevanion {sc.Daevanion}" : "calcul du score…");
+            score.Width = 34;
+            score.TextAlignment = TextAlignment.Right;
+            score.Margin = new Thickness(0, 0, 14, 0);
+            DockPanel.SetDock(score, Dock.Right);
             var isCurrent = current is not null && s.Name == current.Name && s.ServerName == current.ServerName && s.Region == current.Region;
             var name = new StackPanel
             {
@@ -941,10 +951,43 @@ public sealed class MainWindow : Window
                 },
             };
             var saved = s;
-            var row = Clickable(new DockPanel { Children = { date, name } }, () => OpenSaved(saved), hover: Tok.HoverStrong, padding: new Thickness(12, 7));
+            var row = Clickable(new DockPanel { Children = { date, score, name } }, () => OpenSaved(saved), hover: Tok.HoverStrong, padding: new Thickness(12, 7));
             ToolTip.SetTip(row, $"Consulté le {viewedAt.ToLocalTime():dd/MM/yyyy à HH:mm} · importé le {s.FetchedAtUtc.ToLocalTime():dd/MM/yyyy à HH:mm}");
             historyPanel.Children.Add(row);
         }
+    }
+
+    // Vue d'ensemble : score de chaque personnage enregistré (vue en cours), calculé en arrière-plan et gardé en mémoire.
+    sealed record OverviewScore(DateTime FetchedAtUtc, GameMode Mode, int Score, int Stats, int Gear, int Skills, int Daevanion);
+    readonly Dictionary<string, OverviewScore> overviewScores = [];
+    bool overviewRunning;
+
+    void ComputeOverviewScores(List<SavedCharacter> characters)
+    {
+        var mode = prefs.Mode;
+        var missing = characters.Where(c => !overviewScores.TryGetValue(c.Path, out var sc) || sc.FetchedAtUtc != c.FetchedAtUtc || sc.Mode != mode).ToList();
+        if (missing.Count == 0 || overviewRunning) return;
+        overviewRunning = true;
+        var data = db;
+        var collection = pets.Collection;
+        Task.Run(() =>
+        {
+            foreach (var c in missing)
+            {
+                try
+                {
+                    var snapshot = store.Load(c.Path);
+                    var scores = new Advisor(data).Analyze(snapshot, mode, store.LoadInputs(snapshot), collection).Scores;
+                    var result = new OverviewScore(c.FetchedAtUtc, mode, scores.Overall, scores.Stats, scores.Gear, scores.Skills, scores.Daevanion);
+                    Dispatcher.UIThread.Post(() => overviewScores[c.Path] = result);
+                }
+                catch (Exception ex) when (ex is JsonException or IOException or InvalidDataException or InvalidOperationException) { /* fiche illisible : pas de score */ }
+            }
+        }).ContinueWith(_ => Dispatcher.UIThread.Post(() =>
+        {
+            overviewRunning = false;
+            if (state.Screen == Screen.Import || report is null) RenderHistory();
+        }));
     }
 
     async void ScheduleSearch()

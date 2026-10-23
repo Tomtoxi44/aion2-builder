@@ -68,6 +68,7 @@ Commandes du CLI :
 | `import-raw <dossier>` | Réimporte des réponses brutes sauvegardées (diagnostic) |
 | `advise <nom ou fichier.json> [--mode pve\|pvp\|both] [--refresh] [--json]` | Analyse et conseils, avec la rotation du build suivi |
 | `advise <nom> --build joueurs\|concu` | Choisit le build qui guide les conseils (gardé par personnage) |
+| `advise <nom> --md <fichier.md>` | Écrit le rapport en Markdown (à garder ou partager) |
 | `list` | Personnages enregistrés |
 | `data [export] [--force]` | Montre / copie les fichiers de données modifiables |
 | `pets [--key <clé>] [--refresh] [--forget]` | Relie / relit la collection de familiers (Aion 2 Todo) ; « advise » la compte ensuite |
@@ -80,16 +81,26 @@ dotnet run --project src/Aion2Builder.App
 
 L'interface est organisée comme un éditeur :
 
-- **Import** (avatar du rail ou **Ctrl+K**) : tape le nom, les résultats du site officiel s'affichent au fil de la saisie ;
-  Entrée importe le meilleur résultat. L'étiquette « eu · tous serveurs » choisit la région et le serveur (liste
-  filtrable, noms français). Les personnages déjà importés sont dans « Récents » et se rouvrent sans connexion.
+- **Onglets de personnages** en haut, comme les fichiers d'un éditeur : un onglet par personnage ouvert (initiale, nom,
+  classe, niveau), **Ctrl+Tab** pour passer de l'un à l'autre, **Ctrl+W** ou × pour fermer, **+** pour en ouvrir un autre.
+  Les onglets sont rouverts au lancement suivant.
+- **Import** (**+**, avatar du rail ou **Ctrl+K**) : tape le nom, les résultats du site officiel s'affichent au fil de la
+  saisie ; Entrée importe le meilleur résultat. L'étiquette « eu · tous serveurs » choisit la région et le serveur (liste
+  filtrable, noms français). « Mes personnages » liste ceux déjà importés avec leur score (calculé en arrière-plan) ;
+  ils se rouvrent sans connexion.
+- **Accueil** : les quatre notes et les actions les plus rentables, à cocher « fait » (gardé jusqu'au prochain import,
+  qui vérifie) ; l'inspecteur montre le personnage, sa progression d'un import à l'autre (niveau d'objet, puissance) et sa
+  position parmi des joueurs niveau 45 de sa classe (« devant 30 % d'entre eux »).
 - **Rail à gauche** : Accueil, Stats, Équipement, Compétences, Build, Daevanion, Familiers, Détails, chacun avec sa note.
 - **Build et rotation** : le build des joueurs et le build conçu côte à côte (priorités, niveaux visés, ≠ là où ils
   diffèrent, rotation par phases et conseils de jeu) ; « Joueurs | Conçue » choisit celui que suivent les conseils.
 - **Bascule JcE | JcJ** toujours visible en haut ; **thème** : 8 couleurs secondaires au choix.
-- **Inspecteur à droite** : clique une pièce, une stat, une compétence ou un plateau pour son détail. Les compteurs
-  « − N + » (points non dépensés) recalculent tout de suite.
-- **Menus** : Personnage → Actualiser depuis le site officiel ; Données → Recharger les données / Ouvrir le dossier des données.
+- **Inspecteur à droite** : clique une pièce, une stat, une compétence ou un plateau pour son détail. Sa largeur se règle
+  en glissant sa bordure, **Ctrl+I** le masque. Les compteurs « − N + » (points non dépensés) recalculent tout de suite.
+- **Menus** : Fichier → Exporter le rapport en Markdown (**Ctrl+E**) / Paramètres (**Ctrl+,** : mises à jour,
+  actualisation à l'ouverture si l'import date de plus de 2, 6 ou 24 h, inspecteur, données) ; Personnage → Actualiser
+  depuis le site officiel (**Ctrl+R**, F5) ; Données → Recharger les données / Ouvrir le dossier des données.
+- **Raccourcis** (F1) : Ctrl+1 à Ctrl+8 pour les écrans du rail, Ctrl+M pour JcE / JcJ.
 
 La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Builder\servers`, les personnages dans
 `%APPDATA%\Aion2Builder\characters`.
@@ -115,15 +126,22 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    **rôle** de chaque compétence pour ta classe et le mode (dégâts principaux, burst, débuff, contrôle, défensif…) : elle dit
    quelles compétences monter, lesquelles **réduire**, et pourquoi. Les stigmas (4 emplacements, fragments) sont classés de
    la même façon, avec le coût en fragments pour atteindre le niveau visé.
-   L'écran Compétences montre, sans attendre d'avoir des points : le niveau visé de chaque compétence (↑ à monter,
-   ↓ au-dessus du visé, = atteint), ce qu'il faut faire maintenant (qui donne des points à qui, et pourquoi), l'ordre des
-   prochains points (avec les spécialisations débloquées au passage) et les prochains fragments de stigma par paliers de 5.
+   Tout point non dépensé trouve une place, et les points posés au-dessus du niveau visé d'une compétence peu utile vont aux
+   compétences utiles pas encore au maximum : une fois les conseils suivis, la répartition ne bouge plus (« ✓ points bien
+   placés »). L'écran Compétences montre, sans attendre d'avoir des points : le niveau visé de chaque compétence (↑ à monter,
+   ↓ au-dessus du visé, = atteint), ce qu'il faut faire maintenant (qui donne des points à qui ; la raison au survol),
+   l'ordre des prochains points jusqu'au bout, numérotés point par point (« 6–9 ») pour suivre la liste jusqu'à épuisement
+   (le site ne montre pas les points non dépensés), et les prochains fragments de stigma par paliers de 5.
 5. **Daevanion.** Une case coûte 1, 2, 3 ou 4 points selon sa couleur (vérifié : 134 points pour Nezekan, Zikel et Vaizel,
    168 pour Triniel, 232 pour Azphel) et ne s'ouvre qu'à côté d'une case ouverte. Deux plans par réserve de points :
    - **réorganisation** : en partant de ton placement actuel, les cases peu utiles en bout de chemin (importance < 0,4)
      sont retirées si leurs points rapportent plus ailleurs → cases rouges à retirer, cases vertes à prendre ;
-   - **prochaines cases** : où mettre tes prochains points sans rien retirer (les points non dépensés que tu indiques
-     sont marqués « faisable maintenant »).
+   - **prochaines cases** : où mettre tes prochains points sans rien retirer, avec le cumul des points ; la liste couvre
+     au moins tous les points non dépensés que tu indiques (marqués « faisable »).
+   - **route conçue** (bascule « Ton plateau | Route conçue ») : sans tenir compte de ton placement, le meilleur chemin
+     depuis le centre pour tous tes points (dépensés + non dépensés), affiné comme une réorganisation, numéroté dans
+     l'ordre d'ouverture (utile après une réinitialisation), avec sa valeur comparée à ton placement, les cases à ouvrir,
+     celles hors route, et la suite pour tes prochains points.
    Sous le plateau, l'écran Daevanion liste ces cases dans l'ordre (mêmes numéros que la grille), avec la raison de chacune.
    Les niveaux de compétence valent selon l'importance de la compétence, les stats selon leur poids et l'équilibre des
    familles (une famille déjà au-dessus de sa cible vaut moins).
@@ -169,9 +187,10 @@ clique « Recharger les données » dans l'application.
 Les paliers d'équipement sont calés sur des personnages réels des serveurs EU (octobre 2026 : bleu, puis jaune, puis
 jaune enchanté +8/+10 ; aucun orange ni rouge observé). Les autres valeurs sont **indicatives** (guides communautaires,
 observations) et à affiner selon la saison. Les **8 classes** ont une fiche de compétences
-détaillée (12 actives, 10 passifs, 13 stigmas). Hors Spiritualiste, elles croisent des guides et les compétences réellement
-montées par des joueurs niveau 45 des serveurs EU (8 Templiers, 24 joueurs pour chacune des autres classes) (`classes.json` → `skills` : rôle, priorité et niveau visé par mode, et la raison affichée ; les entrées « à valider »
-ne sont pas documentées par les guides). Le Rôdeur n'a pas de guide JcJ : ses priorités JcJ sont déduites des effets
+détaillée (12 actives, 10 passifs, 13 stigmas). Elles croisent des guides et les compétences réellement montées par
+24 joueurs niveau 45 des serveurs EU par classe (`classes.json` → `skills` : rôle, priorité et niveau visé par mode, et
+la raison affichée ; les entrées « à valider » ne sont pas documentées par les guides). Les mêmes joueurs servent de
+repère (`benchmark` : niveau d'objet, puissance, cases Daevanion ouvertes) pour situer un personnage dans sa classe. Le Rôdeur n'a pas de guide JcJ : ses priorités JcJ sont déduites des effets
 des sorts. Deux compétences de l'Aède s'appellent « Coup fracassant » (attaque de base et stigma) : le type les départage.
 Les rotations des joueurs (`classes.json` → `play`) viennent des mêmes guides ; celles du build conçu, du calcul.
 

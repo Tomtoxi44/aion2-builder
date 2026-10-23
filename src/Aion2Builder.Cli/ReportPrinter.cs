@@ -12,6 +12,13 @@ sealed class ReportPrinter(GameDatabase db)
         Title($"{c.Name} — {r.Profile.Class.Name} niv. {c.Level} · {c.ServerName} ({c.Region}) · niveau d'objet {c.ItemLevel} · PC {c.CombatPower}");
         Console.WriteLine($"Vue {GameDatabase.ModeName(r.Mode)} · rôle {r.Profile.Role.Name} · lu le {c.FetchedAtUtc.ToLocalTime():dd/MM/yyyy HH:mm}");
         Console.WriteLine($"Score {r.Scores.Overall}/100  (stats {r.Scores.Stats} · équipement {r.Scores.Gear} · compétences {r.Scores.Skills} · Daevanion {r.Scores.Daevanion})");
+        if (r.Profile.Class.Benchmark is { ItemLevel.Count: > 0 } bench && c.Level >= 45)
+        {
+            var nodes = r.Daevanion.Boards.Where(b => b.Pool == DaevanionPlanner.NormalPool).Sum(b => b.Board.OpenNodes);
+            string Pos(int mine, List<int> sample) => $"{mine} (médiane {ClassBenchmark.Median(sample)}, devant {Fmt.Pct(ClassBenchmark.Percentile(sample, mine))})";
+            Console.WriteLine($"Comparé à {bench.ItemLevel.Count} {r.Profile.Class.Name}s niv. 45 : niveau d'objet {Pos(c.ItemLevel, bench.ItemLevel)} · " +
+                              $"PC {Pos(c.CombatPower, bench.CombatPower)} · cases Daevanion {Pos(nodes, bench.DaevanionNodes)}");
+        }
 
         Section("Plan d'action — du plus rentable au moins rentable");
         var i = 0;
