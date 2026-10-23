@@ -1,3 +1,5 @@
+<img src="src/Aion2Builder.App/Assets/logo.png" width="96" alt="Logo Aion 2 Builder">
+
 # Aion 2 Builder
 
 Application locale (.NET 10) qui importe ton personnage AION 2 depuis le site officiel et te dit, **pour ta classe et

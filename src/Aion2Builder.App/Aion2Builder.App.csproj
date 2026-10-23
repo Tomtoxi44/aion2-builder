@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>Aion2Builder</AssemblyName>
+    <!-- Icône du .exe (Explorateur, raccourci) ; la fenêtre la relit comme ressource intégrée (pas de ressource Avalonia). -->
+    <ApplicationIcon>Assets/app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!--
@@ -18,6 +20,10 @@
     <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets/app.ico" LogicalName="app.ico" />
   </ItemGroup>
 
   <ItemGroup>

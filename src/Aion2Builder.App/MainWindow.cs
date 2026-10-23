@@ -86,6 +86,7 @@ public sealed class MainWindow : Window
     public MainWindow()
     {
         Title = "Aion 2 Builder";
+        if (typeof(MainWindow).Assembly.GetManifestResourceStream("app.ico") is { } icon) Icon = new WindowIcon(icon);
         Width = 1280;
         Height = 860;
         MinWidth = 1180;
