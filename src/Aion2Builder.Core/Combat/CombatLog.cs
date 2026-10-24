@@ -22,6 +22,17 @@ public sealed record CombatLog
     /// <summary>Captures dont le combat a été lu.</summary>
     public int Pages { get; init; }
 
+    // Combats du Pet Meter seulement (lus dans le trafic du jeu, pas sur la fenêtre NotMeter) :
+    /// <summary>Fichier du Pet Meter d'où vient le combat (pour ne pas l'importer deux fois).</summary>
+    public string? SourceFile { get; init; }
+    /// <summary>Coups reçus pendant le combat : total, nombre, le plus gros ; soins sur toi.</summary>
+    public double? DamageTaken { get; init; }
+    public int? HitsTaken { get; init; }
+    public double? MaxTaken { get; init; }
+    public double? Heals { get; init; }
+    /// <summary>Tes lancers, dans l'ordre : secondes depuis le début du combat et sort.</summary>
+    public List<CombatCast>? Casts { get; init; }
+
     /// <summary>Tous les sorts du combat ont été lus (sinon : faire défiler la liste et ajouter une capture).</summary>
     public bool Complete => SkillCount > 0 && Skills.Count >= SkillCount;
 }
@@ -31,6 +42,9 @@ public sealed record CombatSkill(string Name, int? Level, double Damage, double 
 
 /// <summary>Un buff du combat : temps actif (0 à 1 ; null si l'OCR ne l'a pas lu), nombre d'applications, niveau.</summary>
 public sealed record CombatBuff(string Name, double? Uptime, int Count, int? Level);
+
+/// <summary>Un lancer du combat : secondes depuis le début, code et nom du sort.</summary>
+public sealed record CombatCast(double T, long Code, string Name);
 
 /// <summary>Mot reconnu sur une capture, avec sa position en pixels.</summary>
 public sealed record OcrWord(string Text, double X, double Y, double Width, double Height);

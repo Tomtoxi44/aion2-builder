@@ -1196,7 +1196,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                          ("3", "« + importer des captures… » et sélectionne-les toutes ensemble."),
                      })
                 steps.Children.Add(ColumnsSpaced("24,*", 8, T(n, 13, Accent.Main, FontWeight.Bold, mono: true), T(text, 13, wrap: true)));
-            steps.Children.Add(T("Le texte est lu sur ton PC par la reconnaissance de texte de Windows : rien n'est envoyé. NotMeter doit être en français.",
+            steps.Children.Add(T("Le texte est lu sur ton PC par la reconnaissance de texte de Windows : rien n'est envoyé. NotMeter doit être en français. " +
+                "Plus simple : laisse tourner le Pet Meter (v0.7.0 ou plus) pendant tes combats, ils arrivent ici tout seuls, avec tes lancers chronométrés, " +
+                "tes combos ratés, tes temps morts et les dégâts subis.",
                 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
             panel.Children.Add(steps);
             return panel;
@@ -1233,7 +1235,14 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         Tile("coups", log.Hits.ToString());
         if (cr.Crit is { } crit) Tile("critique", Fmt.Pct(crit));
         if (cr.Back is { } back) Tile("de dos", Fmt.Pct(back));
-        Tile("sorts lus", log.SkillCount > 0 ? $"{log.Skills.Count}/{log.SkillCount}" : $"{log.Skills.Count}", log.Complete ? Tok.Good : Tok.Warn);
+        if (log.Source == "Pet Meter")
+        {
+            Tile("sorts", $"{log.Skills.Count}");
+            if (log.Casts is { } casts) Tile("lancers", $"{casts.Count}");
+            if (log.DamageTaken is { } taken) Tile("dégâts subis", Fmt.Big(taken), Tok.Warn);
+            if (log.Heals is { } heals) Tile("soins", Fmt.Big(heals), Tok.Good);
+        }
+        else Tile("sorts lus", log.SkillCount > 0 ? $"{log.Skills.Count}/{log.SkillCount}" : $"{log.Skills.Count}", log.Complete ? Tok.Good : Tok.Warn);
         panel.Children.Add(tiles);
         var path = combats[Math.Clamp(s.CombatIndex, 0, combats.Count - 1)].Path;
         panel.Children.Add(new Border
@@ -1244,7 +1253,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 Orientation = Orientation.Horizontal, Spacing = 14,
                 Children =
                 {
-                    T($"{log.Character} contre {log.Target} · importé le {log.ImportedAtUtc.ToLocalTime():dd/MM HH:mm} · {log.Pages} capture{(log.Pages > 1 ? "s" : "")}", 12, Tok.Muted),
+                    T($"{log.Character} contre {log.Target} · " + (log.Source == "Pet Meter" ? $"enregistré par le Pet Meter le {log.ImportedAtUtc.ToLocalTime():dd/MM HH:mm}"
+                        : $"importé le {log.ImportedAtUtc.ToLocalTime():dd/MM HH:mm} · {log.Pages} capture{(log.Pages > 1 ? "s" : "")}"), 12, Tok.Muted),
                     Clickable(T("supprimer ce combat", 12, Tok.Muted), () => deleteCombat(path), hover: Tok.Hover, padding: new Thickness(4, 0)),
                 },
             },

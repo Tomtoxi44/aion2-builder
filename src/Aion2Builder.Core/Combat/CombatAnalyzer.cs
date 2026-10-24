@@ -129,6 +129,36 @@ public sealed class CombatAnalyzer(GameDatabase db)
         foreach (var r in buffs.Where(r => r.Level <= Severity.Advice))
             findings.Add(new Finding(Area.Skills, r.Level, $"Buff « {r.Buff.Name} » : {(r.Buff.Uptime is { } u ? Fmt.Pct(u) : "?")} du temps", r.Verdict, null, 45));
 
+        // Combats du Pet Meter : lancers chronométrés → combos ratés et temps morts ; coups reçus face aux soins.
+        if (log.Casts is { Count: > 2 } casts)
+        {
+            var rotation = RotationSimulator.Priority(p.Play).Select(Key).ToHashSet();
+            foreach (var spell in db.Spells.Values.Where(s => s.Class == p.Class.Code && s.Requires is { Count: > 0 } && s.Within > 0))
+            {
+                var openers = spell.Requires!.Select(Key).ToHashSet();
+                var openings = casts.Where(c => openers.Contains(Key(c.Name))).ToList();
+                var follow = casts.Where(c => Key(c.Name) == Key(spell.Name)).ToList();
+                if (openings.Count < 3 || follow.Count == 0 && !rotation.Contains(Key(spell.Name))) continue;
+                var done = openings.Count(o => follow.Any(f => f.T > o.T && f.T - o.T <= spell.Within));
+                if (done >= 0.6 * openings.Count) continue;
+                findings.Add(new Finding(Area.Skills, Severity.Advice, $"Combo « {spell.Name} » : {done} fois sur {openings.Count} occasions",
+                    $"« {spell.Name} » ne part que dans les {spell.Within:0} s après {string.Join(" ou ", spell.Requires!)} : " +
+                    $"{openings.Count - done} occasion{(openings.Count - done > 1 ? "s" : "")} perdue{(openings.Count - done > 1 ? "s" : "")}" +
+                    (spell.Coef > 0 ? $" ({spell.Coef:0} % d'ATQ chacune)." : "."),
+                    $"Enchaîne « {spell.Name} » juste après « {spell.Requires![0]} ».", 55));
+            }
+            // Pauses entre deux lancers (un lancer dure environ 1 s ; au-delà de 2,5 s, la rotation s'arrête).
+            var gaps = casts.Zip(casts.Skip(1), (a, b) => b.T - a.T).Where(g => g > 2.5).ToList();
+            var idle = gaps.Sum(g => g - 1);
+            if (duration > 0 && idle / duration > 0.1)
+                findings.Add(new Finding(Area.Skills, Severity.Advice, $"Temps morts : {gaps.Count} pause{(gaps.Count > 1 ? "s" : "")}, {idle:0} s sur {seconds}",
+                    $"{gaps.Count} fois plus de 2,5 s sans lancer ({Fmt.Pct(idle / duration)} du combat) : la rotation s'arrête (déplacement, attente d'une recharge, cible perdue).",
+                    "Garde un sort sans recharge entre deux sorts à recharge.", 50));
+        }
+        if (log.DamageTaken is > 0 and var taken)
+            findings.Add(new Finding(Area.Skills, Severity.Info, $"Dégâts subis : {Fmt.Big(taken)} ({log.HitsTaken} coups, le plus gros {Fmt.Big(log.MaxTaken ?? 0)})",
+                $"Soins sur toi pendant le combat : {Fmt.Big(log.Heals ?? 0)}" + (log.Heals is { } h && h < 0.3 * taken ? " : bien moins que les dégâts subis (potions, sorts de soin ou esquives)." : ".")));
+
         // Placement et critique, pondérés par les coups.
         double? Weighted(Func<CombatSkill, double?> pick)
         {

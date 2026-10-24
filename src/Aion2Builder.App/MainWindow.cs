@@ -286,6 +286,17 @@ public sealed class MainWindow : Window
     {
         if (current is null) { Render(); return; }
         combats = CurrentKey is { } key ? combatStore.List(key) : [];
+        // Nouveaux combats du Pet Meter pour ce perso (même nom) : repris tout seuls.
+        if (CurrentKey is { } k && combats.Select(x => x.Log.SourceFile).OfType<string>().ToHashSet() is var known)
+        {
+            var fresh = PetMeterFights.For(current.Name).Where(x => !known.Contains(System.IO.Path.GetFileName(x.Path))).ToList();
+            foreach (var (path, fight) in fresh) combatStore.Save(k, PetMeterFights.ToLog(fight, path, db));
+            if (fresh.Count > 0)
+            {
+                combats = combatStore.List(k);
+                Toast($"{fresh.Count} combat{(fresh.Count > 1 ? "s" : "")} du Pet Meter", "Écran Combat : lancers, combos, temps morts, dégâts subis.");
+            }
+        }
         try { report = new Advisor(db).Analyze(current, prefs.Mode, inputs, pets.Collection, combats.Select(x => x.Log).FirstOrDefault()); }
         catch (InvalidOperationException ex) { report = null; SetStatus(ex.Message, error: true); state.Screen = Screen.Import; }
         if (report is not null) store.RecordScores(current, prefs.Mode, report.Scores);
