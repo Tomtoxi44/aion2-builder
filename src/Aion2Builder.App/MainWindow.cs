@@ -656,7 +656,7 @@ public sealed class MainWindow : Window
                 BorderBrush = on ? Accent.Main : Brushes.Transparent, BorderThickness = new Thickness(2, 0, 0, 0),
                 Child = new StackPanel { Spacing = 2, HorizontalAlignment = HorizontalAlignment.Center, Children = { top, T(shortName, 10, on ? Tok.Text : Tok.Muted).Centered() } },
             };
-            ToolTip.SetTip(entry, $"{title} · glisse pour changer l'ordre");
+            ToolTip.SetTip(entry, $"{title} · glisse (ou clic droit) pour changer l'ordre");
             RailDrag(entry, index, entries, panel, () => { if (report is not null) Navigate(screen); });
             entries.Add(entry);
             panel.Children.Add(entry);
@@ -686,6 +686,7 @@ public sealed class MainWindow : Window
     void RailDrag(Border entry, int index, List<Border> entries, Panel panel, Action open)
     {
         Point start = default;
+        var offset = 0.0;
         var pressed = false;
         var dragging = false;
         entry.PointerEntered += (_, _) => { if (!dragging) entry.Background = Tok.Hover; };
@@ -695,38 +696,67 @@ public sealed class MainWindow : Window
             if (!e.GetCurrentPoint(entry).Properties.IsLeftButtonPressed) return;
             pressed = true;
             start = e.GetPosition(panel);
+            offset = 0;
             e.Pointer.Capture(entry);
             e.Handled = true;
         };
         entry.PointerMoved += (_, e) =>
         {
             if (!pressed) return;
-            var y = e.GetPosition(panel).Y - start.Y;
-            if (!dragging && Math.Abs(y) < 6) return;
+            offset = e.GetPosition(panel).Y - start.Y;
+            if (!dragging && Math.Abs(offset) < 6) return;
             dragging = true;
             entry.ZIndex = 10;
             entry.Opacity = 0.85;
             entry.Background = Tok.HoverStrong;
-            entry.RenderTransform = new TranslateTransform(0, y);
+            entry.RenderTransform = new TranslateTransform(0, offset);
         };
+        // Nouvelle place : avant la première entrée dont le milieu est sous le centre de l'entrée déplacée.
+        void Drop()
+        {
+            pressed = dragging = false;
+            var center = entry.Bounds.Center.Y + offset;
+            MoveRailEntry(index, entries.Count(other => other != entry && other.Bounds.Center.Y < center));
+        }
         entry.PointerReleased += (_, e) =>
         {
             if (!pressed) return;
+            if (dragging) { Drop(); e.Pointer.Capture(null); return; }
             pressed = false;
             e.Pointer.Capture(null);
-            if (!dragging) { open(); return; }
-            dragging = false;
-            // Nouvelle place : avant la première entrée dont le milieu est sous le centre de l'entrée déplacée.
-            var center = entry.Bounds.Center.Y + e.GetPosition(panel).Y - start.Y;
-            var target = entries.Count(other => other != entry && other.Bounds.Center.Y < center);
-            var order = RailNav.Select(n => n.Screen.ToString()).ToList();
-            var moved = order[index];
-            order.RemoveAt(index);
-            order.Insert(Math.Clamp(target, 0, order.Count), moved);
-            prefs = prefs with { RailOrder = order };
-            prefs.Save();
-            Render();
+            open();
         };
+        // Souris perdue pendant le glissé (fenêtre désactivée, bulle d'aide) : on dépose quand même là où elle était.
+        entry.PointerCaptureLost += (_, _) => { if (dragging) Drop(); else pressed = false; };
+        entry.ContextFlyout = new MenuFlyout
+        {
+            ItemsSource = new List<Control>
+            {
+                RailMenuItem("Monter", () => MoveRailEntry(index, index - 1), index > 0),
+                RailMenuItem("Descendre", () => MoveRailEntry(index, index + 1), index < RailNav.Count - 1),
+                new Separator(),
+                RailMenuItem("Ordre par défaut (écrans notés d'abord)", () => { prefs = prefs with { RailOrder = null }; prefs.Save(); Render(); }, prefs.RailOrder is not null),
+            },
+        };
+    }
+
+    static MenuItem RailMenuItem(string header, Action action, bool enabled)
+    {
+        var item = new MenuItem { Header = header, IsEnabled = enabled };
+        item.Click += (_, _) => action();
+        return item;
+    }
+
+    void MoveRailEntry(int from, int to)
+    {
+        var order = RailNav.Select(n => n.Screen.ToString()).ToList();
+        if (from < 0 || from >= order.Count) return;
+        var moved = order[from];
+        order.RemoveAt(from);
+        order.Insert(Math.Clamp(to, 0, order.Count), moved);
+        prefs = prefs with { RailOrder = order };
+        prefs.Save();
+        Render();
     }
 
     /// <summary>
@@ -757,6 +787,8 @@ public sealed class MainWindow : Window
             Screen.Combat => "M2,2 L14,14 M16,2 L4,14 M1,11 L5,15 M17,11 L13,15",
             Screen.Simulate => "M1,8 H6 L11,2 H17 M6,8 L11,14 H17",
             Screen.Details => "M1,2 H3 M6,2 H17 M1,7 H3 M6,7 H17 M1,12 H3 M6,12 H17",
+            // Patte : coussinet et quatre doigts.
+            Screen.Pets => "M5,11 Q9,6 13,11 Q9,15 5,11 Z M3,6 L3,7 M7,3 L7,4 M11,3 L11,4 M15,6 L15,7",
             _ => "M2,7 H16",
         };
         return new Avalonia.Controls.Shapes.Path
