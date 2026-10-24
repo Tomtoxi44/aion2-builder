@@ -26,7 +26,7 @@ namespace Aion2Builder.App;
 sealed record UiPrefs(string Region = "eu", string Server = "", string Name = "", GameMode Mode = GameMode.PvE, string? LastFile = null,
     int Tab = 0, string Screen = "Home", string Accent = "Orange", bool AutoUpdate = true,
     List<string>? Tabs = null, double InspectorWidth = 340, bool InspectorHidden = false, int AutoRefreshHours = 0,
-    List<string>? Mine = null)
+    List<string>? Mine = null, bool BottomHidden = false, double BottomHeight = 190, string BottomTab = "advice")
 {
     static string PathOf => System.IO.Path.Combine(AppPaths.Root, "ui.json");
 
@@ -165,6 +165,7 @@ public sealed class MainWindow : Window
                     SwitchTab(tabs[(tabs.IndexOf(currentPath) + step + tabs.Count) % tabs.Count]);
                     break;
                 case Key.I: e.Handled = true; ToggleInspector(); break;
+                case Key.J: e.Handled = true; ToggleBottom(); break;
             }
         };
         Opened += async (_, _) => await LoadServersAsync(force: false);
@@ -369,6 +370,8 @@ public sealed class MainWindow : Window
     {
         status = text;
         statusError = error;
+        if (text.Length > 0 && (journal.Count == 0 || journal[^1].Text != text)) journal.Add((DateTime.Now, text, error));
+        if (journal.Count > 300) journal.RemoveRange(0, journal.Count - 300);
         if (statusText is not null) statusText.Text = StatusMessage;
     }
 
@@ -422,7 +425,7 @@ public sealed class MainWindow : Window
         ("Ctrl+K", "importer ou ouvrir un autre personnage"), ("Ctrl+Tab · Ctrl+Maj+Tab", "personnage suivant / précédent"),
         ("Ctrl+W", "fermer l'onglet du personnage"), ("Ctrl+1 … Ctrl+9", "écrans du rail (Accueil, Stats, Équipement…, Et si, Progression)"),
         ("Ctrl+M", "basculer JcE / JcJ"), ("Ctrl+R · F5", "actualiser depuis le site officiel"),
-        ("Ctrl+I", "afficher / masquer l'inspecteur (sa largeur se règle en glissant sa bordure)"),
+        ("Ctrl+I", "afficher / masquer l'inspecteur (sa largeur se règle en glissant sa bordure)"), ("Ctrl+J", "afficher / masquer le panneau du bas : conseils et journal"),
         ("Ctrl+E", "exporter le rapport en Markdown"), ("Ctrl+,", "paramètres"), ("F1", "cette aide"), ("Échap", "fermer"),
     ];
 
@@ -632,9 +635,28 @@ public sealed class MainWindow : Window
     /// <summary>Fil d'Ariane, puis le contenu et l'inspecteur, séparés par une poignée qui règle la largeur de l'inspecteur.</summary>
     Control Page(AdviceReport r)
     {
-        var (content, inspector) = new ScreenViews(db, r, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key), progress,
-            o => Simulator.Run(db, r, inputs, pets.Collection, o)).Build();
+        var views = new ScreenViews(db, r, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key), progress,
+            o => Simulator.Run(db, r, inputs, pets.Collection, o));
+        var (content, inspector) = views.Build();
         var grid = new Grid { RowDefinitions = new RowDefinitions("36,*") };
+        if (!prefs.BottomHidden)
+        {
+            // Panneau du bas, comme la liste d'erreurs de Visual Studio : redimensionnable, masquable (Ctrl+J).
+            grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            grid.RowDefinitions.Add(new RowDefinition(Math.Clamp(prefs.BottomHeight, 90, 600), GridUnitType.Pixel) { MinHeight = 90, MaxHeight = 600 });
+            var splitter = new GridSplitter { Height = 5, Background = Tok.Border, ResizeDirection = GridResizeDirection.Rows, ResizeBehavior = GridResizeBehavior.PreviousAndNext };
+            ToolTip.SetTip(splitter, "Glisse pour régler la hauteur du panneau (Ctrl+J pour le masquer)");
+            splitter.DragCompleted += (_, _) =>
+            {
+                prefs = prefs with { BottomHeight = Math.Round(grid.RowDefinitions[3].ActualHeight) };
+                prefs.Save();
+            };
+            Grid.SetRow(splitter, 2);
+            grid.Children.Add(splitter);
+            var bottom = BottomPanel(r, views);
+            Grid.SetRow(bottom, 3);
+            grid.Children.Add(bottom);
+        }
         grid.Children.Add(Breadcrumb(r, inspector is not null));
         var body = new Grid();
         body.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star) { MinWidth = 420 });
@@ -659,6 +681,111 @@ public sealed class MainWindow : Window
         Grid.SetRow(body, 1);
         grid.Children.Add(body);
         return grid;
+    }
+
+    // Panneau du bas : conseils (filtres par gravité) et journal (messages de l'application).
+    readonly List<(DateTime At, string Text, bool Error)> journal = [];
+    readonly HashSet<Severity> bottomFilter = [Severity.Critical, Severity.Important, Severity.Advice];
+
+    static (string Icon, IBrush Color) SeverityIcon(Severity s) => s switch
+    {
+        Severity.Critical => ("✕", Tok.Bad),
+        Severity.Important => ("!", Tok.Warn),
+        Severity.Advice => ("i", Tok.Info),
+        _ => ("·", Tok.Muted),
+    };
+
+    void ToggleBottom()
+    {
+        prefs = prefs with { BottomHidden = !prefs.BottomHidden };
+        prefs.Save();
+        Render();
+    }
+
+    void SetBottomTab(string tab)
+    {
+        prefs = prefs with { BottomTab = tab, BottomHidden = false };
+        prefs.Save();
+        Render();
+    }
+
+    Control BottomPanel(AdviceReport r, ScreenViews views)
+    {
+        Border Tab(string key, Control label)
+        {
+            var on = prefs.BottomTab == key;
+            var tab = Clickable(label, () => SetBottomTab(key), on ? Tok.Window : null, on ? null : Tok.Hover, new Thickness(12, 0));
+            tab.BorderBrush = on ? Accent.Main : Brushes.Transparent;
+            tab.BorderThickness = new Thickness(0, 2, 0, 0);
+            return tab;
+        }
+        var counts = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        counts.Children.Add(T("Conseils", 12, prefs.BottomTab == "advice" ? Tok.Text : Tok.Muted));
+        // Filtres par gravité, comme les compteurs d'erreurs / avertissements / messages de Visual Studio.
+        foreach (var sev in new[] { Severity.Critical, Severity.Important, Severity.Advice, Severity.Info })
+        {
+            var (icon, color) = SeverityIcon(sev);
+            var n = r.Findings.Count(f => f.Severity == sev);
+            var on = bottomFilter.Contains(sev);
+            var chip = Clickable(T($"{icon} {n}", 11, on ? color : Tok.Faint, FontWeight.SemiBold, mono: true), () =>
+            {
+                if (!bottomFilter.Remove(sev)) bottomFilter.Add(sev);
+                SetBottomTab("advice");
+            }, on ? Tok.Window : null, Tok.HoverStrong, new Thickness(6, 1));
+            chip.CornerRadius = new CornerRadius(3);
+            chip.BorderBrush = on ? Tok.Border : Brushes.Transparent;
+            chip.BorderThickness = new Thickness(1);
+            ToolTip.SetTip(chip, $"{(on ? "Masquer" : "Afficher")} : {Fmt.Severity(sev).ToLowerInvariant()}");
+            counts.Children.Add(chip);
+        }
+        var close = Clickable(T("×", 14, Tok.Muted).Centered(), ToggleBottom, hover: Tok.HoverStrong, padding: new Thickness(10, 0));
+        ToolTip.SetTip(close, "Masquer le panneau (Ctrl+J)");
+        DockPanel.SetDock(close, Dock.Right);
+        var header = new Border
+        {
+            Height = 30, Background = Tok.Chrome, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = new DockPanel
+            {
+                Children =
+                {
+                    close,
+                    new StackPanel { Orientation = Orientation.Horizontal, Children = { Tab("advice", counts), Tab("journal", T($"Journal · {journal.Count}", 12, prefs.BottomTab == "journal" ? Tok.Text : Tok.Muted)) } },
+                },
+            },
+        };
+
+        var list = new StackPanel();
+        if (prefs.BottomTab == "journal")
+        {
+            if (journal.Count == 0) list.Children.Add(T("Rien pour l'instant : imports, mises à jour et erreurs s'inscrivent ici.", 12, Tok.Faint).WithMargin(14, 8));
+            foreach (var (at, text, error) in Enumerable.Reverse(journal))
+                list.Children.Add(ColumnsSpaced("70,*", 10, T(at.ToString("HH:mm:ss"), 11, Tok.Muted, mono: true), T(text, 12, error ? Tok.Bad : Tok.Text2, wrap: true)).WithMargin(14, 3));
+        }
+        else
+        {
+            var shown = r.Findings.Where(f => bottomFilter.Contains(f.Severity)).OrderBy(f => f.Severity).ThenByDescending(f => f.Priority).ToList();
+            if (shown.Count == 0) list.Children.Add(T("Aucun conseil avec ces filtres.", 12, Tok.Faint).WithMargin(14, 8));
+            foreach (var f in shown)
+            {
+                var (icon, color) = SeverityIcon(f.Severity);
+                var done = inputs.IsDone(f.Title, r.Character.FetchedAtUtc);
+                var title = T(f.Title, 12, done ? Tok.Muted : null, FontWeight.Medium);
+                if (done) title.TextDecorations = TextDecorations.Strikethrough;
+                var finding = f;
+                var row = Clickable(ColumnsSpaced("18,2*,3*,110", 10, T(icon, 12, color, FontWeight.SemiBold, mono: true), title,
+                        T(f.Action is null ? "" : $"→ {f.Action}", 12, Tok.Muted), T(Fmt.Area(f.Area), 11, Tok.Muted, mono: true)),
+                    () => views.Go(finding), hover: Tok.Hover, padding: new Thickness(14, 3));
+                ToolTip.SetTip(row, f.Detail);
+                list.Children.Add(row);
+            }
+        }
+        var body = new ScrollViewer { Content = list, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        Grid.SetRow(body, 1);
+        return new Border
+        {
+            Background = Tok.Panel,
+            Child = new Grid { RowDefinitions = new RowDefinitions("30,*"), Children = { header, body } },
+        };
     }
 
     /// <summary>
@@ -756,7 +883,16 @@ public sealed class MainWindow : Window
         {
             left.Children.Add(T($"● {current.Name} · {current.ServerName}", 11, Tok.StatusText, mono: true));
             left.Children.Add(T(ScreenViews.ModeLabel(prefs.Mode), 11, Tok.StatusText, mono: true));
-            if (report is not null) left.Children.Add(T($"{ScreenViews.Todo(report)} pièces à traiter", 11, Tok.StatusText, mono: true));
+            if (report is not null)
+            {
+                left.Children.Add(T($"{ScreenViews.Todo(report)} pièces à traiter", 11, Tok.StatusText, mono: true));
+                // Compteurs de conseils, comme ceux d'erreurs de Visual Studio : un clic ouvre ou ferme le panneau du bas.
+                var counter = Clickable(T($"✕ {report.Findings.Count(f => f.Severity == Severity.Critical)}  ! {report.Findings.Count(f => f.Severity == Severity.Important)}  " +
+                                          $"i {report.Findings.Count(f => f.Severity == Severity.Advice)}", 11, Tok.StatusText, FontWeight.SemiBold, mono: true),
+                    () => { if (prefs.BottomHidden) SetBottomTab("advice"); else ToggleBottom(); }, hover: Tok.Alpha(Brushes.White, 0.12), padding: new Thickness(6, 0));
+                ToolTip.SetTip(counter, "Conseils critiques, importants et à suivre : clic pour le panneau du bas (Ctrl+J)");
+                left.Children.Add(counter);
+            }
         }
         statusText = T(StatusMessage, 11, Tok.StatusText, mono: true);
         left.Children.Add(statusText);

@@ -119,7 +119,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             .Select(x => x.Key).FirstOrDefault();
     }
 
-    void Go(Finding f) => update(st =>
+    public void Go(Finding f) => update(st =>
     {
         st.Screen = f.Area switch
         {
