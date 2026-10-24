@@ -94,6 +94,19 @@ public sealed record ClassBenchmark
         sample.Count == 0 ? 0 : (sample.Count(x => x < value) + 0.5 * sample.Count(x => x == value)) / sample.Count;
 
     public static int Median(List<int> sample) => sample.Count == 0 ? 0 : sample.OrderBy(x => x).ElementAt(sample.Count / 2);
+
+    /// <summary>
+    /// Stats totales des mêmes joueurs, calculées par le Builder (même calcul que pour toi, en JcE) : valeurs triées par
+    /// clé de stat (le % pour une stat en %, la valeur plate sinon).
+    /// </summary>
+    public Dictionary<string, List<double>> Stats { get; init; } = [];
+
+    public static double Percentile(List<double> sample, double value) =>
+        sample.Count == 0 ? 0 : (sample.Count(x => x < value - 1e-9) + 0.5 * sample.Count(x => Math.Abs(x - value) <= 1e-9)) / sample.Count;
+
+    /// <summary>Valeur au rang q (0 à 1) de l'échantillon trié.</summary>
+    public static double Quantile(List<double> sample, double q) =>
+        sample.Count == 0 ? 0 : sample.OrderBy(x => x).ElementAt(Math.Clamp((int)Math.Round(q * (sample.Count - 1)), 0, sample.Count - 1));
 }
 
 public sealed record DesignedBuild

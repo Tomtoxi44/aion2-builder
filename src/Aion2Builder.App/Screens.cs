@@ -721,8 +721,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             s.StatsHow, () => update(st => st.StatsHow = !st.StatsHow), default));
         panel.Children.Add(new Border { Padding = new Thickness(20, 16), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = families });
 
-        const string cols = "150,100,90,80,80,*";
-        panel.Children.Add(TableHeader(cols, "Stat", "Famille", "Total", "Part", "Repère", "Poids"));
+        const string cols = "150,100,90,70,70,90,*";
+        panel.Children.Add(TableHeader(cols, "Stat", "Famille", "Total", "Part", "Repère", "vs joueurs", "Poids"));
         var selected = SelectedStat?.Def.Key;
         foreach (var x in VisibleStats)
         {
@@ -731,9 +731,11 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 Orientation = Orientation.Horizontal, Spacing = 10,
                 Children = { new Border { Width = 140, Child = Bar(x.Weight, Accent.Main, 3) }, T(x.Weight.ToString("0.00"), 12, Tok.Muted, mono: true) },
             };
+            var (rank, rankColor, rankTip) = PlayersRank(x);
             panel.Children.Add(TableRow(Columns(cols,
                     T(x.Def.Name, 13), T(GameDatabase.CategoryName(x.Def.Category), 13, Tok.Muted), Tip(T(CompactTotal(x), 13, mono: true), x.Display),
-                    T(Fmt.Pct(x.Share), 13, ShareColor(x), mono: true), T(Fmt.Pct(x.ExpectedShare), 13, Tok.Muted, mono: true), weight),
+                    T(Fmt.Pct(x.Share), 13, ShareColor(x), mono: true), T(Fmt.Pct(x.ExpectedShare), 13, Tok.Muted, mono: true),
+                    Tip(T(rank, 13, rankColor, mono: true), rankTip), weight),
                 x.Def.Key == selected, () => update(st => st.Stat = x.Def.Key)));
         }
         var hidden = AllVisibleStats.Count - VisibleStats.Count;
@@ -741,6 +743,23 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             panel.Children.Add(Clickable(T(s.AllStats ? "▴ seulement les stats qui comptent" : $"▾ voir les {hidden} autres stats (peu utiles à ta classe et presque absentes)", 12, Accent.Main),
                 () => update(st => st.AllStats = !st.AllStats), hover: Tok.Hover, padding: new Thickness(20, 8)));
         return panel;
+    }
+
+    /// <summary>Échantillon des joueurs de la classe pour une stat (repères calculés en JcE : rien en JcJ).</summary>
+    List<double>? PlayersSample(StatTotal x) =>
+        r.Mode == GameMode.PvE && r.Profile.Class.Benchmark?.Stats.TryGetValue(x.Def.Key, out var sample) == true && sample.Count >= 10 ? sample : null;
+
+    string StatValue(StatTotal x, double v) => x.Def.Kind == StatKind.Percent ? $"{Fmt.Num(v)} %" : Fmt.Num(v);
+
+    /// <summary>Part des joueurs de la classe sous ta valeur ; en couleur seulement pour les stats qui comptent.</summary>
+    (string Text, IBrush Color, string Tip) PlayersRank(StatTotal x)
+    {
+        if (PlayersSample(x) is not { } sample)
+            return ("—", Tok.Faint, r.Mode == GameMode.PvE ? "Pas de repère pour cette stat." : "Repères des joueurs calculés en JcE : passe en vue JcE.");
+        var pct = ClassBenchmark.Percentile(sample, x.BenchValue);
+        var color = x.Weight < 0.5 ? Tok.Muted : pct < 0.25 ? Tok.Bad : pct < 0.5 ? Tok.Warn : pct >= 0.75 ? Tok.Good : Tok.Text2;
+        return ($"> {Fmt.Pct(pct)}", color,
+            $"Tu dépasses {Fmt.Pct(pct)} des {sample.Count} joueurs niveau 45 de ta classe (médiane {StatValue(x, ClassBenchmark.Quantile(sample, 0.5))}, totaux calculés comme les tiens, en JcE).");
     }
 
     static Border TableHeader(string cols, params string[] titles) => new()
@@ -778,6 +797,12 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             Padding = new Thickness(12, 10), Background = Tok.Frame, BorderBrush = color, BorderThickness = new Thickness(2, 0, 0, 0),
             Child = T(verdict, 13, wrap: true).WithLineHeight(1.5),
         });
+        if (PlayersSample(x) is { } sample)
+            body.Children.Add(Field("Comparé aux joueurs de ta classe",
+                $"Toi : {StatValue(x, x.BenchValue)} · médiane : {StatValue(x, ClassBenchmark.Quantile(sample, 0.5))} · " +
+                $"quart inférieur ≤ {StatValue(x, ClassBenchmark.Quantile(sample, 0.25))}, quart supérieur ≥ {StatValue(x, ClassBenchmark.Quantile(sample, 0.75))}. " +
+                $"Tu dépasses {Fmt.Pct(ClassBenchmark.Percentile(sample, x.BenchValue))} des {sample.Count} joueurs niveau 45 observés (même calcul, JcE).",
+                PlayersRank(x).Color));
         body.Children.Add(Field("Où la trouver", x.Def.Where.Count > 0 ? string.Join(", ", x.Def.Where) : "—", Tok.Text2));
         var sources = x.Sources.GroupBy(z => z.Source)
             .Select(g => (Source: g.Key, Flat: g.Where(z => !z.Effect.IsPercent).Sum(z => z.Effect.Value), Pct: g.Where(z => z.Effect.IsPercent).Sum(z => z.Effect.Value)))

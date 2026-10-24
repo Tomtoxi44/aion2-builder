@@ -205,6 +205,25 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
                 25 + 100 * w.Share));
         }
 
+        // 2 bis. Stats importantes sous le quart inférieur des joueurs de la classe (même calcul, JcE seulement : l'échantillon est en JcE).
+        if (p.Mode == GameMode.PvE && p.Class.Benchmark is { Stats.Count: > 0 } bench)
+        {
+            var behind = sp.Stats
+                .Where(x => x.Weight >= 0.6 && bench.Stats.TryGetValue(x.Def.Key, out var sample) && sample.Count >= 10 && ClassBenchmark.Percentile(sample, x.BenchValue) < 0.25)
+                .OrderByDescending(x => x.Weight).Take(3).ToList();
+            string Value(StatTotal x, double v) => x.Def.Kind == StatKind.Percent ? $"{Fmt.Num(v)} %" : Fmt.Num(v);
+            if (behind.Count > 0)
+                findings.Add(new Finding(Area.Stats, Severity.Advice,
+                    $"{string.Join(", ", behind.Select(x => x.Def.Name))} : sous 75 % des joueurs de ta classe",
+                    string.Join(" · ", behind.Select(x =>
+                    {
+                        var sample = bench.Stats[x.Def.Key];
+                        return $"{x.Def.Name} : {Value(x, x.BenchValue)}, médiane {Value(x, ClassBenchmark.Quantile(sample, 0.5))} (tu dépasses {Fmt.Pct(ClassBenchmark.Percentile(sample, x.BenchValue))} d'entre eux)";
+                    })) + $". Repères : {bench.Stats.Values.First().Count} joueurs niveau 45 de la classe, totaux calculés comme les tiens.",
+                    $"Vise au moins la médiane : {string.Join(" ; ", behind.Select(x => $"{x.Def.Name} ({Where(x)})"))}.",
+                    45 + 10 * behind.Count));
+        }
+
         // 3. Stats prioritaires en retard sur la répartition idéale, et réellement disponibles.
         var wanted = sp.Stats.Where(x => x.Weight >= 0.6 && x.Deficit > 0.01 && Can(x))
             .OrderByDescending(x => x.Deficit * x.Weight).Take(3).ToList();

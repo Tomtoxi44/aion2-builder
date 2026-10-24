@@ -28,6 +28,8 @@ public sealed record StatTotal(StatDef Def, double Flat, double Percent, double 
     public double Deficit => ExpectedShare - Share;
     /// <summary>Repère affiché : part minimale visée si la stat manque, ✓ si une stat prioritaire est bien servie.</summary>
     public string TargetDisplay => Deficit > 0.01 ? $"≥ {Fmt.Pct(ExpectedShare)}" : Weight >= 0.6 && Share > 0 ? "✓" : "";
+    /// <summary>Valeur comparée aux repères des joueurs : le % pour une stat en %, la valeur plate sinon.</summary>
+    public double BenchValue => Def.Kind == StatKind.Percent ? Percent : Flat;
     public string Display => Def.Kind == StatKind.Percent || Flat == 0
         ? $"{Fmt.Num(Percent)} %" + (Flat > 0 ? $" + {Fmt.Num(Flat)}" : "")
         : Fmt.Num(Flat) + (Percent > 0 ? $" (+{Fmt.Num(Percent)} %)" : "");

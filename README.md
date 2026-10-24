@@ -216,7 +216,10 @@ observations) et à affiner selon la saison. Les **8 classes** ont une fiche de 
 détaillée (12 actives, 10 passifs, 13 stigmas). Elles croisent des guides et les compétences réellement montées par
 24 joueurs niveau 45 des serveurs EU par classe (`classes.json` → `skills` : rôle, priorité et niveau visé par mode, et
 la raison affichée ; les entrées « à valider » ne sont pas documentées par les guides). Les mêmes joueurs servent de
-repère (`benchmark` : niveau d'objet, puissance, cases Daevanion ouvertes) pour situer un personnage dans sa classe. Le Rôdeur n'a pas de guide JcJ : ses priorités JcJ sont déduites des effets
+repère (`benchmark` : niveau d'objet, puissance, cases Daevanion ouvertes, et `stats` : leurs totaux par stat calculés
+par le Builder, comme les tiens, en JcE) pour situer un personnage dans sa classe : colonne « vs joueurs » de l'écran
+Stats (part des joueurs que tu dépasses), médiane et quartiles dans l'inspecteur, conseil quand une stat importante est
+sous 75 % des joueurs. Le Rôdeur n'a pas de guide JcJ : ses priorités JcJ sont déduites des effets
 des sorts. Deux compétences de l'Aède s'appellent « Coup fracassant » (attaque de base et stigma) : le type les départage.
 Les rotations des joueurs (`classes.json` → `play`) viennent des mêmes guides ; celles du build conçu, du calcul.
 
