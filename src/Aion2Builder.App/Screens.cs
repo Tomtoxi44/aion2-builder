@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Aion2Builder.Analysis;
+using Aion2Builder.Combat;
 using Aion2Builder.GameData;
 using Aion2Builder.Model;
 using Aion2Builder.Storage;
@@ -14,7 +15,7 @@ using static Aion2Builder.App.Ui;
 
 namespace Aion2Builder.App;
 
-enum Screen { Import, Home, Stats, Gear, Skills, Build, Daeva, Pets, Simulate, Progress, Details }
+enum Screen { Import, Home, Stats, Gear, Skills, Build, Combat, Daeva, Pets, Simulate, Progress, Details }
 
 /// <summary>État de l'interface : écran, sélections et blocs repliés (hors rapport).</summary>
 sealed class UiState
@@ -39,6 +40,9 @@ sealed class UiState
     public SimulationOptions Sim { get; set; } = new();
     /// <summary>Rotations simulées de l'écran Build : 1 cible ou 4.</summary>
     public int RotationTargets { get; set; } = 1;
+    /// <summary>Combat : combat importé affiché (0 = le plus récent) et sort sélectionné.</summary>
+    public int CombatIndex { get; set; }
+    public string? CombatSkill { get; set; }
     public HashSet<Area> Collapsed { get; } = [];
 }
 
@@ -48,12 +52,13 @@ sealed class UiState
 /// </summary>
 sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, UiState s,
     Action<Action<UiState>> update, Action<PlayerInputs> onInputs, string? petKeyHint, Action<string?> onPets,
-    IReadOnlyList<ProgressPoint> progress, Func<SimulationOptions, AdviceReport> simulate)
+    IReadOnlyList<ProgressPoint> progress, Func<SimulationOptions, AdviceReport> simulate,
+    IReadOnlyList<(string Path, CombatLog Log)> combats, Action importCombat, Action<string> deleteCombat)
 {
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
         (Screen.Home, "Accueil", "Accueil"), (Screen.Stats, "Stats", "Stats"), (Screen.Gear, "Équipement", "Équip."),
-        (Screen.Skills, "Compétences", "Compét."), (Screen.Build, "Build et rotation", "Build"), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Pets, "Familiers", "Famil."),
+        (Screen.Skills, "Compétences", "Compét."), (Screen.Build, "Build et rotation", "Build"), (Screen.Combat, "Combat (NotMeter)", "Combat"), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Pets, "Familiers", "Famil."),
         (Screen.Simulate, "Simulation « et si »", "Et si"), (Screen.Progress, "Progression", "Prog."),
         (Screen.Details, "Détails", "Détails"),
     ];
@@ -87,6 +92,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         Screen.Stats => (Stats(), StatInspector()),
         Screen.Skills => (Skills(), SkillInspector()),
         Screen.Build => (BuildScreen(), BuildInspector()),
+        Screen.Combat => (CombatScreen(), CombatInspector()),
         Screen.Daeva => (Daeva(), DaevaInspector()),
         Screen.Pets => (Pets(), PetInspector()),
         Screen.Simulate => (Simulate(), SimulateInspector()),
@@ -1158,6 +1164,169 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             ]));
             body.Children.Add(Field("Pourquoi", g.Why, g.Unverified ? Tok.Warn : null));
         }
+        panel.Children.Add(body);
+        return panel;
+    }
+
+    // ----- Combat : combat NotMeter lu sur des captures -----
+
+    CombatReport? combatReport;
+
+    /// <summary>Combat affiché, jugé avec le profil JcE (les combats mesurés sont des combats JcE : mannequin, boss).</summary>
+    CombatReport? Combat => combatReport ??= combats.Count == 0 ? null
+        : new CombatAnalyzer(db).Analyze(combats[Math.Clamp(s.CombatIndex, 0, combats.Count - 1)].Log, db.Resolve(r.Character.ClassCode, GameMode.PvE, inputs.UsesDesigned));
+
+    static IBrush LevelColor(Severity level) => level switch { Severity.Critical => Tok.Bad, Severity.Important => Tok.Warn, Severity.Advice => Tok.Info, _ => Tok.Text2 };
+
+    Control CombatScreen()
+    {
+        var panel = new StackPanel();
+        var import = Clickable(T("+ importer des captures…", 12, Accent.Main, FontWeight.SemiBold, mono: true), importCombat, hover: Tok.HoverStrong, padding: new Thickness(8, 2));
+        panel.Children.Add(SectionHeader("Combat · captures NotMeter « Détails du combat »", import, 20));
+        if (Combat is not { } cr)
+        {
+            var steps = new StackPanel { Spacing = 10, Margin = new Thickness(20, 16) };
+            steps.Children.Add(T("Analyse un combat (mannequin ou boss) relevé par NotMeter : sorts lancés moins souvent que leur recharge le permet, " +
+                "sorts de ta rotation jamais lancés, buffs mal entretenus, placement, et les vraies parts de dégâts de tes sorts " +
+                "(elles remplacent alors la simulation dans le focus dégâts des Compétences).", 13, Tok.Text2, wrap: true).WithLineHeight(1.5));
+            foreach (var (n, text) in new[]
+                     {
+                         ("1", "Dans NotMeter, ouvre « Détails du combat » sur ton combat."),
+                         ("2", "Capture la fenêtre (Win + Maj + S, ou l'appareil photo de NotMeter). La liste des compétences défile : une capture par écran, jusqu'en bas."),
+                         ("3", "« + importer des captures… » et sélectionne-les toutes ensemble."),
+                     })
+                steps.Children.Add(ColumnsSpaced("24,*", 8, T(n, 13, Accent.Main, FontWeight.Bold, mono: true), T(text, 13, wrap: true)));
+            steps.Children.Add(T("Le texte est lu sur ton PC par la reconnaissance de texte de Windows : rien n'est envoyé. NotMeter doit être en français.",
+                12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+            panel.Children.Add(steps);
+            return panel;
+        }
+        var log = cr.Log;
+
+        // Combats importés : le plus récent d'abord.
+        if (combats.Count > 1)
+        {
+            var history = new WrapPanel { Margin = new Thickness(20, 10, 20, 0) };
+            for (var i = 0; i < combats.Count; i++)
+            {
+                var index = i;
+                var c = combats[i].Log;
+                var on = index == Math.Clamp(s.CombatIndex, 0, combats.Count - 1);
+                var chip = Clickable(T($"{c.ImportedAtUtc.ToLocalTime():dd/MM HH:mm} · {c.Target} · {Fmt.Num(Math.Round(c.Dps))}", 11, on ? Tok.OnAccent : Tok.Text2, mono: true),
+                    () => update(st => { st.CombatIndex = index; st.CombatSkill = null; }), on ? Accent.Main : null, on ? null : Tok.Hover, new Thickness(8, 3));
+                chip.CornerRadius = new CornerRadius(3);
+                chip.Margin = new Thickness(0, 0, 6, 6);
+                history.Children.Add(chip);
+            }
+            panel.Children.Add(history);
+        }
+
+        // Résumé.
+        var tiles = new WrapPanel { Margin = new Thickness(20, 12, 20, 4) };
+        void Tile(string label, string value, IBrush? color = null) => tiles.Children.Add(new StackPanel
+        {
+            Spacing = 2, Margin = new Thickness(0, 0, 30, 8), Children = { Label(label), T(value, 20, color ?? Tok.Text, FontWeight.SemiBold, mono: true) },
+        });
+        Tile("DPS", Fmt.Num(Math.Round(log.Dps)), Accent.Main);
+        Tile("dégâts", Fmt.Num(log.TotalDamage));
+        Tile("durée", $"{log.Duration:0} s");
+        Tile("coups", log.Hits.ToString());
+        if (cr.Crit is { } crit) Tile("critique", Fmt.Pct(crit));
+        if (cr.Back is { } back) Tile("de dos", Fmt.Pct(back));
+        Tile("sorts lus", log.SkillCount > 0 ? $"{log.Skills.Count}/{log.SkillCount}" : $"{log.Skills.Count}", log.Complete ? Tok.Good : Tok.Warn);
+        panel.Children.Add(tiles);
+        var path = combats[Math.Clamp(s.CombatIndex, 0, combats.Count - 1)].Path;
+        panel.Children.Add(new Border
+        {
+            Padding = new Thickness(20, 0, 20, 12), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 14,
+                Children =
+                {
+                    T($"{log.Character} contre {log.Target} · importé le {log.ImportedAtUtc.ToLocalTime():dd/MM HH:mm} · {log.Pages} capture{(log.Pages > 1 ? "s" : "")}", 12, Tok.Muted),
+                    Clickable(T("supprimer ce combat", 12, Tok.Muted), () => deleteCombat(path), hover: Tok.Hover, padding: new Thickness(4, 0)),
+                },
+            },
+        });
+
+        // À améliorer : ce que les chiffres montrent, avec la raison et quoi faire.
+        var todo = cr.Findings.Where(f => f.Severity <= Severity.Advice).ToList();
+        panel.Children.Add(SectionHeader($"À améliorer · {todo.Count}", padX: 20));
+        var list = new StackPanel { Spacing = 10, Margin = new Thickness(20, 10, 20, 14) };
+        if (todo.Count == 0)
+            list.Children.Add(T("✓ Rien à reprocher sur ce que les captures montrent.", 13, Tok.Good));
+        foreach (var f in todo)
+        {
+            var body = new StackPanel { Spacing = 3, Children = { T(f.Title, 13, Tok.Text, FontWeight.SemiBold, wrap: true), T(f.Detail, 12, Tok.Text2, wrap: true).WithLineHeight(1.4) } };
+            if (f.Action is { } action) body.Children.Add(T($"→ {action}", 12, Accent.Main, wrap: true));
+            list.Children.Add(ColumnsSpaced("16,*", 8, T(f.Severity == Severity.Important ? "!" : "i", 13, LevelColor(f.Severity), FontWeight.Bold, mono: true), body));
+        }
+        foreach (var f in cr.Findings.Where(f => f.Severity == Severity.Info))
+            list.Children.Add(T($"{f.Title} — {f.Detail}", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        panel.Children.Add(new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = list });
+
+        // Sorts.
+        const string cols = "*,40,80,56,64,90,64,56";
+        panel.Children.Add(TableHeader(cols, "Sort", "Niv.", "Dégâts", "Part", "Simulé", "Lancers", "Critique", "Dos"));
+        var selected = s.CombatSkill ?? cr.Skills.Where(x => x.Level <= Severity.Advice).Select(x => x.Skill.Name).FirstOrDefault() ?? cr.Skills.FirstOrDefault()?.Skill.Name;
+        foreach (var x in cr.Skills)
+        {
+            var name = x.Skill.Name;
+            var uses = x.Possible is { } max ? $"{x.Skill.Uses} / {max}" : x.Skill.Uses > 0 ? $"{x.Skill.Uses}" : "—";
+            panel.Children.Add(TableRow(Columns(cols,
+                    Tip(T(name, 13, x.Spell is null ? Tok.Text2 : null), x.Verdict), T(x.Skill.Level?.ToString() ?? "—", 12, Tok.Muted, mono: true),
+                    T(Fmt.Num(x.Skill.Damage), 12, mono: true), T(Fmt.Pct(x.Skill.Share), 12, Tok.Text, FontWeight.SemiBold, mono: true),
+                    T(x.Simulated is { } sim ? Fmt.Pct(sim) : "—", 12, Tok.Muted, mono: true),
+                    Tip(T(uses, 12, x.Level <= Severity.Advice ? LevelColor(x.Level) : Tok.Text2, mono: true), x.Verdict),
+                    T(x.Skill.Crit is { } c ? Fmt.Pct(c) : "—", 12, Tok.Muted, mono: true), T(x.Skill.Back is { } b ? Fmt.Pct(b) : "—", 12, Tok.Muted, mono: true)),
+                name == selected, () => update(st => st.CombatSkill = name)));
+        }
+
+        // Buffs.
+        if (cr.Buffs.Count > 0)
+        {
+            panel.Children.Add(SectionHeader("Buffs · temps actif", padX: 20, topBorder: true));
+            const string buffCols = "220,64,56,*";
+            panel.Children.Add(TableHeader(buffCols, "Buff", "Actif", "Fois", "Verdict"));
+            foreach (var b in cr.Buffs)
+                panel.Children.Add(new Border
+                {
+                    Padding = new Thickness(20, 6),
+                    Child = Columns(buffCols, T(b.Buff.Name, 13), T(b.Buff.Uptime is { } u ? Fmt.Pct(u) : "?", 12, Tok.Text, mono: true),
+                        T(b.Possible is { } m ? $"{b.Buff.Count} / {m}" : $"{b.Buff.Count}", 12, Tok.Muted, mono: true),
+                        T(b.Verdict, 12, b.Level <= Severity.Advice ? LevelColor(b.Level) : Tok.Muted, wrap: true)),
+                });
+        }
+        return panel;
+    }
+
+    Control CombatInspector()
+    {
+        var panel = new StackPanel { Children = { SectionHeader("Inspecteur · combat") } };
+        var body = new StackPanel { Spacing = 14, Margin = new Thickness(14) };
+        var cr = Combat;
+        var name = s.CombatSkill ?? cr?.Skills.Where(x => x.Level <= Severity.Advice).Select(x => x.Skill.Name).FirstOrDefault() ?? cr?.Skills.FirstOrDefault()?.Skill.Name;
+        if (cr?.Skills.FirstOrDefault(x => x.Skill.Name == name) is { } x)
+        {
+            body.Children.Add(T(x.Skill.Name, 17, weight: FontWeight.SemiBold, wrap: true));
+            body.Children.Add(Field("Verdict", x.Verdict, x.Level <= Severity.Advice ? LevelColor(x.Level) : Tok.Text2));
+            body.Children.Add(KeyValue(
+            [
+                ("dégâts", $"{Fmt.Num(x.Skill.Damage)} · {Fmt.Pct(x.Skill.Share)}", null),
+                ("simulé", x.Simulated is { } sim ? Fmt.Pct(sim) : "—", Tok.Text2),
+                ("lancers", x.Possible is { } max ? $"{x.Skill.Uses} sur {max} possibles" : $"{x.Skill.Uses}", null),
+                ("recharge", x.Spell is { Cooldown: > 0 } sp ? $"{Fmt.Num(sp.Cooldown)} s" : "aucune", null),
+                ("coups", x.Skill.Hits > 0 ? x.Skill.Hits.ToString() : "—", null),
+                ("critique", x.Skill.Crit is { } c ? Fmt.Pct(c) : "—", null),
+                ("de dos", x.Skill.Back is { } b ? Fmt.Pct(b) : "—", null),
+                ("intervalle", x.Skill.IntervalMs is { } ms ? $"{Fmt.Num(ms / 1000)} s entre deux coups" : "—", Tok.Text2),
+            ]));
+        }
+        body.Children.Add(T("Lancers possibles = durée du combat ÷ recharge du sort (+1 au départ), sans réduction de recharge : un sort réinitialisé " +
+            "(Clone illusoire pour Coup au cœur) peut dépasser. « Simulé » = part de dégâts prévue par la rotation simulée ; les enchaînements " +
+            "(sorts absents des données) n'y figurent pas. Les dégâts évitables et les soins ne sont pas sur la fenêtre « Détails du combat » : non jugés.",
+            12, Tok.Muted, wrap: true).WithLineHeight(1.5));
         panel.Children.Add(body);
         return panel;
     }

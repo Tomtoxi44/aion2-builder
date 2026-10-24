@@ -99,7 +99,8 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         public int? Rank { get; set; }
     }
 
-    public SkillPlan Plan(CharacterSnapshot c, ResolvedProfile p, PlayerInputs inputs)
+    /// <param name="combat">Combat mesuré (NotMeter) : ses parts de dégâts remplacent la simulation en JcE.</param>
+    public SkillPlan Plan(CharacterSnapshot c, ResolvedProfile p, PlayerInputs inputs, Combat.CombatLog? combat = null)
     {
         var set = db.Settings.Skills;
         var bonus = BonusLevels(c);
@@ -107,7 +108,8 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         var openable = c.Boards.SelectMany(b => b.Nodes).Where(n => !n.Open && n.IsSkill)
             .SelectMany(n => n.Effects.Where(e => e.IsSkill)).GroupBy(e => Norm(e.SkillName!))
             .ToDictionary(g => g.Key, g => g.Count());
-        var shares = DamageShares(p);
+        var measured = combat is { Skills.Count: > 0 } && p.Mode == GameMode.PvE ? Combat.CombatAnalyzer.Shares(combat) : null;
+        var shares = measured ?? DamageShares(p);
         var mode = p.Mode == GameMode.PvP ? "JcJ" : "JcE";
 
         var rows = c.Skills.Where(s => KindOf(s) != SkillKind.Stigma).Select(s =>
@@ -264,7 +266,8 @@ public sealed partial class SkillAdvisor(GameDatabase db)
             moves, nextPoints, nextShards)
         {
             Focus = focus,
-            DamageSource = shares.Count == 0 ? null
+            DamageSource = measured is not null ? $"combat mesuré (NotMeter) : {combat!.Target}, {combat.Duration:0} s, importé le {combat.ImportedAtUtc.ToLocalTime():dd/MM}"
+                : shares.Count == 0 ? null
                 : $"rotation {(p.UsesDesigned && p.Class.Designed?.Play.ContainsKey(p.Mode) == true ? "conçue" : "des joueurs")} simulée, {mode}, 1 cible, 2 min",
             GearBonuses = gear,
             BonusWanted = wanted,

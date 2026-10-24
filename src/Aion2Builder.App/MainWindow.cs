@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Aion2Builder.Analysis;
+using Aion2Builder.Combat;
 using Aion2Builder.GameData;
 using Aion2Builder.Import;
 using Aion2Builder.Model;
@@ -106,6 +107,10 @@ public sealed class MainWindow : Window
     // Actualisation automatique : une seule tentative par personnage et par session.
     readonly HashSet<string> autoRefreshed = [];
     List<ProgressPoint> progress = [];
+    readonly CombatStore combatStore = new();
+    /// <summary>Combats NotMeter importés pour le personnage affiché, le plus récent d'abord.</summary>
+    List<(string Path, CombatLog Log)> combats = [];
+    string? CurrentKey => currentPath is null ? null : System.IO.Path.GetFileNameWithoutExtension(currentPath);
 
     public MainWindow()
     {
@@ -276,7 +281,8 @@ public sealed class MainWindow : Window
     void Recompute()
     {
         if (current is null) { Render(); return; }
-        try { report = new Advisor(db).Analyze(current, prefs.Mode, inputs, pets.Collection); }
+        combats = CurrentKey is { } key ? combatStore.List(key) : [];
+        try { report = new Advisor(db).Analyze(current, prefs.Mode, inputs, pets.Collection, combats.Select(x => x.Log).FirstOrDefault()); }
         catch (InvalidOperationException ex) { report = null; SetStatus(ex.Message, error: true); state.Screen = Screen.Import; }
         if (report is not null) store.RecordScores(current, prefs.Mode, report.Scores);
         progress = store.Progress(current);
@@ -673,7 +679,8 @@ public sealed class MainWindow : Window
     Control Page(AdviceReport r)
     {
         var views = new ScreenViews(db, r, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key), progress,
-            o => Simulator.Run(db, r, inputs, pets.Collection, o));
+            o => Simulator.Run(db, r, inputs, pets.Collection, o),
+            combats, () => _ = ImportCombatAsync(), DeleteCombat);
         var (content, inspector) = views.Build();
         var grid = new Grid { RowDefinitions = new RowDefinitions("36,*") };
         if (!prefs.BottomHidden)
@@ -1315,6 +1322,57 @@ public sealed class MainWindow : Window
                 RenderHits();
             }
         }
+    }
+
+    /// <summary>
+    /// Captures de la fenêtre « Détails du combat » de NotMeter : lues par l'OCR de Windows, fusionnées en un combat,
+    /// enregistrées pour le personnage affiché. Le combat le plus récent alimente ensuite le focus dégâts et les conseils.
+    /// </summary>
+    async Task ImportCombatAsync()
+    {
+        if (current is null || CurrentKey is not { } key) { Toast("Ouvre d'abord un personnage", error: true); return; }
+        var files = await StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = $"Captures NotMeter « Détails du combat » de {current.Name}",
+            AllowMultiple = true,
+            FileTypeFilter = [new Avalonia.Platform.Storage.FilePickerFileType("Images") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.bmp"] }],
+        });
+        var paths = files.Where(f => f.Path.IsFile).Select(f => f.Path.LocalPath).ToList();
+        if (paths.Count == 0) return;
+        SetStatus($"Lecture de {paths.Count} capture(s)…");
+        try
+        {
+            var pages = new List<IReadOnlyList<OcrWord>>();
+            foreach (var path in paths) pages.Add(await ScreenshotOcr.Words(path));
+            var log = NotMeterReader.Read(pages);
+            if (log.Character.Length > 0 && !string.Equals(log.Character, current.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                Toast("Capture d'un autre personnage", $"Ces captures sont celles de {log.Character}, pas de {current.Name} : ouvre son onglet pour les importer.", error: true);
+                SetStatus("");
+                return;
+            }
+            combatStore.Save(key, log);
+            state.CombatIndex = 0;
+            state.CombatSkill = null;
+            Recompute();
+            SetStatus($"combat importé : {log.Skills.Count} sorts lus");
+            Toast("Combat importé", $"{log.Skills.Count}{(log.SkillCount > 0 ? $"/{log.SkillCount}" : "")} sorts lus · DPS {Fmt.Num(Math.Round(log.Dps))} sur {log.Duration:0} s" +
+                (log.Complete || log.SkillCount == 0 ? "" : " · liste partielle : ajoute les captures de la suite de la liste"));
+        }
+        catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            SetStatus(ex.Message, error: true);
+            Toast("Import du combat impossible", ex.Message, error: true);
+        }
+    }
+
+    void DeleteCombat(string path)
+    {
+        combatStore.Delete(path);
+        state.CombatIndex = 0;
+        state.CombatSkill = null;
+        Recompute();
+        Toast("Combat supprimé");
     }
 
     /// <summary>Rapport de la vue en cours en Markdown, dans le fichier choisi.</summary>

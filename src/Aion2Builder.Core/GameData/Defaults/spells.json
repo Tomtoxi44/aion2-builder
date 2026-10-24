@@ -102,7 +102,7 @@
     "13740000": { "class": "ASSASSIN", "name": "Coup puissant arrière", "kind": "Passive", "cooldown": 0, "coef": 0, "targets": 1 },
     "13750000": { "class": "ASSASSIN", "name": "Position d'assaut", "kind": "Passive", "cooldown": 0, "coef": 0, "targets": 1 },
     "13760000": { "class": "ASSASSIN", "name": "Coup de choc", "kind": "Passive", "cooldown": 0, "coef": 0, "targets": 1 },
-    "13770000": { "class": "ASSASSIN", "name": "Position d'attaque surprise", "kind": "Passive", "cooldown": 0, "coef": 0, "targets": 1 },
+    "13770000": { "class": "ASSASSIN", "name": "Position d'attaque surprise", "kind": "Passive", "cooldown": 0, "coef": 0, "targets": 1, "trigger": "elle s'active 10 s après un sort de ruée ou de déplacement : relance Embuscade (recharge 20 s) dès qu'elle revient" },
     "13780000": { "class": "ASSASSIN", "name": "Brèche de défense", "kind": "Passive", "cooldown": 0, "coef": 0, "targets": 1 },
     "13790000": { "class": "ASSASSIN", "name": "Pacte de revitalisation", "kind": "Passive", "cooldown": 0, "coef": 0, "targets": 1 },
     "13800000": { "class": "ASSASSIN", "name": "Détermination", "kind": "Passive", "cooldown": 0, "coef": 0, "targets": 1 },

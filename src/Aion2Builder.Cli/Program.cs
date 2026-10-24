@@ -1,7 +1,9 @@
-﻿using System.Text;
+﻿using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Aion2Builder.Analysis;
 using Aion2Builder.Cli;
+using Aion2Builder.Combat;
 using Aion2Builder.GameData;
 using Aion2Builder.Import;
 using Aion2Builder.Model;
@@ -25,6 +27,7 @@ try
         "simulate" or "simuler" => Simulate(cli),
         "progress" or "progression" => Progress(cli),
         "rotation" => Rotation(cli),
+        "combat" => CombatCommand(cli),
         _ => Help(),
     };
 }
@@ -56,6 +59,7 @@ static int Help()
           progress <nom>                                      Imports successifs et ce qui a changé
           rotation <classe|nom> [--targets 4] [--duration 120] [--mode pvp]
                                                               Rotations simulées : joueurs contre conçue
+          combat <nom> [mots-ocr.tsv…]                        Combat NotMeter lu sur des captures (l'appli les lit seule)
           list                                                Personnages enregistrés
           data [export]                                       Fichiers de données (poids, paliers…) modifiables
           pets [--key <clé>] [--refresh] [--forget]            Familiers du Pet Meter, lus sur Aion 2 Todo (clé : onglet
@@ -212,6 +216,49 @@ static int Simulate(Args cli)
     Console.WriteLine($"Stats qui changent ({changes.Count}) :");
     foreach (var (b, a) in changes.Take(25))
         Console.WriteLine($"  {a.Def.Name,-30} {b.Display,-16} → {a.Display}");
+    return 0;
+}
+
+static int CombatCommand(Args cli)
+{
+    var (store, snapshot) = Saved(cli, "Précise un personnage : combat <nom> [mots-ocr.tsv…] [--dry]");
+    var db = GameDataStore.Load();
+    var combats = new CombatStore();
+    var key = Path.GetFileNameWithoutExtension(store.Find(snapshot.Name, snapshot.ServerName)?.Path ?? snapshot.Name);
+    // Fichiers de mots reconnus (x, y, largeur, hauteur, texte par ligne, séparés par des tabulations) : une capture par fichier.
+    var files = Enumerable.Range(1, 20).Select(cli.Positional).OfType<string>().ToList();
+    CombatLog log;
+    if (files.Count > 0)
+    {
+        var pages = files.Select(f => (IReadOnlyList<OcrWord>)File.ReadAllLines(f).Select(l => l.Split('\t')).Where(p => p.Length >= 5)
+            .Select(p => new OcrWord(p[4], double.Parse(p[0], CultureInfo.InvariantCulture), double.Parse(p[1], CultureInfo.InvariantCulture),
+                double.Parse(p[2], CultureInfo.InvariantCulture), double.Parse(p[3], CultureInfo.InvariantCulture))).ToList());
+        log = NotMeterReader.Read(pages);
+        if (!cli.Has("dry")) Console.WriteLine($"Enregistré : {combats.Save(key, log)}");
+    }
+    else log = combats.Latest(key) ?? throw new InvalidOperationException($"Aucun combat importé pour {snapshot.Name} : combat {snapshot.Name} <mots-ocr.tsv>.");
+
+    var inputs = store.LoadInputs(snapshot);
+    var profile = db.Resolve(snapshot.ClassCode, GameMode.PvE, inputs.UsesDesigned);
+    var report = new CombatAnalyzer(db).Analyze(log, profile);
+    Console.WriteLine($"Combat de {log.Character} contre {log.Target} : {log.Duration:0} s, {Fmt.Num(log.TotalDamage)} dégâts, DPS {Fmt.Num(Math.Round(log.Dps))}, {log.Hits} coups, " +
+                      $"{log.Skills.Count}/{log.SkillCount} sorts lus sur {log.Pages} capture(s)" +
+                      (report.Crit is { } c ? $", critique {Fmt.Pct(c)}" : "") + (report.Back is { } back ? $", de dos {Fmt.Pct(back)}" : ""));
+    Console.WriteLine();
+    foreach (var s in report.Skills)
+        Console.WriteLine($"  {s.Skill.Name,-30} niv. {s.Skill.Level?.ToString() ?? "?",-3} {Fmt.Num(s.Skill.Damage),9} {Fmt.Pct(s.Skill.Share),5}" +
+                          $"  ×{s.Skill.Uses,-3}{(s.Possible is { } m ? $"/{m,-3}" : "    ")} crit {(s.Skill.Crit is { } sc ? Fmt.Pct(sc) : "?"),5}  dos {(s.Skill.Back is { } sb ? Fmt.Pct(sb) : "?"),5}" +
+                          $"{(s.Simulated is { } sim ? $"  simulé {Fmt.Pct(sim)}" : "")}  {s.Verdict}");
+    Console.WriteLine();
+    foreach (var b in report.Buffs)
+        Console.WriteLine($"  buff {b.Buff.Name,-32} {(b.Buff.Uptime is { } u ? Fmt.Pct(u) : "?"),5} ×{b.Buff.Count} niv. {b.Buff.Level?.ToString() ?? "?"}  {b.Verdict}");
+    Console.WriteLine();
+    foreach (var f in report.Findings)
+    {
+        Console.WriteLine($"[{Fmt.Severity(f.Severity)}] {f.Title}");
+        Console.WriteLine($"    {f.Detail}");
+        if (f.Action is not null) Console.WriteLine($"    → {f.Action}");
+    }
     return 0;
 }
 

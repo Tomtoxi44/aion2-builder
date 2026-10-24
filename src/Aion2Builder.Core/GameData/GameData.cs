@@ -466,4 +466,6 @@ public sealed record SpellData
     public bool Boss { get; init; } = true;
     /// <summary>Pas lancé : se déclenche à chaque lancer de ces sorts.</summary>
     public List<string>? TriggeredBy { get; init; }
+    /// <summary>Buff passif : ce qui le déclenche, pour l'analyse de combat (temps actif trop bas).</summary>
+    public string? Trigger { get; init; }
 }

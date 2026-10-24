@@ -9,7 +9,19 @@ sealed class Program
 {
     // N'utiliser aucune API Avalonia avant AppMain : rien n'est encore initialisé.
     [STAThread]
-    public static void Main(string[] args) => BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    public static void Main(string[] args)
+    {
+        // Diagnostic sans fenêtre : « --ocr capture.png mots.tsv » écrit les mots reconnus (x, y, largeur, hauteur, texte),
+        // le format que lit « combat <nom> mots.tsv » du CLI.
+        if (args is ["--ocr", var image, var output])
+        {
+            var words = ScreenshotOcr.Words(image).GetAwaiter().GetResult();
+            static string N(double v) => v.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            File.WriteAllLines(output, words.Select(w => $"{N(w.X)}\t{N(w.Y)}\t{N(w.Width)}\t{N(w.Height)}\t{w.Text}"));
+            return;
+        }
+        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    }
 
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>()
