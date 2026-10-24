@@ -1806,9 +1806,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         foreach (var (b, a) in r.Stats.Categories.Zip(after.Stats.Categories))
         {
             var d = (int)Math.Round((a.Share - b.Share) * 100);
-            families.Children.Add(ColumnsSpaced("80,*,190", 12, T(GameDatabase.CategoryName(b.Category), 13),
-                new StackPanel { Spacing = 3, Children = { Bar(b.Share * 1.6, Tok.Border, 4, b.Target * 1.6), Bar(a.Share * 1.6, Accent.Main, 4, a.Target * 1.6) } },
-                T($"{Fmt.Pct(b.Share)} → {Fmt.Pct(a.Share)} ({(d >= 0 ? "+" : "")}{d} pts) · visé {Fmt.Pct(a.Target)}", 12, d == 0 ? Tok.Muted : Tok.Text2, mono: true)));
+            families.Children.Add(ColumnsSpaced("80,*,240", 12, T(GameDatabase.CategoryName(b.Category), 13),
+                new StackPanel { Spacing = 3, Children = { Bar(b.Share * 1.6, Tok.Muted, 4, b.Target * 1.6), Bar(a.Share * 1.6, Accent.Main, 4, a.Target * 1.6) } },
+                T($"{Fmt.Pct(b.Share)} → {Fmt.Pct(a.Share)} ({(d >= 0 ? "+" : "")}{d}) · visé {Fmt.Pct(a.Target)}", 12, d == 0 ? Tok.Muted : Tok.Text2, mono: true)));
         }
         panel.Children.Add(new StackPanel { Children = { SectionHeader("Familles de stats · gris = avant, couleur = après", padX: 20, topBorder: true), families } });
 

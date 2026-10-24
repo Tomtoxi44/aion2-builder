@@ -74,6 +74,20 @@ public static class Simulator
             var levels = before.Skills.Skills.Where(a => a.Skill.Acquired).ToDictionary(a => a.Skill.Id, a => a.RecommendedBase + a.Bonus);
             skills = c.Skills.Select(s => levels.TryGetValue(s.Id, out var level) ? s with { Level = level } : s).ToList();
         }
+        // Une case de compétence ouverte ou retirée change le niveau total de la compétence (le niveau acheté, lui, ne bouge pas).
+        var bonus = new Dictionary<string, int>();
+        foreach (var n in c.Boards.SelectMany(b => b.Nodes))
+        {
+            var sign = !n.Open && open.Contains(n.Id) ? 1 : n.Open && close.Contains(n.Id) ? -1 : 0;
+            if (sign == 0) continue;
+            foreach (var e in n.Effects.Where(e => e.IsSkill))
+            {
+                var key = GameDatabase.NormalizeLabel(e.SkillName!);
+                bonus[key] = bonus.GetValueOrDefault(key) + sign * (int)e.Value;
+            }
+        }
+        if (bonus.Count > 0)
+            skills = skills.Select(s => s.Acquired && bonus.TryGetValue(GameDatabase.NormalizeLabel(s.Name), out var d) && d != 0 ? s with { Level = s.Level + d } : s).ToList();
 
         var simulated = c with { Boards = boards, Skills = skills };
         var simInputs = inputs with
