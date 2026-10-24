@@ -21,7 +21,7 @@ enum Screen { Import, Home, Stats, Gear, Skills, Build, Combat, Daeva, Pets, Sim
 enum GearPage { Overview, Roadmap, Pieces, Enchant, Stones }
 
 /// <summary>Sous-pages de l'écran Compétences.</summary>
-enum SkillPage { Overview, Table, Moves, Stigmas }
+enum SkillPage { Overview, Specs, Table, Moves, Stigmas }
 
 /// <summary>Sous-pages de l'écran Build.</summary>
 enum BuildPage { Compare, Rotations, Differences }
@@ -91,7 +91,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
     public static readonly (SkillPage Page, string Title)[] SkillPages =
     [
-        (SkillPage.Overview, "Vue d'ensemble"), (SkillPage.Table, "Toutes les compétences"), (SkillPage.Moves, "Déplacements"), (SkillPage.Stigmas, "Stigmas"),
+        (SkillPage.Overview, "Vue d'ensemble"), (SkillPage.Specs, "Spécialisations"), (SkillPage.Table, "Toutes les compétences"), (SkillPage.Moves, "Déplacements"),
+        (SkillPage.Stigmas, "Stigmas"),
     ];
 
     public static readonly (BuildPage Page, string Title)[] BuildPages =
@@ -113,6 +114,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         public const string Board = "M2 2h10v10H2zM2 7h10M7 2v10";
         public const string Play = "M3 2l9 5-9 5z";
         public const string Diff = "M4 2v10M10 2v10M1.5 5h5M7.5 9h5";
+        public const string Star = "M7 1.5l1.7 3.5 3.8.5-2.8 2.6.7 3.8L7 10.1l-3.4 1.8.7-3.8L1.5 5.5l3.8-.5z";
     }
 
     /// <summary>Barre secondaire de l'écran ouvert (sous-pages, combats, plateaux…), null pour les écrans d'une seule page.</summary>
@@ -801,6 +803,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             body.Children.Add(SideItem(icon, SkillPages.First(p => p.Page == page).Title, badge, color, preview, s.SkillPage == page, () => update(st => st.SkillPage = page)));
         var moved = sk.Moves.Sum(m => m.Points);
         Page(Icons.Grid, SkillPage.Overview, moved > 0 ? $"{moved}" : "✓", moved > 0 ? Tok.Warn : Tok.Good, moved > 0 ? "points à déplacer · focus dégâts" : "points bien placés");
+        var specs = Specs;
+        Page(Icons.Star, SkillPage.Specs, specs.Count > 0 ? $"{specs.Sum(p => p.Slots)}" : "—", Accent.Main,
+            specs.Count > 0 ? "lesquelles équiper, sort par sort" : "pas de données pour cette classe");
         Page(Icons.List, SkillPage.Table, $"{sk.Skills.Count}", Tok.Text2, "niveau, visé, importance, raison");
         Page(Icons.Swap, SkillPage.Moves, sk.Moves.Count > 0 ? $"{sk.Moves.Count}" : "—", sk.Moves.Count > 0 ? Tok.Warn : Tok.Muted, "la raison de chaque point déplacé");
         var equipped = sk.Stigmas.Count(x => x.Skill.Equipped);
@@ -1683,6 +1688,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 ? Card(SkillMoves(sk), "Pourquoi ces déplacements, compétence par compétence")
                 : Card(T("Rien à déplacer : tes points sont bien placés.", 13, Tok.Good), "Déplacements")),
             SkillPage.Stigmas => Page($"Compétences · stigmas ({db.Settings.Stigmas.Slots} emplacements) · {Mode}", null, StigmasBlock(sk)),
+            SkillPage.Specs => SpecsPage(),
             _ => SkillsOverview(),
         };
     }
@@ -1897,12 +1903,89 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 var name = x.Stigma.Skill.Name;
                 panel.Children.Add(Clickable(ColumnsSpaced("24,*,Auto", 8,
                         T($"{++i}.", 12, Tok.Muted, mono: true),
-                        T($"{name}   {x.From} → {x.To}", 13),
+                        db.Spell(x.Stigma.Skill.Id)?.Specs.FirstOrDefault(sp => sp.Level == x.To) is { } effect
+                            ? new StackPanel { Spacing = 2, Children = { T($"{name}   {x.From} → {x.To}", 13), T($"débloque : {effect.Text}", 11, Tok.Text2, wrap: true) } }
+                            : T($"{name}   {x.From} → {x.To}", 13),
                         T($"{x.Shards} fragments · palier {x.To}", 12, Tok.Muted, mono: true)),
                     () => update(st => st.Skill = name), hover: Tok.Hover, padding: new Thickness(20, 4)));
             }
         }
         return new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), ClipToBounds = true, Child = panel };
+    }
+
+    // ----- Spécialisations : lesquelles équiper, sort par sort -----
+
+    /// <summary>Conseil de spécialisations des compétences actives (calculé une fois par rendu).</summary>
+    List<SkillSpecPlan> Specs => specs ??= SpecAdvisor.Plan(db, r);
+    List<SkillSpecPlan>? specs;
+
+    /// <summary>
+    /// Une carte par compétence active (ce qui fait les dégâts d'abord) : ses 5 spécialisations dans l'ordre du jeu, celles à
+    /// équiper numérotées, celle du prochain emplacement marquée « ensuite », les verrouillées avec leur niveau.
+    /// </summary>
+    Control SpecsPage()
+    {
+        var plans = Specs;
+        var slots = db.Settings.Skills.SpecialtySlots;
+        var open = plans.Sum(p => p.Slots);
+        var badges = Badges(
+            Badge($"{open} emplacement{(open > 1 ? "s" : "")} ouvert{(open > 1 ? "s" : "")}", Accent.Main),
+            Tip(Badge("à comparer en jeu", Tok.Info), "Le site officiel ne dit pas quelles spécialisations sont équipées : compare avec ta fenêtre de compétence."));
+        if (plans.Count == 0)
+            return Page($"Compétences · spécialisations · {Mode}", null,
+                T("Pas de spécialisations connues pour les compétences de cette classe.", 13, Tok.Muted));
+        var grid = new Avalonia.Controls.Primitives.UniformGrid { Columns = 2 };
+        foreach (var p in plans) grid.Children.Add(SpecCard(p).WithMargin(0, 0, 10, 10));
+        return Page($"Compétences · spécialisations · {Mode}", badges,
+            T($"Emplacements : 1 au niveau {slots.ElementAtOrDefault(0)}, 2 au {slots.ElementAtOrDefault(1)}, 3 au {slots.ElementAtOrDefault(2)} (niveau total, bonus compris). " +
+              "Rien ne s'équipe tout seul : clique l'option dans la fenêtre de la compétence.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4),
+            grid,
+            Expander("Comment c'est choisi", IsOpen("specs:how"), () => Toggle("specs:how"), () =>
+                T($"Chaque spécialisation est classée d'après son texte (dégâts, enchaînement en plus, recharge, critique, vitesse, contrôle, soin, PM, défense), " +
+                  $"puis notée pour ton rôle ({r.Profile.Role.Name}) en {GameDatabase.ModeName(r.Mode)} : en JcE, ce qui fait des dégâts sur un boss d'abord, " +
+                  "le contrôle y sert peu ; en JcJ, le contrôle et les dégâts. Un effet conditionnel (« si », « lors d'un coup CRIT », « chances ») compte un peu moins. " +
+                  "Spécialisations relevées sur metabot.gg (octobre 2026).", 12, Tok.Text2, wrap: true).WithLineHeight(1.45).WithMargin(22, 0, 0, 0)));
+    }
+
+    /// <summary>Carte d'une compétence : niveau et emplacements, puis ses spécialisations ; clic sur le titre = l'inspecteur.</summary>
+    Control SpecCard(SkillSpecPlan p)
+    {
+        var total = db.Settings.Skills.SpecialtySlots.Count;
+        var name = p.Skill.Skill.Name;
+        var list = new StackPanel { Spacing = 6 };
+        foreach (var o in p.Options)
+            list.Children.Add(Tip(ColumnsSpaced("44,*", 8, SpecMarker(o),
+                T(o.Spec.Text, 12, o.Rank is not null ? Tok.Text : o.Unlocked ? Tok.Text2 : Tok.Muted, o.Rank is not null ? FontWeight.SemiBold : FontWeight.Normal, wrap: true)),
+                $"{o.Why} · {(o.Unlocked ? "débloquée" : $"débloquée au niveau {o.Spec.Level}")}"));
+        if (p.NextSlot is { } next)
+            list.Children.Add(T(p.LevelAfter >= next && p.Level < next
+                    ? $"Emplacement {p.Slots + 1} au niveau {next} : atteint avec les déplacements conseillés ({p.Level} → {p.LevelAfter})."
+                    : $"Emplacement {p.Slots + 1} au niveau {next} ({next - p.Level} niveau{(next - p.Level > 1 ? "x" : "")} de plus).",
+                11, Tok.Muted, wrap: true).WithMargin(0, 2, 0, 0));
+        var head = Clickable(new DockPanel
+            {
+                Children =
+                {
+                    new Border { [DockPanel.DockProperty] = Dock.Right, Child = Pips(p.Slots, total, 10, 8) },
+                    T($"{name} · niv. {p.Level}", 13, name == SelectedSkillName ? Accent.Main : Tok.Text, FontWeight.SemiBold),
+                },
+            },
+            () => update(st => st.Skill = name), hover: Tok.Hover, padding: new Thickness(0, 2));
+        return Card(new StackPanel { Spacing = 10, Children = { head, list } }, null);
+    }
+
+    /// <summary>Repère d'une option : rang à équiper (1, 2, 3), « ensuite » pour le prochain emplacement, niveau si verrouillée.</summary>
+    static Control SpecMarker(SpecChoice o)
+    {
+        if (o.Rank is { } rank)
+            return new Border
+            {
+                Background = Tok.Alpha(Accent.Main, 0.15), BorderBrush = Tok.Alpha(Accent.Main, 0.5), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3),
+                HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Padding = new Thickness(6, 0),
+                Child = T($"✓ {rank}", 11, Accent.Main, FontWeight.SemiBold, mono: true),
+            };
+        if (o.Later) return T("ensuite", 11, Tok.Info, mono: true).WithMargin(0, 1, 0, 0);
+        return T(o.Unlocked ? "·" : $"niv {o.Spec.Level}", 11, Tok.Muted, mono: true).WithMargin(0, 1, 0, 0);
     }
 
     Control SkillInspector()
@@ -1952,6 +2035,14 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 var step = r.Skills.NextPoints[rank];
                 body.Children.Add(Field("Prochains points", $"N° {rank + 1} dans l'ordre : {step.From} → {step.To}" +
                     (step.Specialty is { } spec ? $", ce qui débloque la spécialisation du niveau {spec}." : "."), Tok.Text2));
+            }
+            if (Specs.FirstOrDefault(p => p.Skill.Skill.Name == a.Skill.Name) is { } plan)
+            {
+                // Spécialisations : les conseillées d'abord, puis celle du prochain emplacement.
+                var lines = plan.Recommended.Select(o => $"✓ {o.Rank} · {o.Spec.Text}")
+                    .Concat(plan.Options.Where(o => o.Later).Select(o => $"ensuite · {o.Spec.Text}")).ToList();
+                body.Children.Add(Field($"Spécialisations · {plan.Slots}/{db.Settings.Skills.SpecialtySlots.Count} emplacements",
+                    lines.Count > 0 ? string.Join("\n", lines) : "Aucune avant le niveau 8.", Accent.Main));
             }
             body.Children.Add(T("Bonus : niveaux gratuits venant des cases Daevanion et de l'équipement.", 12, Tok.Muted, wrap: true).WithLineHeight(1.5));
         }

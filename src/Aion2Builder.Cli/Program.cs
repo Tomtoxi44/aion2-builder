@@ -29,6 +29,7 @@ try
         "rotation" => Rotation(cli),
         "combat" => CombatCommand(cli),
         "route" or "feuille" => RouteCommand(cli),
+        "specs" or "specialisations" => SpecsCommand(cli),
         _ => Help(),
     };
 }
@@ -62,6 +63,7 @@ static int Help()
                                                               Rotations simulées : joueurs contre conçue
           combat <nom> [mots-ocr.tsv…]                        Combat NotMeter lu sur des captures (l'appli les lit seule)
           route <nom> [--mode pvp]                            Feuille de route d'équipement : palier de score suivant, pièces, enchantement
+          specs <nom> [--mode pvp]                            Spécialisations à équiper, sort par sort
           list                                                Personnages enregistrés
           data [export]                                       Fichiers de données (poids, paliers…) modifiables
           pets [--key <clé>] [--refresh] [--forget]            Familiers du Pet Meter, lus sur Aion 2 Todo (clé : onglet
@@ -383,6 +385,24 @@ static int RouteCommand(Args cli)
     foreach (var e in plan.Enchants) Console.WriteLine($"  {e.SlotName,-20} +{e.Item.EnchantLevel}/{e.Max}  {e.Verdict,-9} {e.Text}");
     if (plan.SacredSlots.Count > 0)
         Console.WriteLine($"\nPierre sacrée : {string.Join(", ", plan.SacredSlots.Select(x => $"{x.SlotName} ({x.Count})"))} · {db.Progression.Roadmap.Stones.SacredFor(snapshot.ClassCode, mode)}");
+    return 0;
+}
+
+static int SpecsCommand(Args cli)
+{
+    var (store, snapshot) = Saved(cli, "Précise un personnage : specs <nom> [--mode pvp]");
+    var db = GameDataStore.Load();
+    var mode = (cli.Get("mode") ?? "pve").ToLowerInvariant() is "pvp" or "jcj" ? GameMode.PvP : GameMode.PvE;
+    var report = new Advisor(db).Analyze(snapshot, mode, store.LoadInputs(snapshot), new PetStore().Load().Collection);
+    var slots = db.Settings.Skills.SpecialtySlots;
+    Console.WriteLine($"Spécialisations de {snapshot.Name} ({GameDatabase.ModeName(mode)}, {report.Profile.Role.Name}) · emplacements aux niveaux {string.Join(", ", slots)}");
+    foreach (var p in SpecAdvisor.Plan(db, report))
+    {
+        Console.WriteLine();
+        Console.WriteLine($"  {p.Skill.Skill.Name} · niv. {p.Level}{(p.LevelAfter != p.Level ? $" ({p.LevelAfter} après déplacements)" : "")} · {p.Slots}/{slots.Count} emplacement(s)");
+        foreach (var o in p.Options)
+            Console.WriteLine($"    {(o.Rank is { } rank ? $"✓ {rank}" : o.Later ? "ensuite" : o.Unlocked ? "·" : $"niv {o.Spec.Level}"),-8} {o.Spec.Text}  [{o.Why} · {o.Score:0.00}]");
+    }
     return 0;
 }
 

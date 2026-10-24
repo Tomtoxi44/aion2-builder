@@ -22,6 +22,8 @@
     "baseMax": 10,
     "costPerLevel": 1,
     "specialtyLevels": [8, 12, 16, 20],
+    "_specialtySlots": "Emplacements de spécialisation par compétence active : 1 au niveau 8, 2 au niveau 12, 3 au niveau 20 (metabot.gg, gametruth, misti ; game8 dit 8/16/20 : à valider). Chaque sort a 5 spécialisations, débloquées aux niveaux 8, 8, 8, 12, 16.",
+    "specialtySlots": [8, 12, 20],
     "pointSources": "≈ 203 points au niveau 45, jusqu'à 122 avec les 61 donjons scellés et 59 avec les quêtes régionales (≈ 384 au total d'après un guide antérieur au lancement Global).",
     "commonPvpSkills": ["Dissipation de choc"],
     "_fixedSlotSkills": "Compétences sur une touche fixe, hors barre : le site les montre toujours « non équipées » (vérifié sur 9 personnages).",

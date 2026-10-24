@@ -287,6 +287,8 @@ public sealed record SkillSettings
     public int BaseMax { get; init; } = 10;
     public int CostPerLevel { get; init; } = 1;
     public List<int> SpecialtyLevels { get; init; } = [8, 12, 16, 20];
+    /// <summary>Niveaux de compétence qui ouvrent les emplacements de spécialisation (3 au plus, d'après les guides).</summary>
+    public List<int> SpecialtySlots { get; init; } = [8, 12, 20];
     public string PointSources { get; init; } = "";
     public List<string> CommonPvpSkills { get; init; } = [];
     public List<string> FixedSlotSkills { get; init; } = [];
@@ -521,4 +523,9 @@ public sealed record SpellData
     public List<string>? TriggeredBy { get; init; }
     /// <summary>Buff passif : ce qui le déclenche, pour l'analyse de combat (temps actif trop bas).</summary>
     public string? Trigger { get; init; }
+    /// <summary>Spécialisations du sort (relevées sur metabot.gg) : niveau de compétence requis et effet.</summary>
+    public List<SpellSpec> Specs { get; init; } = [];
 }
+
+/// <summary>Une spécialisation : niveau de compétence qui la débloque et son effet, tel qu'affiché en jeu.</summary>
+public sealed record SpellSpec(int Level, string Text);
