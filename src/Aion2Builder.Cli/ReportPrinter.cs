@@ -99,9 +99,9 @@ sealed class ReportPrinter(GameDatabase db)
         if (r.Skills.GearBonuses.Count > 0 || r.Skills.BonusWanted.Count > 0)
         {
             Console.WriteLine();
-            Console.WriteLine($"  Niveaux bonus de l'équipement et des arcanes ({r.Skills.GearBonuses.Count(b => b.Useful)}/{r.Skills.GearBonuses.Count} utiles) :");
+            Console.WriteLine($"  Niveaux bonus de l'équipement et des arcanes ({r.Skills.GearBonuses.Count(b => b.Strong)} bons, {r.Skills.GearBonuses.Count(b => !b.Useful)} perdus sur {r.Skills.GearBonuses.Count}) :");
             foreach (var b in r.Skills.GearBonuses.OrderBy(b => b.Useful))
-                Colored(b.Useful ? ConsoleColor.Gray : ConsoleColor.Red, $"   {(b.Arcana ? $"arcane {b.Item}" : db.SlotName(b.Slot)),-28} {b.SkillName + " +" + b.Levels,-30} {b.Verdict}");
+                Colored(!b.Useful ? ConsoleColor.Red : b.Strong ? ConsoleColor.Green : ConsoleColor.Gray, $"   {(b.Arcana ? $"arcane {b.Item}" : db.SlotName(b.Slot)),-28} {b.SkillName + " +" + b.Levels,-30} {b.Verdict}");
             if (r.Skills.BonusWanted.Count > 0)
                 Console.WriteLine($"   à chercher : {string.Join(", ", r.Skills.BonusWanted.Select(a => a.Skill.Name))}");
         }

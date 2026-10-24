@@ -809,7 +809,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
     static string Pts(int n) => $"{n} point{(n > 1 ? "s" : "")}";
 
-    static IBrush ImportanceColor(double priority) => priority >= 0.85 ? Tok.Good : priority >= 0.6 ? Tok.Text : priority >= 0.3 ? Tok.Text2 : Tok.Faint;
+    static IBrush ImportanceColor(double priority) =>
+        priority >= 0.85 ? Tok.Good : priority >= 0.7 ? Tok.Text : priority >= 0.5 ? Tok.Text2 : priority >= 0.3 ? Tok.Muted : Tok.Faint;
 
     /// <summary>D'où vient le niveau total : points achetés, cases Daevanion, arcanes, autres pièces.</summary>
     static string LevelSources(SkillAdvice a) =>
@@ -826,7 +827,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     }
 
     string NextSpecialty(SkillAdvice a) =>
-        db.Settings.Skills.SpecialtyLevels.FirstOrDefault(l => l > a.TotalAfter) is var l and > 0 ? $"spé. {l} à {l - a.TotalAfter} niv." : "spé. max";
+        db.Settings.Skills.SpecialtyLevels.FirstOrDefault(l => l > a.TotalAfter) is var l and > 0 ? $"→ {l} (+{l - a.TotalAfter} niv.)" : "max";
 
     /// <summary>
     /// Ce qui fait les dégâts : part de chaque sort dans la rotation simulée, son niveau (et d'où il vient) et le prochain
@@ -837,7 +838,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var list = new StackPanel { Spacing = 2 };
         var max = sk.Focus.Max(a => a.DamageShare);
         const string cols = "22,*,150,70,170,110";
-        list.Children.Add(new Border { Padding = new Thickness(6, 0, 6, 4), Child = Columns(cols, Label("#"), Label("Sort"), Label("Part des dégâts"), Label("Niveau"), Label("Pour monter"), Label("Spécialisation")) });
+        list.Children.Add(new Border { Padding = new Thickness(6, 0, 6, 4), Child = Columns(cols, Label("#"), Label("Sort"), Label("Part des dégâts"), Label("Niveau"), Label("Pour monter"), Label("Prochaine spé.")) });
         foreach (var a in sk.Focus.Take(6))
         {
             var pct = T(Fmt.Pct(a.DamageShare), 12, Tok.Text2, mono: true).WithMargin(8, 0, 0, 0);
@@ -884,7 +885,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     T(sources, 13, moves.All(m => m.From is null) ? Tok.Text2 : Tok.Bad),
                 },
             };
-            list.Children.Add(Entry(line, group.Key.Decision, group.Key.Skill.Name));
+            list.Children.Add(Entry(line, group.Key.Reason, group.Key.Skill.Name));
         }
         var donors = sk.Moves.Where(m => m.From is not null).Select(m => m.From!).Distinct().OrderBy(d => d.Priority).ToList();
         if (donors.Count > 0)
@@ -902,7 +903,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var list = new StackPanel { Spacing = 2 };
         foreach (var b in sk.GearBonuses.OrderBy(b => b.Useful).ThenByDescending(b => b.Skill?.DamageShare ?? 0))
         {
-            var color = !b.Useful ? Tok.Bad : b.Skill?.DamageShare > 0 ? Tok.Good : Tok.Text2;
+            var color = !b.Useful ? Tok.Bad : b.Strong ? Tok.Good : Tok.Text2;
             list.Children.Add(Clickable(ColumnsSpaced("190,190,*", 8,
                     T(b.Arcana ? $"Arcane · {b.Item}" : db.SlotName(b.Slot), 12, Tok.Muted),
                     T($"{b.SkillName} +{b.Levels}", 13, b.Useful ? null : Tok.Bad),
@@ -997,7 +998,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         panel.Children.Add(SectionHeader("Prochains points · le site ne montre pas tes points libres : suis la liste jusqu'à épuisement", padX: 20));
         panel.Children.Add(new Border { Padding = new Thickness(14, 6), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = NextPoints(sk) });
 
-        panel.Children.Add(SectionHeader($"Niveaux bonus · équipement et arcanes{(sk.GearBonuses.Count > 0 ? $" · {sk.GearBonuses.Count(b => b.Useful)}/{sk.GearBonuses.Count} utiles" : "")}", padX: 20));
+        panel.Children.Add(SectionHeader($"Niveaux bonus · équipement et arcanes{(sk.GearBonuses.Count > 0 ? $" · {sk.GearBonuses.Count(b => b.Strong)} bons, {sk.GearBonuses.Count(b => !b.Useful)} perdus sur {sk.GearBonuses.Count}" : "")}", padX: 20));
         panel.Children.Add(new Border { Padding = new Thickness(14, 6), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = GearBonuses(sk) });
 
         // Toutes les compétences, groupées par ce qui change ; la raison de chaque décision est dans l'inspecteur.
@@ -1087,7 +1088,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 ("provenance", LevelSources(a), Tok.Text2),
                 ("visé", Aim(a).Text, Aim(a).Color),
                 ("maintenant", a.Delta == 0 ? "rien à changer" : DeltaText(a), DeltaColor(a)),
-                ("pour monter", a.Skill.Acquired ? $"{NextLever(a)} · {NextSpecialty(a)}" : "à apprendre", null),
+                ("pour monter", a.Skill.Acquired ? $"{NextLever(a)} · prochaine spé. {NextSpecialty(a)}" : "à apprendre", null),
             ]));
             // Données du sort (niveau 1, metabot.gg) : recharge, % d'ATQ, cibles, et ce que ça représente par seconde.
             if (db.Spell(a.Skill.Id) is { Coef: > 0 } spell)

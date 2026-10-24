@@ -86,10 +86,6 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         return sim.Damage <= 0 ? [] : sim.Casts.GroupBy(x => Norm(x.Name)).ToDictionary(g => g.Key, g => g.Sum(x => x.Damage) / sim.Damage);
     }
 
-    /// <summary>Importance en clair, à la place du nombre de la fiche (0 = inutile, 1 = indispensable).</summary>
-    public static string Importance(double priority) =>
-        priority >= 0.85 ? "indispensable" : priority >= 0.6 ? "importante" : priority >= 0.3 ? "secondaire" : "peu utile";
-
     sealed class Row(SkillInfo skill, SkillKnowledge? known, int bonus, int baseLevel, double priority, int target)
     {
         public SkillInfo Skill { get; } = skill;
@@ -170,6 +166,7 @@ public sealed partial class SkillAdvisor(GameDatabase db)
                 Move(donor, r);
             }
 
+        var decisions = rows.ToDictionary(r => r, r => Decide(r, moved, mode));
         var advice = rows.ToDictionary(r => r, r => new SkillAdvice(r.Skill, KindOf(r.Skill), r.Known?.Role ?? DefaultRole(r.Skill),
             r.Known?.Why ?? DefaultWhy(r.Skill, p), r.Known is not null, r.Known?.Unverified ?? false, r.Priority,
             r.Base, r.Bonus, r.Target, r.Rec, openable.GetValueOrDefault(Norm(r.Skill.Name)), InBar(r.Skill))
@@ -178,7 +175,8 @@ public sealed partial class SkillAdvisor(GameDatabase db)
             BonusArcana = arcana.GetValueOrDefault(Norm(r.Skill.Name)),
             DamageShare = r.Share,
             DamageRank = r.Rank,
-            Decision = Decide(r, moved, mode),
+            Decision = decisions[r].Full,
+            Reason = decisions[r].Short,
         });
         var skills = advice.Values.OrderBy(s => s.Kind).ThenByDescending(s => s.Priority).ToList();
         var moves = moved.Select(m => new SkillMove(m.Key.From is { } f ? advice[f] : null, advice[m.Key.To], m.Value))
@@ -244,16 +242,17 @@ public sealed partial class SkillAdvisor(GameDatabase db)
                 if (BonusRegex().Match(sub) is not { Success: true } m) continue;
                 var name = m.Groups["name"].Value;
                 var a = advice.Values.FirstOrDefault(x => Norm(x.Skill.Name) == Norm(name));
-                var (useful, verdict) = a switch
+                var (useful, strong, verdict) = a switch
                 {
-                    null => (false, "Stigma ou compétence absente de ta liste : ne monte rien d'utile."),
-                    { Skill.Acquired: false } => (false, "Pas encore apprise : le bonus attend."),
-                    { Kind: SkillKind.Active, InBar: false } => (false, $"Hors de ta barre {mode} : bonus perdu, à remplacer en priorité."),
-                    { Priority: < 0.3 } => (false, $"{Importance(a.Priority)} en {mode} : bonus presque perdu, à remplacer en priorité."),
-                    { DamageShare: > 0 } => (true, $"{Fmt.Pct(a.DamageShare)} des dégâts (n° {a.DamageRank}) : bon bonus."),
-                    _ => (a.Priority >= 0.6, $"{Importance(a.Priority)} en {mode} ({a.Role.ToLowerInvariant()}) : {(a.Priority >= 0.6 ? "utile" : "correct sans plus")}."),
+                    null => (false, false, "Stigma ou compétence absente de ta liste : ne monte rien d'utile."),
+                    { Skill.Acquired: false } => (false, false, "Pas encore apprise : le bonus attend."),
+                    { Kind: SkillKind.Active, InBar: false } => (false, false, $"Hors de ta barre {mode} : bonus perdu, à remplacer en priorité."),
+                    { Priority: < 0.3 } => (false, false, $"{Importance(a.Priority)} en {mode} : bonus presque perdu, à remplacer en priorité."),
+                    { DamageShare: > 0 } => (true, true, $"{Fmt.Pct(a.DamageShare)} des dégâts (n° {a.DamageRank}) : bon bonus."),
+                    { Priority: >= 0.7 } => (true, true, $"{Importance(a.Priority)} en {mode} ({a.Role.ToLowerInvariant()}) : bon bonus."),
+                    _ => (true, false, $"{Importance(a.Priority)} en {mode} ({a.Role.ToLowerInvariant()}) : correct sans plus, à remplacer par un sort du focus dégâts."),
                 };
-                gear.Add(new GearSkillBonus(item.Slot, item.Name, IsArcana(item), name, int.Parse(m.Groups["n"].Value), a, useful, verdict));
+                gear.Add(new GearSkillBonus(item.Slot, item.Name, IsArcana(item), name, int.Parse(m.Groups["n"].Value), a, useful, strong, verdict));
             }
         var focus = advice.Values.Where(a => a.Skill.Acquired && a.DamageShare > 0).OrderByDescending(a => a.DamageShare).ToList();
         // À chercher sur les prochaines arcanes et pièces : les compétences qui pèsent le plus dans les dégâts (chaque niveau
@@ -276,34 +275,51 @@ public sealed partial class SkillAdvisor(GameDatabase db)
     /// Pourquoi la répartition conseillée monte, baisse ou garde une compétence : son importance dans ce mode, sa part
     /// des dégâts simulés, et qui donne ou reçoit ses points.
     /// </summary>
-    string Decide(Row r, Dictionary<(Row? From, Row To), int> moved, string mode)
+    (string Full, string Short) Decide(Row r, Dictionary<(Row? From, Row To), int> moved, string mode)
     {
         var set = db.Settings.Skills;
         string What(Row x) => $"{Importance(x.Priority)} en {mode}" + (x.Share > 0 ? $", {Fmt.Pct(x.Share)} des dégâts simulés (n° {x.Rank})"
             : KindOf(x.Skill) == SkillKind.Active ? ", pas de dégâts directs" : "");
-        string Short(Row x) => $"{x.Skill.Name} ({Importance(x.Priority)}{(x.Share > 0 ? $", {Fmt.Pct(x.Share)} des dégâts" : "")})";
+        // Même mot d'importance des deux côtés : le nombre de la fiche départage.
+        string Donor(Row x) => $"{x.Skill.Name} ({Importance(x.Priority)}" + (Importance(x.Priority) == Importance(r.Priority) ? $" {x.Priority:0.00} contre {r.Priority:0.00}" : "") +
+                               (x.Share > 0 ? $", {Fmt.Pct(x.Share)} des dégâts" : "") + ")";
+        static string Cap(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
         var what = What(r);
-        if (!r.Skill.Acquired) return $"Pas encore apprise (niveau {r.Skill.NeedLevel}) : {what}.";
+        if (!r.Skill.Acquired) return ($"Pas encore apprise (niveau {r.Skill.NeedLevel}) : {what}.", Cap($"{what}."));
         if (r.Rec > r.Base)
         {
-            var donors = moved.Where(m => m.Key.To == r && m.Key.From is not null).Select(m => Short(m.Key.From!)).ToList();
+            var donors = moved.Where(m => m.Key.To == r && m.Key.From is not null).Select(m => Donor(m.Key.From!)).ToList();
             var spec = set.SpecialtyLevels.Where(l => l > r.Base + r.Bonus && l <= r.Rec + r.Bonus).Cast<int?>().LastOrDefault();
-            return $"Monte à {r.Rec} : {what}." +
-                   (donors.Count > 0 ? $" Points pris à {string.Join(", ", donors)} : ils rapportent moins là-bas." : " Avec tes points non dépensés.") +
-                   (spec is { } s ? $" Débloque la spécialisation du niveau {s}." : "");
+            var unlock = spec is { } s ? $" Débloque la spécialisation du niveau {s}." : "";
+            return ($"Monte à {r.Rec} : {what}." +
+                    (donors.Count > 0 ? $" Points pris à {string.Join(", ", donors)} : ils rapportent moins là-bas." : " Avec tes points non dépensés.") + unlock,
+                Cap($"{what}.{unlock}"));
         }
         if (r.Rec < r.Base)
         {
             var receivers = moved.Where(m => m.Key.From == r).Select(m => m.Key.To.Skill.Name).Distinct().ToList();
             var bar = KindOf(r.Skill) == SkillKind.Active && !InBar(r.Skill) ? ", hors de ta barre" : "";
-            return $"Descend à {r.Rec} : {what}{bar}. Ces points servent davantage à {string.Join(", ", receivers)}.";
+            // Les prochains points remontent jusqu'au maximum toute compétence au moins secondaire.
+            var back = r.Priority >= 0.3 ? " Elle remontera avec tes prochains points, après les plus importantes." : "";
+            var full = $"Descend à {r.Rec} : {what}{bar}. Ces points servent davantage à {string.Join(", ", receivers)}.{back}";
+            return (full, full);
         }
-        if (r.Rec >= set.BaseMax) return $"Au maximum achetable ({set.BaseMax}) : {what}. La suite passe par le Daevanion, les arcanes et l'équipement.";
-        if (r.Rec > r.Target) return $"Au-dessus du niveau visé ({r.Target}) : {what}. Ces points iront ailleurs si une compétence plus utile en manque.";
-        if (r.Rec == r.Target)
-            return r.Target <= 1 ? $"Laissée au niveau 1 : {what} ; un point rapporte plus ailleurs." : $"Au niveau visé ({r.Target}) : {what}.";
-        return $"Sous le niveau visé ({r.Target}) : {what}. Elle prend tes prochains points (voir l'ordre).";
+        var other = OtherCases();
+        return (other, other);
+
+        string OtherCases()
+        {
+            if (r.Rec >= set.BaseMax) return $"Au maximum achetable ({set.BaseMax}) : {what}. La suite passe par le Daevanion, les arcanes et l'équipement.";
+            if (r.Rec > r.Target) return $"Au-dessus du niveau visé ({r.Target}) : {what}. Ces points iront ailleurs si une compétence plus utile en manque.";
+            if (r.Rec == r.Target)
+                return r.Target <= 1 ? $"Laissée au niveau 1 : {what} ; un point rapporte plus ailleurs." : $"Au niveau visé ({r.Target}) : {what}.";
+            return $"Sous le niveau visé ({r.Target}) : {what}. Elle prend tes prochains points (voir l'ordre).";
+        }
     }
+
+    /// <summary>Importance en clair, à la place du nombre de la fiche (0 = inutile, 1 = indispensable).</summary>
+    public static string Importance(double priority) =>
+        priority >= 0.85 ? "indispensable" : priority >= 0.7 ? "importante" : priority >= 0.5 ? "utile" : priority >= 0.3 ? "secondaire" : "peu utile";
 
     string DefaultRole(SkillInfo s) => KindOf(s) switch
     {

@@ -85,10 +85,15 @@ public sealed record SkillAdvice(
 
     /// <summary>Pourquoi la répartition conseillée monte, baisse ou garde cette compétence, en clair.</summary>
     public string Decision { get; init; } = "";
+    /// <summary>La même raison sans dire qui donne les points (la ligne de déplacement le montre déjà).</summary>
+    public string Reason { get; init; } = "";
 }
 
-/// <summary>Compétence bonus portée par une pièce ou une arcane (« Défense d'égide +1 » sur les gants) et ce qu'elle vaut pour toi.</summary>
-public sealed record GearSkillBonus(string Slot, string Item, bool Arcana, string SkillName, int Levels, SkillAdvice? Skill, bool Useful, string Verdict);
+/// <summary>
+/// Compétence bonus portée par une pièce ou une arcane (« Défense d'égide +1 » sur les gants) et ce qu'elle vaut pour toi :
+/// <see cref="Useful"/> faux = bonus perdu (compétence hors barre, peu utile ou absente), <see cref="Strong"/> = bon bonus.
+/// </summary>
+public sealed record GearSkillBonus(string Slot, string Item, bool Arcana, string SkillName, int Levels, SkillAdvice? Skill, bool Useful, bool Strong, string Verdict);
 
 /// <summary>Stigma : niveau monté avec des fragments, 4 emplacements, échange gratuit.</summary>
 public sealed record StigmaAdvice(SkillInfo Skill, string Role, string Why, bool Known, bool Unverified, double Priority,
