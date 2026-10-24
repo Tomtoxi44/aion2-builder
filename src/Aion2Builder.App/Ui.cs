@@ -385,6 +385,40 @@ static class Ui
         }
     }
 
+    /// <summary>
+    /// Barres verticales sur toute la largeur, une par valeur (une seconde de combat), hauteur selon la plus grande ;
+    /// une valeur nulle laisse un trou : on voit d'un coup d'œil quand on frappait et quand non.
+    /// </summary>
+    public sealed class Histogram : Panel
+    {
+        readonly IReadOnlyList<double> values;
+        readonly double peak;
+
+        public Histogram(IReadOnlyList<double> values, IBrush fill)
+        {
+            this.values = values;
+            peak = values.Count > 0 ? Math.Max(1e-9, values.Max()) : 1;
+            Children.Add(new Border { Background = Tok.Border });  // ligne de base
+            foreach (var _ in values) Children.Add(new Border { Background = fill, CornerRadius = new CornerRadius(1, 1, 0, 0) });
+        }
+
+        protected override Size MeasureOverride(Size available) =>
+            new(double.IsInfinity(available.Width) ? 300 : available.Width, double.IsNaN(Height) ? 80 : Height);
+
+        protected override Size ArrangeOverride(Size final)
+        {
+            var w = final.Width / Math.Max(1, values.Count);
+            var gap = w >= 4 ? 1 : 0;
+            Children[0].Arrange(new Rect(0, final.Height - 1, final.Width, 1));
+            for (var i = 0; i < values.Count; i++)
+            {
+                var h = values[i] / peak * (final.Height - 2);
+                Children[i + 1].Arrange(new Rect(i * w, final.Height - 1 - h, Math.Max(1, w - gap), h));
+            }
+            return final;
+        }
+    }
+
     /// <summary>Section repliable « ▸ Titre » : son contenu n'est construit qu'une fois ouverte.</summary>
     public static StackPanel Expander(string title, bool open, Action toggle, Func<Control> content, Thickness? margin = null)
     {

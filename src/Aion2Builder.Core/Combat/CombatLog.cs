@@ -29,6 +29,14 @@ public sealed record CombatLog
     public int ImportVersion { get; init; }
     /// <summary>Type du combat : boss, dummy (mannequin), pvp ou other (pack de monstres) ; null pour un ancien combat.</summary>
     public string? Kind { get; init; }
+    /// <summary>
+    /// Pet Meter v0.7.4 : le combat est celui de la cible principale (de ton premier à ton dernier coup sur elle) ; tes dégâts
+    /// sur elle seconde par seconde, et le combat entier (adds et monstres d'avant compris) avec le moment où elle a été frappée.
+    /// </summary>
+    public List<double>? Timeline { get; init; }
+    public double? WholeDuration { get; init; }
+    public double? WholeDamage { get; init; }
+    public double? FocusOffset { get; init; }
     /// <summary>Coups reçus pendant le combat : total, nombre, le plus gros ; soins sur toi.</summary>
     public double? DamageTaken { get; init; }
     public int? HitsTaken { get; init; }

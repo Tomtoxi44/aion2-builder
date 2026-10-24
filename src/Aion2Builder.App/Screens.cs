@@ -2214,7 +2214,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 badges,
             },
         }, padding: new Thickness(22, 18));
-        var kpis = new List<Control> { Kpi("Dégâts", Fmt.Big(log.TotalDamage)), Kpi("Critique", cr.Crit is { } c ? Fmt.Pct(c) : "—") };
+        var kpis = new List<Control> { Kpi(log.Timeline is null ? "Dégâts" : $"Dégâts sur {Who(log)}", Fmt.Big(log.TotalDamage)), Kpi("Critique", cr.Crit is { } c ? Fmt.Pct(c) : "—") };
         if (log.Heals is not null || log.DamageTaken is not null)
         {
             kpis.Add(Kpi("Soins sur toi", Fmt.Big(log.Heals ?? 0), Tok.Good));
@@ -2228,6 +2228,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var kpiGrid = new Avalonia.Controls.Primitives.UniformGrid { Columns = 2, Rows = 2 };
         foreach (var k in kpis) kpiGrid.Children.Add(k.WithMargin(0, 0, 10, 10));
         page.Children.Add(Columns("*,*", hero, kpiGrid));
+        if (log.Timeline is { Count: > 1 }) page.Children.Add(TargetTimeline(log));
 
         // 2. À corriger en priorité : au plus 3 cartes ; le reste replié.
         if (todo.Count > 0)
@@ -2320,6 +2321,34 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         }
         page.Children.Add(new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(0, 10, 0, 0), Child = folded });
         return page;
+    }
+
+    /// <summary>La cible principale d'un combat du Pet Meter, pour les phrases : « le boss », « le mannequin »…</summary>
+    static string Who(CombatLog log) => log.Kind switch { "boss" => "le boss", "dummy" => "le mannequin", "pvp" => "le joueur", _ => "la cible" };
+
+    /// <summary>
+    /// Quand tu frappais la cible principale (le boss), et combien : tes dégâts sur elle seconde par seconde (un trou =
+    /// une seconde sans coup), puis où ce moment se place dans le combat entier (adds et monstres d'avant compris).
+    /// </summary>
+    Control TargetTimeline(CombatLog log)
+    {
+        var values = log.Timeline!;
+        var who = Who(log);
+        var idle = values.Count(v => v <= 0);
+        var chart = new Histogram(values, Accent.Main) { Height = 90 };
+        var mid = values.Count / 2;
+        var axis = ColumnsSpaced("*,*,*", 0, T("0 s", 11, Tok.Muted, mono: true), T(Duration(mid), 11, Tok.Muted, mono: true).Centered(),
+            T(Duration(values.Count), 11, Tok.Muted, mono: true).AlignRight());
+        var text = new StackPanel { Spacing = 4 };
+        text.Children.Add(T($"De ton premier à ton dernier coup sur {who} : {Duration(log.Duration)}, {Fmt.Big(log.TotalDamage)} dégâts, " +
+                            $"{Fmt.Big(log.Dps)} par seconde.", 13, Tok.Text, wrap: true));
+        if (log.WholeDuration is { } whole && log.FocusOffset is { } offset && whole - log.Duration >= 1)
+            text.Children.Add(T($"Le combat entier a duré {Duration(whole)} ({Fmt.Big(log.WholeDamage ?? 0)} dégâts, adds et monstres compris) ; " +
+                                $"tu as commencé à frapper {who} à {Duration(offset)}. Le reste de l'écran ne compte que {who}.", 12, Tok.Text2, wrap: true).WithLineHeight(1.4));
+        if (idle > 0)
+            text.Children.Add(T($"{idle} s sans coup sur {who} : mécanique, déplacement, adds ou temps mort.", 12, idle * 10 > values.Count ? Tok.Warn : Tok.Muted, wrap: true));
+        return Card(new StackPanel { Spacing = 8, Children = { chart, axis, text } }, $"Tes dégâts sur {who}, seconde par seconde",
+            T($"pic {Fmt.Big(values.Max())}/s", 11, Tok.Muted, mono: true));
     }
 
     /// <summary>Carte « à corriger » : pastille, gain estimé, titre, cases lancés / possibles, ce qu'il faut faire ; « Pourquoi » déplie la raison.</summary>
