@@ -40,6 +40,24 @@ public sealed class CombatAnalyzer(GameDatabase db)
         return close.Count > 0 && (close.Count == 1 || close[1].Distance > close[0].Distance) ? close[0].Spell : null;
     }
 
+    /// <summary>
+    /// Lancers possibles d'un sort qui ne part qu'après un autre : chaque lancer d'un sort qui l'ouvre est une occasion,
+    /// à condition que sa recharge soit finie (deux ouvertures rapprochées ne valent qu'un lancer).
+    /// </summary>
+    static int Openings(SpellData spell, List<CombatCast> casts)
+    {
+        var openers = spell.Requires!.Select(Key).ToHashSet();
+        var count = 0;
+        var ready = double.MinValue;
+        foreach (var c in casts.Where(c => openers.Contains(Key(c.Name))).OrderBy(c => c.T))
+        {
+            if (c.T < ready) continue;
+            count++;
+            ready = c.T + spell.Cooldown;
+        }
+        return count;
+    }
+
     /// <summary>Distance d'édition (insertions, suppressions, remplacements).</summary>
     static int Distance(string a, string b)
     {
@@ -79,23 +97,34 @@ public sealed class CombatAnalyzer(GameDatabase db)
             if (spell is null)
                 return new SkillReview(s, null, null, sim, "Hors des données de sorts (enchaînement ou effet déclenché) : rien à comparer.", Severity.Info);
             var possible = PossibleFor(spell.Cooldown);
+            // Sort qui ne part qu'après un autre (Jugement après un coup de bouclier) : ses occasions réelles, pas sa recharge.
+            var why = $"recharge {spell.Cooldown:0} s";
+            if (spell.Requires is { Count: > 0 } && spell.Within > 0 && possible is not null)
+            {
+                if (log.Casts is not { Count: > 0 } timed)
+                    return new SkillReview(s, spell, null, sim,
+                        $"Ne part que dans les {spell.Within:0} s après {string.Join(" ou ", spell.Requires)} : sans lancers chronométrés (Pet Meter), pas comparable à sa recharge.", Severity.Info);
+                possible = Openings(spell, timed);
+                why = $"après {string.Join(" ou ", spell.Requires)}, recharge {spell.Cooldown:0} s";
+            }
             if (possible is not { } max || s.Uses <= 0)
                 return new SkillReview(s, spell, null, sim, spell.Kind == "Passive" ? "Effet passif déclenché par tes coups : rien à comparer."
                     : spell.Cooldown > 0 ? "Utilisations non lues." : "Sans recharge : sort de remplissage.", Severity.Info);
             if (s.Uses > max)
                 return new SkillReview(s, spell, max, sim,
-                    $"{Times(s.Uses)} pour {max} permises par sa recharge seule ({spell.Cooldown:0} s) : réinitialisations ou réductions de recharge bien exploitées.", Severity.Info);
+                    $"{Times(s.Uses)} pour {max} permises ({why}) : réinitialisations ou réductions de recharge bien exploitées.", Severity.Info);
             if (s.Uses >= 0.8 * max)
-                return new SkillReview(s, spell, max, sim, $"{s.Uses} sur {max} possibles (recharge {spell.Cooldown:0} s) : lancé dès qu'il est prêt.", Severity.Info);
+                return new SkillReview(s, spell, max, sim, $"{s.Uses} sur {max} possibles ({why}) : lancé dès qu'il est prêt.", Severity.Info);
             var lost = max - s.Uses;
             var gain = log.TotalDamage > 0 ? lost * s.Damage / s.Uses / log.TotalDamage : 0;
             return new SkillReview(s, spell, max, sim,
-                $"{s.Uses} sur {max} possibles (recharge {spell.Cooldown:0} s) : {lost} lancer{(lost > 1 ? "s" : "")} perdu{(lost > 1 ? "s" : "")}, " +
+                $"{s.Uses} sur {max} possibles ({why}) : {lost} lancer{(lost > 1 ? "s" : "")} perdu{(lost > 1 ? "s" : "")}, " +
                 $"≈ {Fmt.Pct(gain)} de dégâts en plus en le lançant dès qu'il revient.", gain >= 0.05 ? Severity.Important : Severity.Advice);
         }).ToList();
         foreach (var r in skills.Where(r => r.Level <= Severity.Advice).OrderBy(r => r.Level).ThenByDescending(r => r.Skill.Damage))
-            findings.Add(new Finding(Area.Skills, r.Level, $"« {r.Skill.Name} » : {r.Skill.Uses} lancers sur {r.Possible} possibles", r.Verdict,
-                $"Relance « {r.Skill.Name} » dès que sa recharge est finie.", r.Level == Severity.Important ? 70 : 50));
+            findings.Add(new Finding(Area.Skills, r.Level, $"« {r.Skill.Name} » : {r.Skill.Uses} lancer{(r.Skill.Uses > 1 ? "s" : "")} sur {r.Possible} possibles", r.Verdict,
+                r.Spell?.Requires is { Count: > 0 } req ? $"Enchaîne « {r.Skill.Name} » après chaque {string.Join(" ou ", req)}." : $"Relance « {r.Skill.Name} » dès que sa recharge est finie.",
+                r.Level == Severity.Important ? 70 : 50));
 
         // Sorts de la rotation jamais vus.
         var seen = log.Skills.Select(s => Key(s.Name)).Concat(log.Buffs.Select(b => Key(b.Name))).ToHashSet();
