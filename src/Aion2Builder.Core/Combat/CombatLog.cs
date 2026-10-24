@@ -25,6 +25,8 @@ public sealed record CombatLog
     // Combats du Pet Meter seulement (lus dans le trafic du jeu, pas sur la fenêtre NotMeter) :
     /// <summary>Fichier du Pet Meter d'où vient le combat (pour ne pas l'importer deux fois).</summary>
     public string? SourceFile { get; init; }
+    /// <summary>Version de la conversion des fichiers du Pet Meter : un combat converti par une version plus ancienne est reconverti.</summary>
+    public int ImportVersion { get; init; }
     /// <summary>Coups reçus pendant le combat : total, nombre, le plus gros ; soins sur toi.</summary>
     public double? DamageTaken { get; init; }
     public int? HitsTaken { get; init; }

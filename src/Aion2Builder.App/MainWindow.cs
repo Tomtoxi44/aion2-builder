@@ -287,20 +287,12 @@ public sealed class MainWindow : Window
         if (current is null) { Render(); return; }
         combats = CurrentKey is { } key ? combatStore.List(key) : [];
         // Nouveaux combats du Pet Meter pour ce perso (même nom) : repris tout seuls.
+        // (et ceux convertis par une version plus ancienne du Builder, reconvertis).
         if (CurrentKey is { } k)
         {
-            var known = combatStore.Imported(k);
-            known.UnionWith(combats.Select(x => x.Log.SourceFile).OfType<string>());
-            // Les 20 plus récents seulement : inutile de reprendre un combat plus ancien que ce qui est gardé.
-            var fresh = PetMeterFights.For(current.Name).Where(x => !known.Contains(System.IO.Path.GetFileName(x.Path))).Take(20).ToList();
-            foreach (var (path, fight) in fresh) combatStore.Save(k, PetMeterFights.ToLog(fight, path, db));
-            if (fresh.Count > 0)
-            {
-                combatStore.MarkImported(k, fresh.Select(x => System.IO.Path.GetFileName(x.Path)));
-                combatStore.Prune(k);
-                combats = combatStore.List(k);
-                Toast($"{fresh.Count} combat{(fresh.Count > 1 ? "s" : "")} du Pet Meter", "Écran Combat : lancers, combos, temps morts, dégâts subis.");
-            }
+            var fresh = PetMeterFights.Sync(combatStore, k, current.Name, db);
+            combats = combatStore.List(k);
+            if (fresh > 0) Toast($"{fresh} combat{(fresh > 1 ? "s" : "")} du Pet Meter", "Écran Combat : lancers, combos, temps morts, dégâts subis.");
         }
         try { report = new Advisor(db).Analyze(current, prefs.Mode, inputs, pets.Collection, combats.Select(x => x.Log).FirstOrDefault()); }
         catch (InvalidOperationException ex) { report = null; SetStatus(ex.Message, error: true); state.Screen = Screen.Import; }

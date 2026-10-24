@@ -12,6 +12,35 @@ public static class PetMeterFights
 {
     public static string Dir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AION2-pet-meter", "fights");
 
+    /// <summary>Version de la conversion (2 : lancers groupés à 0,6 s, noms des enchaînements du Templier).</summary>
+    public const int Version = 2;
+
+    /// <summary>
+    /// Met à jour les combats gardés d'un perso : reconvertit ceux qu'une version plus ancienne a convertis (leur fichier
+    /// existe encore), puis reprend les nouveaux (les 20 plus récents au plus). Rend le nombre de nouveaux combats.
+    /// </summary>
+    public static int Sync(Storage.CombatStore store, string characterKey, string character, GameDatabase db)
+    {
+        foreach (var (path, log) in store.List(characterKey))
+            if (log.Source == "Pet Meter" && log.ImportVersion < Version && log.SourceFile is { } file && File.Exists(Path.Combine(Dir, file)))
+            {
+                try
+                {
+                    if (JsonSerializer.Deserialize<Fight>(File.ReadAllText(Path.Combine(Dir, file)), GameDataStore.Json) is { } f)
+                        store.Overwrite(path, ToLog(f, Path.Combine(Dir, file), db));
+                }
+                catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException) { }
+            }
+        var known = store.Imported(characterKey);
+        known.UnionWith(store.List(characterKey).Select(x => x.Log.SourceFile).OfType<string>());
+        var fresh = For(character).Where(x => !known.Contains(Path.GetFileName(x.Path))).Take(Storage.CombatStore.Keep).ToList();
+        foreach (var (path, fight) in fresh) store.Save(characterKey, ToLog(fight, path, db));
+        if (fresh.Count == 0) return 0;
+        store.MarkImported(characterKey, fresh.Select(x => Path.GetFileName(x.Path)));
+        store.Prune(characterKey);
+        return fresh.Count;
+    }
+
     /// <summary>Créatures connues : code du Pet Meter → nom.</summary>
     static readonly Dictionary<long, string> Creatures = new() { [2400032] = "Mannequin d'entraînement" };
 
@@ -61,7 +90,7 @@ public static class PetMeterFights
             ? t : File.GetLastWriteTimeUtc(path);
         return new CombatLog
         {
-            Source = "Pet Meter", ImportedAtUtc = start, Character = f.Character,
+            Source = "Pet Meter", ImportedAtUtc = start, Character = f.Character, ImportVersion = Version,
             Target = Creatures.TryGetValue(f.Target.Code, out var n) ? n : f.Target.Code > 0 ? $"créature {f.Target.Code}" : "monstres",
             Duration = f.Duration, TotalDamage = f.Damage, Dps = f.Duration > 0 ? f.Damage / f.Duration : 0, Hits = f.Hits,
             SkillCount = skills.Count, Skills = skills.OrderByDescending(s => s.Damage).ToList(), Pages = 0,

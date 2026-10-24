@@ -37,6 +37,9 @@ public sealed class CombatStore
 
     public CombatLog? Latest(string characterKey) => List(characterKey).Select(x => x.Log).FirstOrDefault();
 
+    /// <summary>Remplace un combat gardé (reconversion), au même endroit.</summary>
+    public void Overwrite(string path, CombatLog log) => File.WriteAllText(path, JsonSerializer.Serialize(log, GameDataStore.Json));
+
     /// <summary>Ne garde que les <paramref name="keep"/> combats les plus récents.</summary>
     public void Prune(string characterKey, int keep = Keep)
     {
