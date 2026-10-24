@@ -194,14 +194,18 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    l'ordre de la rotation dès qu'ils sont prêts et que leur condition est remplie, le meilleur sort sans recharge entre
    deux, les sorts déclenchés suivent leur déclencheur ; dégâts en % d'ATQ par seconde et part de chaque sort
    (CLI : `rotation <classe>`). Sans buffs, PM ni critiques : ça compare des ordres de priorité.
-9. **Combat (NotMeter).** L'écran Combat lit les captures de la fenêtre « Détails du combat » de
-   [NotMeter](https://notmeter.com) (en français) : une capture par écran de la liste des compétences, importées
-   ensemble. Le texte est lu sur le PC par la reconnaissance de texte de Windows (rien n'est envoyé). Pour chaque sort :
+9. **Combat (Pet Meter, NotMeter).** Le plus simple : le [Pet Meter](https://github.com/Tomtoxi44/aion2-pet-meter)
+   (v0.7.0 ou plus) enregistre tes combats en lisant le trafic du jeu, et l'écran Combat les reprend tout seuls à
+   l'ouverture du perso (même nom) : en plus de ce qui suit, tes **lancers chronométrés** (combos ratés d'après les
+   conditions de `spells.json`, temps morts de plus de 2,5 s) et les **dégâts subis face aux soins**. Les combats
+   enregistrés par NotMeter, eux, sont chiffrés : ils ne se lisent pas. À la place, l'écran lit les captures de sa
+   fenêtre « Détails du combat » ([NotMeter](https://notmeter.com), en français) : une capture par écran de la liste
+   des compétences, importées ensemble. Le texte est lu sur le PC par la reconnaissance de texte de Windows (rien n'est envoyé). Pour chaque sort :
    dégâts, part des dégâts, lancers face à ce que sa recharge permet (durée ÷ recharge + 1), critique, coups de dos ;
    sorts de la rotation jamais lancés ; buffs relancés moins souvent que leur recharge le permet ou peu actifs
    (déclencheur connu, ex. Position d'attaque surprise de l'Assassin) ; parchemins. Le dernier combat importé remplace
    la simulation dans le **focus dégâts** de l'écran Compétences (parts réelles, enchaînements compris) et ajoute ses
-   conseils à l'accueil. Les dégâts évitables et les soins reçus ne sont pas sur cette fenêtre : non jugés.
+   conseils à l'accueil. Les dégâts subis et les soins ne sont pas sur cette fenêtre de NotMeter (seulement via le Pet Meter).
    CLI : `combat <nom> [mots.tsv…]` (mots reconnus, écrits par `Aion2Builder.exe --ocr capture.png mots.tsv`).
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les

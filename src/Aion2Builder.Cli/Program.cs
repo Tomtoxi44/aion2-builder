@@ -242,7 +242,7 @@ static int CombatCommand(Args cli)
     var profile = db.Resolve(snapshot.ClassCode, GameMode.PvE, inputs.UsesDesigned);
     var report = new CombatAnalyzer(db).Analyze(log, profile);
     Console.WriteLine($"Combat de {log.Character} contre {log.Target} : {log.Duration:0} s, {Fmt.Big(log.TotalDamage)} dégâts, DPS {Fmt.Big(log.Dps)}, {log.Hits} coups, " +
-                      $"{log.Skills.Count}/{log.SkillCount} sorts lus sur {log.Pages} capture(s)" +
+                      (log.Source == "Pet Meter" ? $"{log.Skills.Count} sorts, {log.Casts?.Count ?? 0} lancers (Pet Meter)" : $"{log.Skills.Count}/{log.SkillCount} sorts lus sur {log.Pages} capture(s)") +
                       (report.Crit is { } c ? $", critique {Fmt.Pct(c)}" : "") + (report.Back is { } back ? $", de dos {Fmt.Pct(back)}" : ""));
     Console.WriteLine();
     foreach (var s in report.Skills)

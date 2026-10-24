@@ -58,7 +58,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
         (Screen.Home, "Accueil", "Accueil"), (Screen.Stats, "Stats", "Stats"), (Screen.Gear, "Équipement", "Équip."),
-        (Screen.Skills, "Compétences", "Compét."), (Screen.Build, "Build et rotation", "Build"), (Screen.Combat, "Combat (NotMeter)", "Combat"), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Pets, "Familiers", "Famil."),
+        (Screen.Skills, "Compétences", "Compét."), (Screen.Build, "Build et rotation", "Build"), (Screen.Combat, "Combat (Pet Meter, NotMeter)", "Combat"), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Pets, "Familiers", "Famil."),
         (Screen.Simulate, "Simulation « et si »", "Et si"), (Screen.Progress, "Progression", "Prog."),
         (Screen.Details, "Détails", "Détails"),
     ];
@@ -1182,7 +1182,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     {
         var panel = new StackPanel();
         var import = Clickable(T("+ importer des captures…", 12, Accent.Main, FontWeight.SemiBold, mono: true), importCombat, hover: Tok.HoverStrong, padding: new Thickness(8, 2));
-        panel.Children.Add(SectionHeader("Combat · captures NotMeter « Détails du combat »", import, 20));
+        panel.Children.Add(SectionHeader("Combat · Pet Meter, ou captures NotMeter « Détails du combat »", import, 20));
         if (Combat is not { } cr)
         {
             var steps = new StackPanel { Spacing = 10, Margin = new Thickness(20, 16) };
@@ -1335,7 +1335,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         }
         body.Children.Add(T("Lancers possibles = durée du combat ÷ recharge du sort (+1 au départ), sans réduction de recharge : un sort réinitialisé " +
             "(Clone illusoire pour Coup au cœur) peut dépasser. « Simulé » = part de dégâts prévue par la rotation simulée ; les enchaînements " +
-            "(sorts absents des données) n'y figurent pas. Les dégâts évitables et les soins ne sont pas sur la fenêtre « Détails du combat » : non jugés.",
+            "(sorts absents des données) n'y figurent pas. Combats du Pet Meter : lancers chronométrés (combos, temps morts), dégâts subis et soins ; les captures NotMeter n'ont ni l'un ni l'autre.",
             12, Tok.Muted, wrap: true).WithLineHeight(1.5));
         panel.Children.Add(body);
         return panel;
