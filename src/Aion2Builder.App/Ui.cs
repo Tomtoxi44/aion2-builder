@@ -214,6 +214,147 @@ static class Ui
         return panel;
     }
 
+    // ----- Refonte visuelle : panneaux, chiffres clés, barres, cases, sections repliables (même esprit IDE que le reste) -----
+
+    /// <summary>Panneau : barre de titre en petites capitales (texte optionnel à droite), bordure fine, coins presque carrés.</summary>
+    public static Border Card(Control content, string? title = null, Control? right = null, Thickness? padding = null)
+    {
+        var body = new DockPanel();
+        if (title is not null)
+        {
+            var head = SectionHeader(title, right);
+            head.Background = Tok.Chrome;
+            DockPanel.SetDock(head, Dock.Top);
+            body.Children.Add(head);
+        }
+        body.Children.Add(new Border { Padding = padding ?? new Thickness(14, 12), Child = content });
+        return new Border
+        {
+            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), ClipToBounds = true,
+            Child = body,
+        };
+    }
+
+    /// <summary>Chiffre clé : libellé en petites capitales au-dessus d'une grande valeur à chasse fixe.</summary>
+    public static Border Kpi(string label, string value, IBrush? color = null, double size = 22) => new()
+    {
+        Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
+        Padding = new Thickness(14, 10),
+        Child = new StackPanel { Spacing = 4, Children = { Label(label), T(value, size, color ?? Tok.Text, FontWeight.SemiBold, mono: true) } },
+    };
+
+    /// <summary>Badge : texte à chasse fixe coloré, sur fond et bordure de la même couleur.</summary>
+    public static Border Badge(string text, IBrush color) => new()
+    {
+        Background = Tok.Alpha(color, 0.15), BorderBrush = Tok.Alpha(color, 0.3), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3),
+        Padding = new Thickness(8, 2), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
+        Child = T(text, 12, color, FontWeight.SemiBold, mono: true),
+    };
+
+    /// <summary>Barre (0 à 1) : piste sombre, remplissage coloré.</summary>
+    public static Border RoundBar(double ratio, IBrush fill, double height = 8)
+    {
+        ratio = Math.Clamp(ratio, 0, 1);
+        var split = new Grid
+        {
+            ColumnDefinitions = { new ColumnDefinition(new GridLength(ratio, GridUnitType.Star)), new ColumnDefinition(new GridLength(1 - ratio, GridUnitType.Star)) },
+        };
+        split.Children.Add(new Border { Background = fill, CornerRadius = new CornerRadius(2) });
+        return new Border
+        {
+            Height = height, Background = Tok.HoverStrong, CornerRadius = new CornerRadius(2), ClipToBounds = true,
+            VerticalAlignment = VerticalAlignment.Center, Child = split,
+        };
+    }
+
+    /// <summary>Ligne « nom · barre · valeur », cliquable si <paramref name="onClick"/> est donné.</summary>
+    public static Control BarRow(string name, double ratio, string value, IBrush fill, double nameWidth = 170, Action? onClick = null, string? tip = null,
+        bool selected = false)
+    {
+        var row = ColumnsSpaced($"{nameWidth},*,48", 10, T(name, 13, selected ? Accent.Main : null), RoundBar(ratio, fill),
+            T(value, 12, Tok.Text2, mono: true).AlignRight());
+        Control result = onClick is null ? row : Clickable(row, onClick, hover: Tok.Hover, padding: new Thickness(0, 2));
+        return tip is null ? result : Tip(result, tip);
+    }
+
+    /// <summary>
+    /// Cases « faits / possibles » : une case verte par fait, orange par occasion perdue, vert pâle au-delà du possible
+    /// (réinitialisations). Au plus 24 cases : au-delà, chaque case vaut plusieurs lancers.
+    /// </summary>
+    public static Control Pips(int done, int max, double width = 14, double height = 8)
+    {
+        var total = Math.Max(done, max);
+        var scale = total > 24 ? total / 24.0 : 1;
+        var panel = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
+        for (var i = 0; i < (int)Math.Ceiling(total / scale); i++)
+        {
+            var at = i * scale;
+            var color = at < Math.Min(done, max) ? Tok.Good : at < max ? Tok.Warn : Tok.Alpha(Tok.Good, 0.45);
+            panel.Children.Add(new Border { Width = width, Height = height, CornerRadius = new CornerRadius(2), Background = color, Margin = new Thickness(0, 2, 3, 2) });
+        }
+        return panel;
+    }
+
+    /// <summary>Piste de frise : des points (lancers) et des bandes (pauses) placés selon le temps, sur toute la largeur.</summary>
+    public sealed class TimelineTrack(double duration) : Panel
+    {
+        readonly List<(double Start, double End)> spans = [];
+
+        public TimelineTrack Dot(double t, IBrush color)
+        {
+            spans.Add((t, t));
+            Children.Add(new Avalonia.Controls.Shapes.Ellipse { Width = 8, Height = 8, Fill = color });
+            return this;
+        }
+
+        public TimelineTrack Span(double start, double end, IBrush color)
+        {
+            spans.Add((start, end));
+            Children.Add(new Border { Background = color, CornerRadius = new CornerRadius(2) });
+            return this;
+        }
+
+        protected override Size MeasureOverride(Size available)
+        {
+            foreach (var c in Children) c.Measure(new Size(8, 8));
+            return new Size(double.IsInfinity(available.Width) ? 100 : available.Width, 14);
+        }
+
+        protected override Size ArrangeOverride(Size final)
+        {
+            var w = Math.Max(1, final.Width - 8);
+            for (var i = 0; i < Children.Count; i++)
+            {
+                var (start, end) = spans[i];
+                var x = Math.Clamp(start / Math.Max(1, duration), 0, 1) * w;
+                Children[i].Arrange(end > start
+                    ? new Rect(x, 2, Math.Max(2, (end - start) / Math.Max(1, duration) * w), 10)
+                    : new Rect(x, 3, 8, 8));
+            }
+            return final;
+        }
+    }
+
+    /// <summary>Section repliable « ▸ Titre » : son contenu n'est construit qu'une fois ouverte.</summary>
+    public static StackPanel Expander(string title, bool open, Action toggle, Func<Control> content, Thickness? margin = null)
+    {
+        var panel = new StackPanel { Spacing = 10, Margin = margin ?? default };
+        panel.Children.Add(Clickable(new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 8,
+            Children = { T(open ? "▾" : "▸", 12, Tok.Muted, mono: true), T(title, 13, Tok.Text2) },
+        }, toggle, hover: Tok.Hover, padding: new Thickness(4, 4)));
+        if (open) panel.Children.Add(content());
+        return panel;
+    }
+
+    public static TextBlock AlignRight(this TextBlock block)
+    {
+        block.HorizontalAlignment = HorizontalAlignment.Right;
+        block.TextAlignment = TextAlignment.Right;
+        return block;
+    }
+
     public static T Tip<T>(T control, string text) where T : Control
     {
         ToolTip.SetTip(control, text);
