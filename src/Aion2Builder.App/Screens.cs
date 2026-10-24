@@ -812,7 +812,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         {
             body.Children.Add(SideGroup("Ce qui fait tes dégâts"));
             var selected = SelectedSkillName;
-            foreach (var a in sk.Focus.Take(8))
+            foreach (var a in sk.Focus.Where(a => a.DamageShare >= 0.005).Take(8))
             {
                 var name = a.Skill.Name;
                 var share = T(Fmt.Pct(a.DamageShare), 11, Tok.Text2, mono: true);
@@ -2056,7 +2056,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     {
         var panel = new StackPanel();
         var import = Clickable(T("+ importer des captures…", 12, Accent.Main, FontWeight.SemiBold, mono: true), importCombat, hover: Tok.HoverStrong, padding: new Thickness(8, 2));
-        panel.Children.Add(SectionHeader("Combat · Pet Meter, ou captures NotMeter « Détails du combat »", import, 20));
+        panel.Children.Add(SectionHeader("Combat · Pet Meter ou captures NotMeter", import, 20));
         if (Combat is null && combats.Count > 0)
         {
             panel.Children.Add(CombatHistory());
@@ -2622,7 +2622,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         };
         info.Children.Add(Card(legend, "Légende"));
 
-        var body = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 20, Children = { BoardGrid(selected), info } };
+        // Le plateau, puis ses chiffres à droite ; s'il manque de place (barre secondaire et inspecteur ouverts), dessous.
+        var body = new WrapPanel { ItemSpacing = 20, LineSpacing = 14, Children = { BoardGrid(selected), info } };
         panel.Children.Add(new StackPanel { Spacing = 14, Margin = new Thickness(20, 14, 20, 24), Children = { body, TodoCards(Area.Daevanion) ?? new Control(), DaevaNext(selected) } });
         return panel;
     }

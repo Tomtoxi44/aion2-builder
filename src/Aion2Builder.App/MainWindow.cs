@@ -713,7 +713,7 @@ public sealed class MainWindow : Window
         var foot = new Border
         {
             Padding = new Thickness(14, 7), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 1, 0, 0),
-            Child = T("Ctrl+B masque la barre · Ctrl+I l'inspecteur", 11, Tok.Muted, mono: true),
+            Child = T("Ctrl+B : masquer la barre", 11, Tok.Muted, mono: true),
         };
         DockPanel.SetDock(foot, Dock.Bottom);
         return new Border
@@ -1206,15 +1206,16 @@ public sealed class MainWindow : Window
             right.Children.Add(toggle);
         }
         DockPanel.SetDock(right, Dock.Right);
-        var left = new StackPanel
+        // Chaque segment calé à gauche, le dernier remplit le reste : trop long, il se termine par « … » au lieu de passer
+        // sous la partie droite.
+        var parts = new List<TextBlock> { T(c.Name.ToLowerInvariant(), 12, Tok.Muted, mono: true), T("›", 12, Tok.Muted, mono: true), T(ScreenViews.Title(state.Screen), 12, Tok.Text, mono: true) };
+        if (crumb is not null) parts.AddRange([T("›", 12, Tok.Muted, mono: true), T(crumb, 12, Tok.Text, mono: true)]);
+        var left = new DockPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0) };
+        foreach (var part in parts)
         {
-            Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center,
-            Children = { T(c.Name.ToLowerInvariant(), 12, Tok.Muted, mono: true), T("›", 12, Tok.Muted, mono: true), T(ScreenViews.Title(state.Screen), 12, Tok.Text, mono: true) },
-        };
-        if (crumb is not null)
-        {
-            left.Children.Add(T("›", 12, Tok.Muted, mono: true));
-            left.Children.Add(T(crumb, 12, Tok.Text, mono: true));
+            part.Margin = new Thickness(0, 0, 8, 0);
+            if (part != parts[^1]) DockPanel.SetDock(part, Dock.Left);
+            left.Children.Add(part);
         }
         return new Border
         {

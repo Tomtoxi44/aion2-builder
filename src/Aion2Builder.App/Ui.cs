@@ -52,7 +52,7 @@ static class Ui
 
     /// <summary>Libellé de section : 11 px, majuscules, interlettrage 0,08 em.</summary>
     public static TextBlock Label(string text, IBrush? color = null) =>
-        new() { Text = text.ToUpperInvariant(), FontSize = 11, LetterSpacing = 0.88, Foreground = color ?? Tok.Muted, VerticalAlignment = VerticalAlignment.Center };
+        new() { Text = text.ToUpperInvariant(), FontSize = 11, LetterSpacing = 0.88, Foreground = color ?? Tok.Muted, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
 
     /// <summary>En-tête de section commun au contenu (padX 20) et à l'inspecteur (padX 14).</summary>
     public static Border SectionHeader(string text, Control? right = null, double padX = 14, bool topBorder = false)
