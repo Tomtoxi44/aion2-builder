@@ -444,4 +444,11 @@ public sealed record SpellData
     public double Cooldown { get; init; }
     public double Coef { get; init; }
     public int Targets { get; init; } = 1;
+    /// <summary>Simulation : le sort ne part que si l'un de ces sorts a été lancé dans les <see cref="Within"/> secondes.</summary>
+    public List<string>? Requires { get; init; }
+    public double Within { get; init; }
+    /// <summary>false : condition impossible sur un boss (déséquilibre, étourdissement, gel, après une esquive).</summary>
+    public bool Boss { get; init; } = true;
+    /// <summary>Pas lancé : se déclenche à chaque lancer de ces sorts.</summary>
+    public List<string>? TriggeredBy { get; init; }
 }

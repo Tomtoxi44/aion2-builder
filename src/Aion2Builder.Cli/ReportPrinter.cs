@@ -72,21 +72,38 @@ sealed class ReportPrinter(GameDatabase db)
         }
 
         Section($"Compétences — {r.Skills.SpentPoints} points investis + {r.Skills.UnspentPoints} non dépensés (niveau acheté max {db.Settings.Skills.BaseMax})");
-        Console.WriteLine($"  {"Compétence",-36} {"Rôle",-30} {"Acheté",6} {"Bonus",6} {"Conseil",8}");
+        if (r.Skills.Focus.Count > 0)
+        {
+            Console.WriteLine($"  Focus dégâts ({r.Skills.DamageSource}) : un niveau rapporte le plus sur les sorts qui pèsent le plus");
+            foreach (var a in r.Skills.Focus.Take(6))
+                Console.WriteLine($"   {a.DamageRank,2}. {a.Skill.Name,-32} {Fmt.Pct(a.DamageShare),6}  niv. {a.TotalAfter,2} (acheté {a.RecommendedBase}, Daevanion +{a.BonusDaevanion}, arcanes +{a.BonusArcana}, équipement +{a.BonusGear})" +
+                                  (a.OpenableNodes > 0 ? $"  · {a.OpenableNodes} case(s) Daevanion fermée(s)" : ""));
+            Console.WriteLine();
+        }
+        Console.WriteLine($"  {"Compétence",-36} {"Importance",-14} {"Dégâts",6} {"Acheté",6} {"Bonus",6} {"Conseil",8}");
         foreach (var a in r.Skills.Skills)
         {
             var delta = a.Delta == 0 ? "=" : a.Delta > 0 ? $"+{a.Delta}" : a.Delta.ToString();
             Colored(a.Delta < 0 ? ConsoleColor.Red : a.Delta > 0 ? ConsoleColor.Green : a.Skill.Acquired ? ConsoleColor.Gray : ConsoleColor.DarkGray,
-                $"  {(a.Kind == SkillKind.Passive ? "(P) " : "")}{a.Skill.Name,-32} {a.Role,-30} {a.Base,6} {"+" + a.Bonus,6} {delta,8}");
-            if (a.Delta != 0) Console.WriteLine($"      {a.Why}");
+                $"  {(a.Kind == SkillKind.Passive ? "(P) " : "")}{a.Skill.Name,-32} {SkillAdvisor.Importance(a.Priority),-14} {(a.DamageShare > 0 ? Fmt.Pct(a.DamageShare) : "—"),6} {a.Base,6} {"+" + a.Bonus,6} {delta,8}");
+            if (a.Delta != 0) Console.WriteLine($"      {a.Decision}");
         }
         if (r.Skills.Moves.Count > 0)
         {
             Console.WriteLine();
             Console.WriteLine("  Maintenant (réinitialisation gratuite) :");
             foreach (var g in r.Skills.Moves.GroupBy(m => m.To))
-                Console.WriteLine($"   +{g.Sum(m => m.Points)} {g.Key.Skill.Name} ({g.Key.Role}, {g.Key.Priority:0.00}) ← " +
-                    string.Join(", ", g.Select(m => m.From is null ? $"non dépensés −{m.Points}" : $"{m.From.Skill.Name} ({m.From.Priority:0.00}) −{m.Points}")));
+                Console.WriteLine($"   +{g.Sum(m => m.Points)} {g.Key.Skill.Name} ← " +
+                    string.Join(", ", g.Select(m => m.From is null ? $"non dépensés −{m.Points}" : $"{m.From.Skill.Name} −{m.Points}")));
+        }
+        if (r.Skills.GearBonuses.Count > 0 || r.Skills.BonusWanted.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine($"  Niveaux bonus de l'équipement et des arcanes ({r.Skills.GearBonuses.Count(b => b.Useful)}/{r.Skills.GearBonuses.Count} utiles) :");
+            foreach (var b in r.Skills.GearBonuses.OrderBy(b => b.Useful))
+                Colored(b.Useful ? ConsoleColor.Gray : ConsoleColor.Red, $"   {(b.Arcana ? $"arcane {b.Item}" : db.SlotName(b.Slot)),-28} {b.SkillName + " +" + b.Levels,-30} {b.Verdict}");
+            if (r.Skills.BonusWanted.Count > 0)
+                Console.WriteLine($"   à chercher : {string.Join(", ", r.Skills.BonusWanted.Select(a => a.Skill.Name))}");
         }
         Console.WriteLine();
         Console.WriteLine("  Prochains points, dans l'ordre :");

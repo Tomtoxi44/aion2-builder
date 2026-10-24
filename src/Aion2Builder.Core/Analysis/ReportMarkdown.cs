@@ -56,13 +56,29 @@ public static class ReportMarkdown
         Line();
         Line($"## Compétences — {r.Skills.SpentPoints} points investis + {r.Skills.UnspentPoints} non dépensés");
         Line();
+        if (r.Skills.Focus.Count > 0)
+        {
+            Line($"Focus dégâts ({r.Skills.DamageSource}) :");
+            Line();
+            foreach (var a in r.Skills.Focus.Take(6))
+                Line($"- {a.Skill.Name} : {Fmt.Pct(a.DamageShare)} des dégâts, niveau {a.TotalAfter} (acheté {a.RecommendedBase}, Daevanion +{a.BonusDaevanion}, arcanes +{a.BonusArcana}, équipement +{a.BonusGear})");
+            Line();
+        }
         if (r.Skills.Moves.Count == 0) Line("Points bien placés : rien à déplacer.");
         else
         {
             Line("Maintenant (réinitialisation gratuite) :");
             Line();
             foreach (var g in r.Skills.Moves.GroupBy(m => m.To))
-                Line($"- +{g.Sum(m => m.Points)} {g.Key.Skill.Name} ← {string.Join(", ", g.Select(m => m.From is null ? $"non dépensés −{m.Points}" : $"{m.From.Skill.Name} −{m.Points}"))}");
+                Line($"- +{g.Sum(m => m.Points)} {g.Key.Skill.Name} ← {string.Join(", ", g.Select(m => m.From is null ? $"non dépensés −{m.Points}" : $"{m.From.Skill.Name} −{m.Points}"))}. {g.Key.Decision}");
+            foreach (var d in r.Skills.ToRemove) Line($"- −{-d.Delta} {d.Skill.Name}. {d.Decision}");
+        }
+        var lost = r.Skills.GearBonuses.Where(b => !b.Useful).ToList();
+        if (lost.Count > 0 || r.Skills.BonusWanted.Count > 0)
+        {
+            Line();
+            if (lost.Count > 0) Line($"Bonus de compétence perdus : {string.Join(", ", lost.Select(b => $"{b.SkillName} +{b.Levels} ({(b.Arcana ? $"arcane {b.Item}" : db.SlotName(b.Slot))})"))}.");
+            if (r.Skills.BonusWanted.Count > 0) Line($"À chercher sur les arcanes et l'équipement : {string.Join(", ", r.Skills.BonusWanted.Select(a => a.Skill.Name))}.");
         }
         Line();
         Line("Prochains points, dans l'ordre :");

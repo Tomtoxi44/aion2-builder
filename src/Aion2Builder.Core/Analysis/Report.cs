@@ -73,7 +73,22 @@ public sealed record SkillAdvice(
     public int Delta => RecommendedBase - Base;
     public int Total => Base + Bonus;
     public int TotalAfter => RecommendedBase + Bonus;
+
+    /// <summary>Niveaux gratuits par source : cases Daevanion ouvertes, arcanes, autres pièces d'équipement.</summary>
+    public int BonusDaevanion { get; init; }
+    public int BonusArcana { get; init; }
+    public int BonusGear => Bonus - BonusDaevanion - BonusArcana;
+
+    /// <summary>Part des dégâts de la rotation simulée (0 à 1) et rang (1 = celle qui en fait le plus) ; 0 et null sans dégâts directs.</summary>
+    public double DamageShare { get; init; }
+    public int? DamageRank { get; init; }
+
+    /// <summary>Pourquoi la répartition conseillée monte, baisse ou garde cette compétence, en clair.</summary>
+    public string Decision { get; init; } = "";
 }
+
+/// <summary>Compétence bonus portée par une pièce ou une arcane (« Défense d'égide +1 » sur les gants) et ce qu'elle vaut pour toi.</summary>
+public sealed record GearSkillBonus(string Slot, string Item, bool Arcana, string SkillName, int Levels, SkillAdvice? Skill, bool Useful, string Verdict);
 
 /// <summary>Stigma : niveau monté avec des fragments, 4 emplacements, échange gratuit.</summary>
 public sealed record StigmaAdvice(SkillInfo Skill, string Role, string Why, bool Known, bool Unverified, double Priority,
@@ -102,6 +117,14 @@ public sealed record SkillPlan(List<SkillAdvice> Skills, List<StigmaAdvice> Stig
     bool HasKnowledge, string? Source, List<SkillMove> Moves, List<SkillStep> NextPoints, List<StigmaStep> NextShards)
 {
     public int Budget => SpentPoints + UnspentPoints;
+
+    /// <summary>Ce qui fait les dégâts : compétences triées par part des dégâts simulés.</summary>
+    public List<SkillAdvice> Focus { get; init; } = [];
+    /// <summary>Rotation simulée qui donne les parts de dégâts (« rotation conçue, JcE, 1 cible, 2 min »), null sans simulation.</summary>
+    public string? DamageSource { get; init; }
+    /// <summary>Compétences bonus de l'équipement et des arcanes, et celles à chercher en priorité sur les prochaines.</summary>
+    public List<GearSkillBonus> GearBonuses { get; init; } = [];
+    public List<SkillAdvice> BonusWanted { get; init; } = [];
     public IEnumerable<SkillAdvice> ToRemove => Skills.Where(s => s.Delta < 0).OrderBy(s => s.Priority);
     public IEnumerable<SkillAdvice> ToAdd => Skills.Where(s => s.Delta > 0).OrderByDescending(s => s.Priority);
 }

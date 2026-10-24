@@ -24,6 +24,7 @@ try
         "pets" or "familiers" => await Pets(cli),
         "simulate" or "simuler" => Simulate(cli),
         "progress" or "progression" => Progress(cli),
+        "rotation" => Rotation(cli),
         _ => Help(),
     };
 }
@@ -53,6 +54,8 @@ static int Help()
           simulate <nom> [--daevanion next|respec|route] [--n 20] [--skills] [--build joueurs|concu] [--gear] [--mode pvp]
                                                               Et si… : notes, familles et stats avant → après
           progress <nom>                                      Imports successifs et ce qui a changé
+          rotation <classe|nom> [--targets 4] [--duration 120] [--mode pvp]
+                                                              Rotations simulées : joueurs contre conçue
           list                                                Personnages enregistrés
           data [export]                                       Fichiers de données (poids, paliers…) modifiables
           pets [--key <clé>] [--refresh] [--forget]            Familiers du Pet Meter, lus sur Aion 2 Todo (clé : onglet
@@ -209,6 +212,30 @@ static int Simulate(Args cli)
     Console.WriteLine($"Stats qui changent ({changes.Count}) :");
     foreach (var (b, a) in changes.Take(25))
         Console.WriteLine($"  {a.Def.Name,-30} {b.Display,-16} → {a.Display}");
+    return 0;
+}
+
+static int Rotation(Args cli)
+{
+    var db = GameDataStore.Load();
+    var name = cli.Positional(0) ?? throw new InvalidOperationException("Précise une classe ou un personnage : rotation <classe|nom> [--targets 4] [--duration 120] [--mode pvp]");
+    var store = new CharacterStore();
+    var cls = db.FindClass(name)
+              ?? (store.Find(name, cli.Get("server")) is { } saved ? db.FindClass(store.Load(saved.Path).ClassCode) : null)
+              ?? throw new InvalidOperationException($"« {name} » : ni une classe, ni un personnage enregistré.");
+    var mode = (cli.Get("mode") ?? "pve").ToLowerInvariant() is "pvp" or "jcj" ? GameMode.PvP : GameMode.PvE;
+    var targets = int.TryParse(cli.Get("targets"), out var t) ? Math.Max(1, t) : 1;
+    var duration = double.TryParse(cli.Get("duration"), out var d) ? Math.Max(10, d) : 120;
+    Console.WriteLine($"Rotations simulées — {cls.Name}, {GameDatabase.ModeName(mode)}, {targets} cible(s), {duration:0} s (sorts au niveau 1, sans buffs ni critiques)");
+    foreach (var (title, play) in new[] { ("Rotation des joueurs", cls.Play.GetValueOrDefault(mode)), ("Rotation conçue", cls.Designed?.Play.GetValueOrDefault(mode)) })
+    {
+        var sim = RotationSimulator.Run(db, cls.Code, RotationSimulator.Priority(play), duration, targets, boss: mode != GameMode.PvP);
+        Console.WriteLine();
+        Console.WriteLine($"  {title} : {(sim.Damage > 0 ? $"{Fmt.Num(Math.Round(sim.PerSecond))} % d'ATQ par seconde" : "rien à simuler")}");
+        foreach (var c in sim.Casts)
+            Console.WriteLine($"    {(c.Triggered ? $"{c.Name} (déclenché)" : c.Name),-40} ×{c.Casts,-4} {Fmt.Pct(c.Damage / sim.Damage),6}");
+        foreach (var x in sim.Skipped) Console.WriteLine($"    écarté : {x}");
+    }
     return 0;
 }
 

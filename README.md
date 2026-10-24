@@ -71,6 +71,7 @@ Commandes du CLI :
 | `advise <nom> --md <fichier.md>` | Écrit le rapport en Markdown (à garder ou partager) |
 | `simulate <nom> [--daevanion next\|respec\|route] [--n 20] [--skills] [--build joueurs\|concu] [--gear]` | Et si… : notes, familles et stats avant → après |
 | `progress <nom>` | Imports successifs du personnage et ce qui a changé |
+| `rotation <classe\|nom> [--targets 4] [--duration 120] [--mode pvp]` | Rotations simulées : celle des joueurs contre la conçue, sort par sort |
 | `list` | Personnages enregistrés |
 | `data [export] [--force]` | Montre / copie les fichiers de données modifiables |
 | `pets [--key <clé>] [--refresh] [--forget]` | Relie / relit la collection de familiers (Aion 2 Todo) ; « advise » la compte ensuite |
@@ -130,18 +131,27 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    garder (à enchanter jusqu'au niveau sûr). Les pièces en retard sur la médiane passent en premier, l'arme pèse plus lourd.
    Certains emplacements ont leur propre règle (`slotRules`) : la **ceinture noble** ne se remplace pas (pas de ceinture de
    donjon sur les serveurs occidentaux), on la monte à +10 puis on la transmute au grade supérieur.
-4. **Compétences.** 1 point = +1 niveau jusqu'au niveau 10, réinitialisation gratuite ; au-delà, seuls le Daevanion et
-   l'équipement donnent des niveaux (spécialisations à 8, 12, 16, 20). L'application recalcule les points investis
+4. **Compétences.** 1 point = +1 niveau jusqu'au niveau 10, réinitialisation gratuite ; au-delà, seuls le Daevanion, les
+   arcanes et l'équipement donnent des niveaux (spécialisations à 8, 12, 16, 20). L'application recalcule les points investis
    (niveau − bonus Daevanion − bonus d'équipement), y ajoute tes points non dépensés, puis redistribue ce budget selon le
    **rôle** de chaque compétence pour ta classe et le mode (dégâts principaux, burst, débuff, contrôle, défensif…) : elle dit
    quelles compétences monter, lesquelles **réduire**, et pourquoi. Les stigmas (4 emplacements, fragments) sont classés de
    la même façon, avec le coût en fragments pour atteindre le niveau visé.
    Tout point non dépensé trouve une place, et les points posés au-dessus du niveau visé d'une compétence peu utile vont aux
    compétences utiles pas encore au maximum : une fois les conseils suivis, la répartition ne bouge plus (« ✓ points bien
-   placés »). L'écran Compétences montre, sans attendre d'avoir des points : le niveau visé de chaque compétence (↑ à monter,
-   ↓ au-dessus du visé, = atteint), ce qu'il faut faire maintenant (qui donne des points à qui ; la raison au survol),
-   l'ordre des prochains points jusqu'au bout, numérotés point par point (« 6–9 ») pour suivre la liste jusqu'à épuisement
-   (le site ne montre pas les points non dépensés), et les prochains fragments de stigma par paliers de 5.
+   placés »). À importance égale, le sort qui fait le plus de dégâts passe d'abord. Chaque décision est écrite en clair
+   (« Monte à 10 : indispensable en JcE, 24 % des dégâts simulés (n° 1). Points pris à … : ils rapportent moins là-bas. »).
+   L'écran Compétences montre :
+   - **Focus dégâts** : la part de chaque sort dans la rotation simulée du build suivi (2 min, une cible), son niveau total
+     et d'où il vient (points, cases Daevanion, arcanes, équipement), le prochain moyen de le monter (points jusqu'à 10,
+     puis cases Daevanion encore fermées, puis arcanes et équipement) et la prochaine spécialisation ;
+   - ce qu'il faut faire maintenant (qui donne des points à qui), avec la raison de chaque ajout et de chaque retrait ;
+   - l'ordre des prochains points jusqu'au bout, numérotés point par point (« 6–9 ») pour suivre la liste jusqu'à épuisement
+     (le site ne montre pas les points non dépensés) ;
+   - les **niveaux bonus de l'équipement et des arcanes** : utiles ou perdus (compétence hors barre ou peu utile), et les
+     sorts à chercher sur les prochaines arcanes et pièces ;
+   - toutes les compétences groupées (à monter, à baisser, inchangées) avec importance, part des dégâts et niveau visé
+     (↑ à monter, ↓ au-dessus du visé, = atteint), puis les stigmas et les prochains fragments par paliers de 5.
 5. **Daevanion.** Une case coûte 1, 2, 3 ou 4 points selon sa couleur (vérifié : 134 points pour Nezekan, Zikel et Vaizel,
    168 pour Triniel, 232 pour Azphel) et ne s'ouvre qu'à côté d'une case ouverte. Deux plans par réserve de points :
    - **réorganisation** : en partant de ton placement actuel, les cases peu utiles en bout de chemin (importance < 0,4)
@@ -177,6 +187,10 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    affaiblissements comptés par leur temps actif (durée ÷ recharge). Il ne remplace que les compétences où le calcul
    diverge des joueurs (`classes.json` → `designed` : priorités, niveaux visés, raison chiffrée), avec sa propre
    rotation et la liste des différences. C'est un calcul, pas de l'expérience en jeu : à tester.
+   L'écran Build simule aussi les deux rotations (2 min, 1 cible ou un pack de 4) : les sorts à recharge partent dans
+   l'ordre de la rotation dès qu'ils sont prêts et que leur condition est remplie, le meilleur sort sans recharge entre
+   deux, les sorts déclenchés suivent leur déclencheur ; dégâts en % d'ATQ par seconde et part de chaque sort
+   (CLI : `rotation <classe>`). Sans buffs, PM ni critiques : ça compare des ordres de priorité.
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par

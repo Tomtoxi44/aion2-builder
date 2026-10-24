@@ -37,6 +37,8 @@ sealed class UiState
     public bool AllStats { get; set; }
     /// <summary>Simulation « et si » : changements appliqués à une copie du personnage.</summary>
     public SimulationOptions Sim { get; set; } = new();
+    /// <summary>Rotations simulées de l'écran Build : 1 cible ou 4.</summary>
+    public int RotationTargets { get; set; } = 1;
     public HashSet<Area> Collapsed { get; } = [];
 }
 
@@ -807,20 +809,67 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
     static string Pts(int n) => $"{n} point{(n > 1 ? "s" : "")}";
 
-    /// <summary>Pourquoi une compétence prend des points : son rôle et son importance contre ceux des donneurs.</summary>
-    static string MoveReason(SkillAdvice to, List<SkillMove> moves)
+    static IBrush ImportanceColor(double priority) => priority >= 0.85 ? Tok.Good : priority >= 0.6 ? Tok.Text : priority >= 0.3 ? Tok.Text2 : Tok.Faint;
+
+    /// <summary>D'où vient le niveau total : points achetés, cases Daevanion, arcanes, autres pièces.</summary>
+    static string LevelSources(SkillAdvice a) =>
+        $"acheté {(a.Delta == 0 ? $"{a.Base}" : $"{a.Base} → {a.RecommendedBase}")}" + (a.BonusDaevanion > 0 ? $" · Daevanion +{a.BonusDaevanion}" : "") +
+        (a.BonusArcana > 0 ? $" · arcanes +{a.BonusArcana}" : "") + (a.BonusGear > 0 ? $" · équipement +{a.BonusGear}" : "");
+
+    /// <summary>Le prochain moyen de monter une compétence : les points jusqu'au niveau 10, puis les cases Daevanion, puis arcanes et équipement.</summary>
+    string NextLever(SkillAdvice a)
     {
-        var donors = moves.Where(m => m.From is not null).Select(m => m.From!).Distinct().ToList();
-        var head = $"{to.Skill.Name} — {to.Role.ToLowerInvariant()}, importance {to.Priority:0.00}";
-        return donors.Count == 0
-            ? $"{head} : tes points non dépensés y servent le plus."
-            : $"{head} — passe avant {string.Join(", ", donors.Select(d => $"{d.Skill.Name} ({d.Role.ToLowerInvariant()}, {d.Priority:0.00})"))}.";
+        var max = db.Settings.Skills.BaseMax;
+        if (a.RecommendedBase < max) return $"points : {a.RecommendedBase}/{max}";
+        if (a.OpenableNodes > 0) return $"Daevanion : {a.OpenableNodes} case{(a.OpenableNodes > 1 ? "s" : "")} fermée{(a.OpenableNodes > 1 ? "s" : "")}";
+        return "arcanes, équipement";
     }
 
-    /// <summary>Déplacements groupés par compétence qui reçoit : « +9 Coup de choc ← Défense d'égide −8, Sceau de protection −1 ».</summary>
+    string NextSpecialty(SkillAdvice a) =>
+        db.Settings.Skills.SpecialtyLevels.FirstOrDefault(l => l > a.TotalAfter) is var l and > 0 ? $"spé. {l} à {l - a.TotalAfter} niv." : "spé. max";
+
+    /// <summary>
+    /// Ce qui fait les dégâts : part de chaque sort dans la rotation simulée, son niveau (et d'où il vient) et le prochain
+    /// moyen de le monter. Un niveau rapporte d'autant plus que le sort pèse lourd.
+    /// </summary>
+    Control Focus(SkillPlan sk)
+    {
+        var list = new StackPanel { Spacing = 2 };
+        var max = sk.Focus.Max(a => a.DamageShare);
+        const string cols = "22,*,150,70,170,110";
+        list.Children.Add(new Border { Padding = new Thickness(6, 0, 6, 4), Child = Columns(cols, Label("#"), Label("Sort"), Label("Part des dégâts"), Label("Niveau"), Label("Pour monter"), Label("Spécialisation")) });
+        foreach (var a in sk.Focus.Take(6))
+        {
+            var pct = T(Fmt.Pct(a.DamageShare), 12, Tok.Text2, mono: true).WithMargin(8, 0, 0, 0);
+            DockPanel.SetDock(pct, Dock.Right);
+            var share = new DockPanel { Children = { pct, new Border { VerticalAlignment = VerticalAlignment.Center, Child = Bar(a.DamageShare / max, Accent.Main, 6) } } };
+            var name = a.Skill.Name;
+            list.Children.Add(Clickable(ColumnsSpaced(cols, 8,
+                    T($"{a.DamageRank}", 12, Tok.Muted, mono: true), T(name, 13), share,
+                    Tip(T($"{a.TotalAfter}", 13, mono: true), LevelSources(a)),
+                    T(NextLever(a), 12, a.RecommendedBase < db.Settings.Skills.BaseMax ? Tok.Good : Tok.Text2),
+                    T(NextSpecialty(a), 12, Tok.Muted, mono: true)),
+                () => update(st => st.Skill = name), hover: Tok.Hover, padding: new Thickness(6, 3)));
+        }
+        if (sk.Focus.Count > 6)
+            list.Children.Add(T($"et {sk.Focus.Count - 6} autres sorts : {Fmt.Pct(sk.Focus.Skip(6).Sum(a => a.DamageShare))} des dégâts à eux tous.", 12, Tok.Muted).WithMargin(6, 4, 0, 0));
+        list.Children.Add(T($"Niveau = niveau total après la répartition conseillée (survole-le pour sa provenance). Les points montent un sort jusqu'à {db.Settings.Skills.BaseMax} ; " +
+            "au-delà, seules les cases Daevanion, les arcanes et l'équipement le montent. Simulation : sorts au niveau 1, sans buffs ni critiques.",
+            11, Tok.Muted, wrap: true).WithLineHeight(1.4).WithMargin(6, 6, 6, 2));
+        return list;
+    }
+
+    /// <summary>
+    /// Déplacements groupés par compétence qui reçoit (« +9 Coup de choc ← Défense d'égide −8 »), chacun avec la raison
+    /// de l'algorithme ; puis pourquoi les donneuses baissent.
+    /// </summary>
     Control SkillMoves(SkillPlan sk)
     {
         var list = new StackPanel { Spacing = 2 };
+        Control Entry(Control head, string reason, string skill) => Clickable(new StackPanel
+        {
+            Spacing = 2, Children = { head, T(reason, 12, Tok.Muted, wrap: true).WithLineHeight(1.4) },
+        }, () => update(st => st.Skill = skill), hover: Tok.Hover, padding: new Thickness(6, 4));
         foreach (var group in sk.Moves.GroupBy(m => m.To))
         {
             var moves = group.ToList();
@@ -835,10 +884,37 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     T(sources, 13, moves.All(m => m.From is null) ? Tok.Text2 : Tok.Bad),
                 },
             };
-            var to = group.Key.Skill.Name;
-            // La raison passe en infobulle (et dans l'inspecteur au clic) : une ligne par compétence.
-            list.Children.Add(Tip(Clickable(line, () => update(st => st.Skill = to), hover: Tok.Hover, padding: new Thickness(6, 4)), MoveReason(group.Key, moves)));
+            list.Children.Add(Entry(line, group.Key.Decision, group.Key.Skill.Name));
         }
+        var donors = sk.Moves.Where(m => m.From is not null).Select(m => m.From!).Distinct().OrderBy(d => d.Priority).ToList();
+        if (donors.Count > 0)
+        {
+            list.Children.Add(Label("Pourquoi elles cèdent des points").WithMargin(6, 10, 0, 2));
+            foreach (var d in donors)
+                list.Children.Add(Entry(T($"−{-d.Delta}  {d.Skill.Name}", 13, Tok.Bad, FontWeight.SemiBold), d.Decision, d.Skill.Name));
+        }
+        return list;
+    }
+
+    /// <summary>Compétences bonus portées par l'équipement et les arcanes : utiles ou perdues, et quoi chercher ensuite.</summary>
+    Control GearBonuses(SkillPlan sk)
+    {
+        var list = new StackPanel { Spacing = 2 };
+        foreach (var b in sk.GearBonuses.OrderBy(b => b.Useful).ThenByDescending(b => b.Skill?.DamageShare ?? 0))
+        {
+            var color = !b.Useful ? Tok.Bad : b.Skill?.DamageShare > 0 ? Tok.Good : Tok.Text2;
+            list.Children.Add(Clickable(ColumnsSpaced("190,190,*", 8,
+                    T(b.Arcana ? $"Arcane · {b.Item}" : db.SlotName(b.Slot), 12, Tok.Muted),
+                    T($"{b.SkillName} +{b.Levels}", 13, b.Useful ? null : Tok.Bad),
+                    T(b.Verdict, 12, color, wrap: true)),
+                () => { if (b.Skill is { } a) update(st => st.Skill = a.Skill.Name); }, hover: Tok.Hover, padding: new Thickness(6, 3)));
+        }
+        if (sk.GearBonuses.Count == 0)
+            list.Children.Add(T("Aucune compétence bonus sur ton équipement ni sur tes arcanes.", 12, Tok.Muted).WithMargin(6, 2, 0, 0));
+        if (sk.BonusWanted.Count > 0)
+            list.Children.Add(T($"À chercher sur tes prochaines arcanes et pièces : {string.Join(", ", sk.BonusWanted.Select(a => a.DamageShare > 0 ? $"{a.Skill.Name} ({Fmt.Pct(a.DamageShare)})" : a.Skill.Name))}. " +
+                $"Un niveau bonus s'ajoute au-dessus des {db.Settings.Skills.BaseMax} achetés : il rapporte le plus sur les sorts qui font le plus de dégâts.",
+                12, Tok.Text2, wrap: true).WithLineHeight(1.4).WithMargin(6, 8, 6, 2));
         return list;
     }
 
@@ -860,6 +936,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             if (x.Specialty is { } spec) tags.Children.Add(T($"✦ spé. {spec}", 11, Accent.Main, FontWeight.SemiBold, mono: true));
             if (x.To == x.Skill.Target) tags.Children.Add(T("visé atteint", 11, Tok.Good, mono: true));
             else if (x.BeyondTarget) tags.Children.Add(T("au-delà du visé", 11, Tok.Faint, mono: true));
+            tags.Children.Add(T(x.Skill.DamageShare > 0 ? $"{Fmt.Pct(x.Skill.DamageShare)} des dégâts" : SkillAdvisor.Importance(x.Skill.Priority), 11, Tok.Muted, mono: true));
             var name = x.Skill.Skill.Name;
             list.Children.Add(Clickable(ColumnsSpaced("54,*,Auto", 8,
                     T(x.Points == 1 ? $"{first}" : $"{first}–{total}", 12, Tok.Muted, mono: true),
@@ -899,10 +976,15 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         });
         panel.Children.Add(new Border { Padding = new Thickness(20, 12), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = budget });
 
-        // Ce qu'il faut faire tout de suite (réinitialisation gratuite), puis où vont les points suivants.
+        // Ce qui fait les dégâts, puis ce qu'il faut faire tout de suite (réinitialisation gratuite) et où vont les points suivants.
+        if (sk.Focus.Count > 0)
+        {
+            panel.Children.Add(SectionHeader("Focus dégâts · les sorts où un niveau rapporte le plus", T(sk.DamageSource ?? "", 11, Tok.Muted, mono: true), 20));
+            panel.Children.Add(new Border { Padding = new Thickness(14, 6), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = Focus(sk) });
+        }
         if (sk.Moves.Count > 0)
         {
-            panel.Children.Add(SectionHeader($"Maintenant · {Pts(sk.Moves.Sum(m => m.Points))} à déplacer (réinitialisation gratuite) · survole une ligne pour la raison", padX: 20));
+            panel.Children.Add(SectionHeader($"Maintenant · {Pts(sk.Moves.Sum(m => m.Points))} à déplacer (réinitialisation gratuite)", padX: 20));
             panel.Children.Add(new Border { Padding = new Thickness(14, 6), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = SkillMoves(sk) });
         }
         else
@@ -915,21 +997,41 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         panel.Children.Add(SectionHeader("Prochains points · le site ne montre pas tes points libres : suis la liste jusqu'à épuisement", padX: 20));
         panel.Children.Add(new Border { Padding = new Thickness(14, 6), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = NextPoints(sk) });
 
-        const string cols = "*,190,90,64,110";
-        panel.Children.Add(TableHeader(cols, "Compétence", "Rôle", "Niveau", "Visé", "Maintenant"));
+        panel.Children.Add(SectionHeader($"Niveaux bonus · équipement et arcanes{(sk.GearBonuses.Count > 0 ? $" · {sk.GearBonuses.Count(b => b.Useful)}/{sk.GearBonuses.Count} utiles" : "")}", padX: 20));
+        panel.Children.Add(new Border { Padding = new Thickness(14, 6), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = GearBonuses(sk) });
+
+        // Toutes les compétences, groupées par ce qui change ; la raison de chaque décision est dans l'inspecteur.
+        panel.Children.Add(SectionHeader("Toutes les compétences · clique une ligne pour la raison", padX: 20));
+        const string cols = "*,170,100,64,80,60,100";
+        panel.Children.Add(TableHeader(cols, "Compétence", "Rôle", "Importance", "Dégâts", "Niveau", "Visé", "Maintenant"));
         var selected = SelectedSkillName;
-        foreach (var a in sk.Skills)
+        (string Title, Func<SkillAdvice, bool> Pick)[] groups =
+        [
+            ("À monter", a => a.Delta > 0),
+            ("À baisser", a => a.Delta < 0),
+            ("Inchangées", a => a.Delta == 0 && a.Skill.Acquired),
+            ("Pas encore apprises", a => !a.Skill.Acquired),
+        ];
+        foreach (var (title, pick) in groups)
         {
-            var kind = a.Kind == SkillKind.Passive ? "passif" : a.InBar ? null : "hors barre";
-            Control delta = a.Delta == 0 ? T("=", 12, Tok.Muted, mono: true) : Pill(DeltaText(a), DeltaColor(a));
-            var (aimText, aimColor, aimTip) = Aim(a);
-            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { T(a.Skill.Name, 13, a.Skill.Acquired ? null : Tok.Muted) } };
-            if (kind is not null) name.Children.Add(T(kind, 11, Tok.Faint, mono: true));
-            panel.Children.Add(TableRow(Columns(cols,
-                    name, Tip(T(a.Role, 13, Tok.Text2), a.Role),
-                    Tip(T(a.Skill.Acquired ? $"{a.Base} +{a.Bonus} = {a.Total}" : "—", 13, mono: true), "Niveau acheté + niveaux gratuits (Daevanion, équipement) = niveau total."),
-                    Tip(T(aimText, 13, aimColor, FontWeight.SemiBold, mono: true), aimTip), delta),
-                a.Skill.Name == selected, () => update(st => st.Skill = a.Skill.Name)));
+            var items = sk.Skills.Where(pick).OrderByDescending(a => a.DamageShare).ThenByDescending(a => a.Priority).ToList();
+            if (items.Count == 0) continue;
+            panel.Children.Add(new Border { Padding = new Thickness(20, 10, 20, 4), Child = Label($"{title} · {items.Count}") });
+            foreach (var a in items)
+            {
+                var kind = a.Kind == SkillKind.Passive ? "passif" : a.InBar ? null : "hors barre";
+                Control delta = a.Delta == 0 ? T("=", 12, Tok.Muted, mono: true) : Pill(DeltaText(a), DeltaColor(a));
+                var (aimText, aimColor, aimTip) = Aim(a);
+                var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { T(a.Skill.Name, 13, a.Skill.Acquired ? null : Tok.Muted) } };
+                if (kind is not null) name.Children.Add(T(kind, 11, Tok.Faint, mono: true));
+                panel.Children.Add(TableRow(Columns(cols,
+                        Tip(name, a.Decision), Tip(T(a.Role, 13, Tok.Text2), a.Role),
+                        T(SkillAdvisor.Importance(a.Priority), 12, ImportanceColor(a.Priority)),
+                        T(a.DamageShare > 0 ? Fmt.Pct(a.DamageShare) : "—", 12, a.DamageShare > 0 ? Tok.Text2 : Tok.Faint, mono: true),
+                        Tip(T(a.Skill.Acquired ? $"{a.Base} +{a.Bonus} = {a.Total}" : "—", 13, mono: true), LevelSources(a)),
+                        Tip(T(aimText, 13, aimColor, FontWeight.SemiBold, mono: true), aimTip), delta),
+                    a.Skill.Name == selected, () => update(st => st.Skill = a.Skill.Name)));
+            }
         }
 
         var stigmaHeader = SectionHeader($"Stigmas · {db.Settings.Stigmas.Slots} emplacements · échange gratuit", padX: 20, topBorder: true);
@@ -974,14 +1076,18 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         if (r.Skills.Skills.FirstOrDefault(a => a.Skill.Name == name) is { } a)
         {
             body.Children.Add(T(a.Skill.Name, 17, weight: FontWeight.SemiBold, wrap: true));
+            body.Children.Add(Field("Décision", a.Decision, a.Delta > 0 ? Tok.Good : a.Delta < 0 ? Tok.Bad : Tok.Text2));
             body.Children.Add(KeyValue(
             [
                 ("type", a.Kind == SkillKind.Passive ? "Passive" : a.InBar ? "Active (dans la barre)" : "Active", null),
                 ("rôle", a.Role, null),
+                ("importance", $"{SkillAdvisor.Importance(a.Priority)} ({a.Priority:0.00})", ImportanceColor(a.Priority)),
+                ("dégâts", a.DamageShare > 0 ? $"{Fmt.Pct(a.DamageShare)} de la rotation (n° {a.DamageRank})" : "aucun direct", a.DamageShare > 0 ? Tok.Text : Tok.Muted),
                 ("niveau", $"{a.Base} +{a.Bonus} = {a.Total}", null),
+                ("provenance", LevelSources(a), Tok.Text2),
                 ("visé", Aim(a).Text, Aim(a).Color),
                 ("maintenant", a.Delta == 0 ? "rien à changer" : DeltaText(a), DeltaColor(a)),
-                ("priorité", a.Priority.ToString("0.00"), null),
+                ("pour monter", a.Skill.Acquired ? $"{NextLever(a)} · {NextSpecialty(a)}" : "à apprendre", null),
             ]));
             // Données du sort (niveau 1, metabot.gg) : recharge, % d'ATQ, cibles, et ce que ça représente par seconde.
             if (db.Spell(a.Skill.Id) is { Coef: > 0 } spell)
@@ -994,7 +1100,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     ("par seconde", perSecond > 0 ? $"{Fmt.Num(perSecond)} % d'ATQ sur une cible" : "sans recharge : limitée par le temps de lancer et les PM", Tok.Text2),
                 ]));
             }
-            body.Children.Add(Field("Pourquoi", a.Why, a.Unverified ? Tok.Warn : null));
+            body.Children.Add(Field("Rôle dans la classe", a.Why, a.Unverified ? Tok.Warn : null));
             // Échanges : d'où viennent ses points, ou à qui elle les cède, et pourquoi.
             var exchanges = r.Skills.Moves.Where(m => m.To == a).Select(m => m.From is null
                     ? $"Reçoit {Pts(m.Points)} non dépensé(s)."
@@ -1076,6 +1182,52 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         grid.Children.Add(new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 1, 0), Child = left });
         grid.Children.Add(right);
         panel.Children.Add(grid);
+
+        // Rotations simulées : même moteur pour les deux, sur une cible ou sur un pack de 4, pendant 2 minutes.
+        var targets = s.RotationTargets;
+        var sims = new[]
+        {
+            ("Rotation des joueurs", RotationSimulator.Run(db, cls.Code, RotationSimulator.Priority(cls.Play.GetValueOrDefault(r.Mode)), 120, targets)),
+            ("Rotation conçue", RotationSimulator.Run(db, cls.Code, RotationSimulator.Priority(cls.Designed?.Play.GetValueOrDefault(r.Mode)), 120, targets)),
+        };
+        if (sims.Any(x => x.Item2.Damage > 0))
+        {
+            var pick = Choice([("1 cible (boss)", targets == 1, () => update(st => st.RotationTargets = 1)), ("4 cibles (pack)", targets == 4, () => update(st => st.RotationTargets = 4))]);
+            panel.Children.Add(SectionHeader("Rotations simulées · 2 minutes · données des sorts au niveau 1", pick, 20, topBorder: true));
+            var simGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), Margin = new Thickness(0, 0, 0, 6) };
+            var best = sims.Max(x => x.Item2.PerSecond);
+            for (var i = 0; i < sims.Length; i++)
+            {
+                var (title, sim) = sims[i];
+                var col = new StackPanel { Spacing = 6, Margin = new Thickness(20, 12) };
+                col.Children.Add(Label(title));
+                if (sim.Damage <= 0) { col.Children.Add(T("Pas de rotation à simuler.", 12, Tok.Muted)); }
+                else
+                {
+                    var gap = best > 0 ? sim.PerSecond / best - 1 : 0;
+                    col.Children.Add(new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal, Spacing = 8,
+                        Children =
+                        {
+                            T(Fmt.Num(Math.Round(sim.PerSecond)), 22, gap > -0.005 ? Tok.Good : Tok.Text, FontWeight.SemiBold, mono: true),
+                            T("% d'ATQ par seconde", 12, Tok.Muted).WithMargin(0, 6, 0, 0),
+                            gap < -0.005 ? T($"({Fmt.Pct(gap)})", 12, Tok.Warn, mono: true).WithMargin(0, 6, 0, 0) : new Control(),
+                        },
+                    });
+                    foreach (var c in sim.Casts.Take(7))
+                        col.Children.Add(ColumnsSpaced("*,60,60", 8, T(c.Triggered ? $"{c.Name} (déclenché)" : c.Name, 12, Tok.Text2), T($"×{c.Casts}", 12, Tok.Muted, mono: true),
+                            T(Fmt.Pct(c.Damage / sim.Damage), 12, Tok.Muted, mono: true)));
+                    foreach (var x in sim.Skipped) col.Children.Add(T($"écarté : {x}", 11, Tok.Faint, wrap: true));
+                }
+                var cell = new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, i == 0 ? 1 : 0, 0), Child = col };
+                Grid.SetColumn(cell, i);
+                simGrid.Children.Add(cell);
+            }
+            panel.Children.Add(simGrid);
+            panel.Children.Add(T("Les sorts à recharge partent dans l'ordre de la rotation dès qu'ils sont prêts, le meilleur sort sans recharge entre deux ; 1 s par lancer, 2 s pour un sort chargé. " +
+                "Sans buffs, PM ni critiques : sert à comparer les ordres de priorité, pas à prédire tes dégâts.", 11, Tok.Muted, wrap: true).WithLineHeight(1.4).WithMargin(20, 0, 20, 12));
+        }
 
         if (cls.Designed is { Differences.Count: > 0 } diff)
         {
