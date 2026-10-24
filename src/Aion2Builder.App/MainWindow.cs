@@ -12,6 +12,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -143,6 +144,9 @@ public sealed class MainWindow : Window
         region.SelectionChanged += async (_, _) => { server.Text = ""; UpdateScopeTag(); SavePrefs(); await LoadServersAsync(force: false); ScheduleSearch(); };
         server.TextChanged += (_, _) => { UpdateScopeTag(); ScheduleSearch(); };
         server.GotFocus += (_, _) => server.IsDropDownOpen = true;
+        // Glissé des entrées du rail : suivi au niveau de la fenêtre, même si un contrôle a déjà traité l'événement.
+        AddHandler(PointerMovedEvent, RailMove, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(PointerReleasedEvent, RailRelease, RoutingStrategies.Tunnel, handledEventsToo: true);
         KeyDown += (_, e) =>
         {
             if (e.Key == Key.F1) { e.Handled = true; ShowOverlay(Overlay.Shortcuts); return; }
@@ -685,50 +689,16 @@ public sealed class MainWindow : Window
     /// </summary>
     void RailDrag(Border entry, int index, List<Border> entries, Panel panel, Action open)
     {
-        Point start = default;
-        var offset = 0.0;
-        var pressed = false;
-        var dragging = false;
-        entry.PointerEntered += (_, _) => { if (!dragging) entry.Background = Tok.Hover; };
-        entry.PointerExited += (_, _) => { if (!dragging) entry.Background = Brushes.Transparent; };
+        entry.PointerEntered += (_, _) => { if (railDrag is null) entry.Background = Tok.Hover; };
+        entry.PointerExited += (_, _) => { if (railDrag is null) entry.Background = Brushes.Transparent; };
+        // L'appui commence le geste ; la fenêtre suit ensuite la souris (RailMove, RailRelease), sans dépendre de la
+        // capture de la souris par l'entrée, qui se perdait pendant le glissé.
         entry.PointerPressed += (_, e) =>
         {
             if (!e.GetCurrentPoint(entry).Properties.IsLeftButtonPressed) return;
-            pressed = true;
-            start = e.GetPosition(panel);
-            offset = 0;
-            e.Pointer.Capture(entry);
+            railDrag = new RailGesture(entry, index, entries, e.GetPosition(this).Y, open);
             e.Handled = true;
         };
-        entry.PointerMoved += (_, e) =>
-        {
-            if (!pressed) return;
-            offset = e.GetPosition(panel).Y - start.Y;
-            if (!dragging && Math.Abs(offset) < 6) return;
-            dragging = true;
-            entry.ZIndex = 10;
-            entry.Opacity = 0.85;
-            entry.Background = Tok.HoverStrong;
-            entry.RenderTransform = new TranslateTransform(0, offset);
-        };
-        // Nouvelle place : avant la première entrée dont le milieu est sous le centre de l'entrée déplacée.
-        void Drop()
-        {
-            pressed = dragging = false;
-            var center = entry.Bounds.Center.Y + offset;
-            MoveRailEntry(index, entries.Count(other => other != entry && other.Bounds.Center.Y < center));
-        }
-        entry.PointerReleased += (_, e) =>
-        {
-            if (!pressed) return;
-            if (dragging) { Drop(); e.Pointer.Capture(null); return; }
-            pressed = false;
-            e.Pointer.Capture(null);
-            open();
-        };
-        // Souris perdue pendant le glissé (fenêtre désactivée, bulle d'aide) : on dépose quand même là où elle était. Seulement
-        // quand c'est l'entrée qui la perd : en la prenant au texte qui l'avait au départ, ce texte la perd aussi.
-        entry.PointerCaptureLost += (_, e) => { if (e.Source != entry) return; if (dragging) Drop(); else pressed = false; };
         entry.ContextFlyout = new MenuFlyout
         {
             ItemsSource = new List<Control>
@@ -739,6 +709,42 @@ public sealed class MainWindow : Window
                 RailMenuItem("Ordre par défaut (écrans notés d'abord)", () => { prefs = prefs with { RailOrder = null }; prefs.Save(); Render(); }, prefs.RailOrder is not null),
             },
         };
+    }
+
+    /// <summary>Geste en cours sur une entrée du rail : appui, puis glissé éventuel.</summary>
+    sealed class RailGesture(Border entry, int index, List<Border> entries, double startY, Action open)
+    {
+        public Border Entry { get; } = entry;
+        public int Index { get; } = index;
+        public List<Border> Entries { get; } = entries;
+        public double StartY { get; } = startY;
+        public Action Open { get; } = open;
+        public double Offset { get; set; }
+        public bool Dragging { get; set; }
+    }
+
+    RailGesture? railDrag;
+
+    void RailMove(object? sender, PointerEventArgs e)
+    {
+        if (railDrag is not { } g) return;
+        g.Offset = e.GetPosition(this).Y - g.StartY;
+        if (!g.Dragging && Math.Abs(g.Offset) < 6) return;
+        g.Dragging = true;
+        g.Entry.ZIndex = 10;
+        g.Entry.Opacity = 0.85;
+        g.Entry.Background = Tok.HoverStrong;
+        g.Entry.RenderTransform = new TranslateTransform(0, g.Offset);
+    }
+
+    void RailRelease(object? sender, PointerReleasedEventArgs e)
+    {
+        if (railDrag is not { } g) return;
+        railDrag = null;
+        if (!g.Dragging) { g.Open(); return; }
+        // Nouvelle place : avant la première entrée dont le milieu est sous le centre de l'entrée déplacée.
+        var center = g.Entry.Bounds.Center.Y + g.Offset;
+        MoveRailEntry(g.Index, g.Entries.Count(other => other != g.Entry && other.Bounds.Center.Y < center));
     }
 
     static MenuItem RailMenuItem(string header, Action action, bool enabled)
