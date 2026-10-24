@@ -69,7 +69,7 @@ Commandes du CLI :
 | `advise <nom ou fichier.json> [--mode pve\|pvp\|both] [--refresh] [--json]` | Analyse et conseils, avec la rotation du build suivi |
 | `advise <nom> --build joueurs\|concu` | Choisit le build qui guide les conseils (gardé par personnage) |
 | `advise <nom> --md <fichier.md>` | Écrit le rapport en Markdown (à garder ou partager) |
-| `simulate <nom> [--daevanion next|respec|route] [--n 20] [--skills] [--build joueurs|concu] [--gear]` | Et si… : notes, familles et stats avant → après |
+| `simulate <nom> [--daevanion next\|respec\|route] [--n 20] [--skills] [--build joueurs\|concu] [--gear]` | Et si… : notes, familles et stats avant → après |
 | `progress <nom>` | Imports successifs du personnage et ce qui a changé |
 | `list` | Personnages enregistrés |
 | `data [export] [--force]` | Montre / copie les fichiers de données modifiables |
