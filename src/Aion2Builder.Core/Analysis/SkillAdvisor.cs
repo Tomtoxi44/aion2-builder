@@ -358,7 +358,7 @@ public sealed partial class SkillAdvisor(GameDatabase db)
 
         var remove = plan.ToRemove.ToList();
         var add = plan.ToAdd.ToList();
-        string Line(SkillAdvice a) => $"« {a.Skill.Name} » ({a.Role}) : {Levels(a)}. Pourquoi : {a.Why}";
+        string Line(SkillAdvice a) => $"« {a.Skill.Name} » ({a.Role}) : {Levels(a)}. {(a.Delta < 0 ? a.Decision : a.Reason)}";
         if (remove.Count > 0)
             findings.Add(new Finding(Area.Skills, Severity.Important, $"Compétences : retire des points à {string.Join(", ", remove.Select(a => a.Skill.Name))}",
                 string.Join("\n", remove.Select(Line)),
