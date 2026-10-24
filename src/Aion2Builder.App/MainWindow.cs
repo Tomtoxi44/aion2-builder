@@ -726,8 +726,9 @@ public sealed class MainWindow : Window
             e.Pointer.Capture(null);
             open();
         };
-        // Souris perdue pendant le glissé (fenêtre désactivée, bulle d'aide) : on dépose quand même là où elle était.
-        entry.PointerCaptureLost += (_, _) => { if (dragging) Drop(); else pressed = false; };
+        // Souris perdue pendant le glissé (fenêtre désactivée, bulle d'aide) : on dépose quand même là où elle était. Seulement
+        // quand c'est l'entrée qui la perd : en la prenant au texte qui l'avait au départ, ce texte la perd aussi.
+        entry.PointerCaptureLost += (_, e) => { if (e.Source != entry) return; if (dragging) Drop(); else pressed = false; };
         entry.ContextFlyout = new MenuFlyout
         {
             ItemsSource = new List<Control>
