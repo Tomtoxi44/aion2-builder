@@ -55,11 +55,6 @@ jobs:
           $p.Kill()
           (Get-Item publish\Aion2Builder.exe).VersionInfo | Select-Object ProductName, ProductVersion, CompanyName | Format-List
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Aion2Builder-${{ env.VERSION }}
-          path: publish/Aion2Builder.exe
-
       - name: Version GitHub
         env:
           GH_TOKEN: ${{ github.token }}
