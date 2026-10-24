@@ -69,6 +69,8 @@ Commandes du CLI :
 | `advise <nom ou fichier.json> [--mode pve\|pvp\|both] [--refresh] [--json]` | Analyse et conseils, avec la rotation du build suivi |
 | `advise <nom> --build joueurs\|concu` | Choisit le build qui guide les conseils (gardé par personnage) |
 | `advise <nom> --md <fichier.md>` | Écrit le rapport en Markdown (à garder ou partager) |
+| `simulate <nom> [--daevanion next|respec|route] [--n 20] [--skills] [--build joueurs|concu] [--gear]` | Et si… : notes, familles et stats avant → après |
+| `progress <nom>` | Imports successifs du personnage et ce qui a changé |
 | `list` | Personnages enregistrés |
 | `data [export] [--force]` | Montre / copie les fichiers de données modifiables |
 | `pets [--key <clé>] [--refresh] [--forget]` | Relie / relit la collection de familiers (Aion 2 Todo) ; « advise » la compte ensuite |
@@ -93,7 +95,13 @@ L'interface est organisée comme un éditeur :
   suis la répartition des compétences ou ouvres les 20 prochaines cases Daevanion, avec le même calcul que les notes ;
   aussi par pièce dans l'écran Équipement), sa progression d'un import à l'autre (niveau d'objet, puissance) et sa
   position parmi des joueurs niveau 45 de sa classe (« devant 30 % d'entre eux »).
-- **Rail à gauche** : Accueil, Stats, Équipement, Compétences, Build, Daevanion, Familiers, Détails, chacun avec sa note.
+- **Rail à gauche** : Accueil, Stats, Équipement, Compétences, Build, Daevanion, Familiers, Et si, Progression, Détails, chacun avec sa note.
+- **Et si** : simulation sur une copie du personnage ; tu choisis les changements (prochaines cases Daevanion, réorganisation
+  ou route conçue, répartition des compétences conseillée, build joueurs ou conçu, pièces en retard au niveau du palier) et
+  l'analyse est refaite : notes avant → après, familles de stats et stats qui changent (calculées à partir des effets réels
+  des cases), et ce que ça demande en jeu. Une pièce « au niveau du palier » ne change que la note (ses stats sont inconnues).
+- **Progression** : courbes du niveau d'objet, de la puissance et du score, et pour chaque import ce qui a changé (pièces,
+  niveaux de compétences, cases Daevanion ouvertes).
 - **Build et rotation** : le build des joueurs et le build conçu côte à côte (priorités, niveaux visés, ≠ là où ils
   diffèrent, rotation par phases et conseils de jeu) ; « Joueurs | Conçue » choisit celui que suivent les conseils.
 - **Bascule JcE | JcJ** toujours visible en haut ; **thème** : 8 couleurs secondaires au choix.
