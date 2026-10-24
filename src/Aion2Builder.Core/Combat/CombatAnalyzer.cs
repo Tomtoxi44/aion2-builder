@@ -111,6 +111,8 @@ public sealed class CombatAnalyzer(GameDatabase db)
         var buffs = log.Buffs.Select(b =>
         {
             var uptime = b.Uptime is { } u ? Fmt.Pct(u) : "?";
+            if (b.Uptime is null && Key(b.Name).StartsWith("parchemin"))
+                return new BuffReview(b, null, null, "Consommable ; temps actif non lu sur la capture.", Severity.Info);
             if (Key(b.Name).StartsWith("parchemin"))
                 return b.Uptime is < 0.9
                     ? new BuffReview(b, null, null, $"Actif {uptime} du combat : relance-le juste avant.", Severity.Advice)

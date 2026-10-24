@@ -78,13 +78,14 @@ public static partial class NotMeterReader
 
     static double Gap(OcrWord left, OcrWord right) => right.X - (left.X + left.Width);
 
-    /// <summary>Mots d'un nom ; un morceau de deux lettres collé au suivant (l'OCR coupe parfois un mot : « Pa rchemin ») est recollé.</summary>
+    /// <summary>Mots d'un nom ; un début de mot de deux lettres (majuscule + minuscule) collé à la suite en minuscules (l'OCR coupe parfois un mot : « Pa rchemin ») est recollé.</summary>
     static string Name(List<OcrWord> words)
     {
         var sb = new StringBuilder();
         for (var i = 0; i < words.Count; i++)
         {
-            var glued = i > 0 && Key(words[i - 1].Text).Length <= 2 && Gap(words[i - 1], words[i]) <= words[i].Height * 0.3;
+            var glued = i > 0 && words[i - 1].Text is [>= 'A' and <= 'Z', >= 'a' and <= 'z'] && words[i].Text is [>= 'a' and <= 'z', ..]
+                        && Gap(words[i - 1], words[i]) <= words[i].Height * 0.3;
             if (i > 0 && !glued) sb.Append(' ');
             sb.Append(words[i].Text);
         }
