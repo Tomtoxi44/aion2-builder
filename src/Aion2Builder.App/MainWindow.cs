@@ -1176,14 +1176,14 @@ public sealed class MainWindow : Window
         // Page « nouvel onglet » : la recherche (un perso à toi ou celui d'un pote), puis tes personnages et ceux déjà consultés.
         var palette = new Border
         {
-            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
+            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
             BoxShadow = BoxShadows.Parse("0 12 40 0 #80000000"),
             Child = new StackPanel { Spacing = 2, Children = { input, Label("Site officiel").WithMargin(12, 8, 12, 4), hitsPanel, new Border { Height = 6 } } },
         };
         var hint = T("Entrée pour importer le meilleur résultat · un clic ouvre le personnage dans un onglet · Ctrl+K pour revenir ici", 12, Tok.Muted, mono: true);
         var list = new Border
         {
-            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
+            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
             Child = new StackPanel { Children = { HistoryHeader(), historyPanel, new Border { Height = 6 } } },
         };
         var page = new StackPanel
