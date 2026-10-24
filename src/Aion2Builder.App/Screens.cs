@@ -756,7 +756,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 var todo = analyzer.Analyze(log, profile).Findings.Count(f => f.Severity <= Severity.Advice);
                 var dps = ColumnsSpaced("56,*", 8, T(Fmt.Big(log.Dps), 12, Accent.Main, FontWeight.SemiBold, mono: true), RoundBar(log.Dps / Math.Max(1, best), Accent.Main, 4));
                 body.Children.Add(SideItem(null, log.Target, todo == 0 ? "✓" : $"{todo}", todo == 0 ? Tok.Good : Tok.Warn,
-                    $"{log.ImportedAtUtc.ToLocalTime():HH:mm:ss} · {Duration(log.Duration)} · {(log.Source == "Pet Meter" ? "Pet Meter" : "captures")}",
+                    $"{log.ImportedAtUtc.ToLocalTime():HH:mm:ss} · {Duration(log.Duration)} · {PetMeterFights.KindName(log) ?? (log.Source == "Pet Meter" ? "Pet Meter" : "captures")}",
                     shown == i, () => update(st => { st.CombatIndex = index; st.CombatGroup = null; st.CombatSkill = null; st.CombatList = false; }), dps,
                     todo == 0 ? "Rien à corriger" : $"{todo} point(s) à corriger"));
             }
@@ -765,7 +765,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             body.Children.Add(T("Aucun combat : lance le Pet Meter pendant tes combats, ou importe des captures NotMeter avec « + ».", 12, Tok.Muted, wrap: true)
                 .WithLineHeight(1.4).WithMargin(14, 10));
         else
-            body.Children.Add(T($"Les {CombatStore.Keep} derniers combats sont gardés, groupés par séance (même carte, moins de 10 min d'écart).", 11, Tok.Muted, wrap: true)
+            body.Children.Add(T($"Seuls les boss, le mannequin et le JcJ sont gardés (les {CombatStore.Keep} derniers), groupés par séance (même carte, moins de 10 min d'écart).", 11, Tok.Muted, wrap: true)
                 .WithLineHeight(1.4).WithMargin(14, 10));
         var import = Clickable(T("+", 13, Accent.Main, FontWeight.SemiBold, mono: true).Centered(), importCombat, hover: Tok.HoverStrong, padding: new Thickness(8, 1));
         import.BorderBrush = Tok.Border;
@@ -2128,15 +2128,15 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 rows.Add(TableRow(Columns(cols,
                         T(log.ImportedAtUtc.ToLocalTime().ToString("HH:mm:ss"), 12, Tok.Muted, mono: true), T(log.Target, 13),
                         T(Duration(log.Duration), 12, mono: true), dps,
-                        T(log.Source == "Pet Meter" ? "Pet Meter" : "captures", 12, Tok.Muted),
+                        T(PetMeterFights.KindName(log) ?? (log.Source == "Pet Meter" ? "Pet Meter" : "captures"), 12, Tok.Muted),
                         T(todo == 0 ? "✓" : $"{todo}", 12, todo == 0 ? Tok.Good : Tok.Warn, mono: true)),
                     false, () => update(st => { st.CombatIndex = index; st.CombatGroup = null; st.CombatSkill = null; st.CombatList = false; })));
             }
             list.Children.Add(TableCard($"{first:dd/MM} · {first:HH:mm}–{last:HH:mm} · {session.Count} combat{(session.Count > 1 ? "s" : "")}" +
                 $" · {Duration(logs.Sum(l => l.Duration))} de combat" + (map is { } m ? $" · carte {m}" : ""), global,
-                TableHeader(cols, "Heure", "Cible", "Durée", "DPS", "Source", "À revoir"), rows));
+                TableHeader(cols, "Heure", "Cible", "Durée", "DPS", "Type", "À revoir"), rows));
         }
-        list.Children.Add(T($"Les {CombatStore.Keep} derniers combats sont gardés ; une séance = même carte et moins de 10 min entre deux combats (un donjon). Clic = le détail.",
+        list.Children.Add(T($"Seuls les boss, le mannequin et le JcJ sont gardés (les {CombatStore.Keep} derniers) ; une séance = même carte et moins de 10 min entre deux combats (un donjon). Clic = le détail.",
             11, Tok.Muted, wrap: true));
         return list;
     }

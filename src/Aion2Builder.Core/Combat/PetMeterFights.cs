@@ -12,8 +12,29 @@ public static class PetMeterFights
 {
     public static string Dir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AION2-pet-meter", "fights");
 
-    /// <summary>Version de la conversion (2 : lancers groupés à 0,6 s, noms des enchaînements du Templier).</summary>
-    public const int Version = 2;
+    /// <summary>Version de la conversion (2 : lancers groupés à 0,6 s, noms des enchaînements du Templier ; 3 : type du combat).</summary>
+    public const int Version = 3;
+
+    /// <summary>Types de combats gardés : boss, mannequin, JcJ (« other » : un pack de monstres, un monstre achevé).</summary>
+    public static readonly HashSet<string> KeptKinds = ["boss", "dummy", "pvp"];
+
+    /// <summary>
+    /// Type d'un combat : écrit par le Pet Meter depuis la v0.7.3 ; pour un fichier plus ancien, déduit de ce qu'il garde
+    /// (mannequin connu ; boss = cible principale d'un combat d'au moins 25 s qui prend au moins la moitié des dégâts).
+    /// </summary>
+    public static string KindOf(Fight f) => f.Kind
+        ?? (Creatures.ContainsKey(f.Target.Code) ? "dummy"
+            : f.Target.Code > 0 && f.Duration >= 25 && f.Target.Damage >= 0.5 * f.Damage ? "boss" : "other");
+
+    /// <summary>
+    /// Combat gardé à l'écran : captures NotMeter (importées à la main), et combats du Pet Meter contre un boss, le mannequin
+    /// ou un joueur. Un ancien combat sans type : le mannequin, ou un combat d'au moins 25 s.
+    /// </summary>
+    public static bool Kept(CombatLog log) => log.Source != "Pet Meter"
+        || (log.Kind is { } kind ? KeptKinds.Contains(kind) : log.Target == Creatures[2400032] || log.Duration >= 25);
+
+    /// <summary>Nom du type pour l'affichage.</summary>
+    public static string? KindName(CombatLog log) => log.Kind switch { "boss" => "boss", "dummy" => "mannequin", "pvp" => "JcJ", _ => null };
 
     /// <summary>
     /// Met à jour les combats gardés d'un perso : reconvertit ceux qu'une version plus ancienne a convertis (leur fichier
@@ -31,9 +52,15 @@ public static class PetMeterFights
                 }
                 catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException) { }
             }
+        // Les packs de monstres ne sont pas gardés : ceux importés avant le tri sont retirés (ils restent dans le dossier du
+        // Pet Meter, marqués importés pour ne pas revenir).
+        var dropped = store.List(characterKey).Where(x => !Kept(x.Log)).ToList();
+        foreach (var (path, _) in dropped) store.Delete(path);
+        if (dropped.Count > 0) store.MarkImported(characterKey, dropped.Select(x => x.Log.SourceFile).OfType<string>());
         var known = store.Imported(characterKey);
         known.UnionWith(store.List(characterKey).Select(x => x.Log.SourceFile).OfType<string>());
-        var fresh = For(character).Where(x => !known.Contains(Path.GetFileName(x.Path))).Take(Storage.CombatStore.Keep).ToList();
+        var fresh = For(character).Where(x => !known.Contains(Path.GetFileName(x.Path)) && KeptKinds.Contains(KindOf(x.Fight)))
+            .Take(Storage.CombatStore.Keep).ToList();
         foreach (var (path, fight) in fresh) store.Save(characterKey, ToLog(fight, path, db));
         if (fresh.Count == 0) return 0;
         store.MarkImported(characterKey, fresh.Select(x => Path.GetFileName(x.Path)));
@@ -45,7 +72,8 @@ public static class PetMeterFights
     static readonly Dictionary<long, string> Creatures = new() { [2400032] = "Mannequin d'entraînement" };
 
     public sealed record Fight(int Version, string Meter, string Character, long Entity, string Start, string StartUtc, double Duration,
-        double Damage, int Hits, FightTarget Target, List<FightSkill> Skills, List<double[]> Casts, FightTaken Taken, FightHeals Heals, long Map = 0);
+        double Damage, int Hits, FightTarget Target, List<FightSkill> Skills, List<double[]> Casts, FightTaken Taken, FightHeals Heals, long Map = 0,
+        string? Kind = null);
     public sealed record FightTarget(long Entity, long Code, double Damage);
     public sealed record FightSkill(long Code, int Hits, double Damage, int Crits, int Back, int Front, int Positioned, double Max, bool Summon);
     public sealed record FightTaken(double Damage, int Hits, double Max);
@@ -90,8 +118,9 @@ public static class PetMeterFights
             ? t : File.GetLastWriteTimeUtc(path);
         return new CombatLog
         {
-            Source = "Pet Meter", ImportedAtUtc = start, Character = f.Character, ImportVersion = Version,
-            Target = Creatures.TryGetValue(f.Target.Code, out var n) ? n : f.Target.Code > 0 ? $"créature {f.Target.Code}" : "monstres",
+            Source = "Pet Meter", ImportedAtUtc = start, Character = f.Character, ImportVersion = Version, Kind = KindOf(f),
+            Target = Creatures.TryGetValue(f.Target.Code, out var n) ? n
+                : KindOf(f) == "pvp" ? "Joueur" : f.Target.Code > 0 ? $"{(KindOf(f) == "boss" ? "Boss" : "Créature")} {f.Target.Code}" : "Monstres",
             Duration = f.Duration, TotalDamage = f.Damage, Dps = f.Duration > 0 ? f.Damage / f.Duration : 0, Hits = f.Hits,
             SkillCount = skills.Count, Skills = skills.OrderByDescending(s => s.Damage).ToList(), Pages = 0,
             SourceFile = Path.GetFileName(path), DamageTaken = f.Taken.Damage, HitsTaken = f.Taken.Hits, MaxTaken = f.Taken.Max,
