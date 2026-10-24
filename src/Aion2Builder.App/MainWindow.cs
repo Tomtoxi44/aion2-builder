@@ -25,7 +25,8 @@ namespace Aion2Builder.App;
 /// </summary>
 sealed record UiPrefs(string Region = "eu", string Server = "", string Name = "", GameMode Mode = GameMode.PvE, string? LastFile = null,
     int Tab = 0, string Screen = "Home", string Accent = "Orange", bool AutoUpdate = true,
-    List<string>? Tabs = null, double InspectorWidth = 340, bool InspectorHidden = false, int AutoRefreshHours = 0)
+    List<string>? Tabs = null, double InspectorWidth = 340, bool InspectorHidden = false, int AutoRefreshHours = 0,
+    List<string>? Mine = null)
 {
     static string PathOf => System.IO.Path.Combine(AppPaths.Root, "ui.json");
 
@@ -809,38 +810,25 @@ public sealed class MainWindow : Window
             Child = new DockPanel { Children = { prompt, tag, search } },
         };
 
+        // Page « nouvel onglet » : la recherche (un perso à toi ou celui d'un pote), puis tes personnages et ceux déjà consultés.
         var palette = new Border
         {
-            Width = 620, Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
-            BoxShadow = BoxShadows.Parse("0 12 40 0 #80000000"), HorizontalAlignment = HorizontalAlignment.Center,
-            Child = new StackPanel
-            {
-                Spacing = 2,
-                Children =
-                {
-                    input,
-                    Label("Site officiel").WithMargin(12, 8, 12, 4), hitsPanel,
-                    HistoryHeader(), new ScrollViewer { MaxHeight = 280, Content = historyPanel, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled },
-                    new Border { Height = 6 },
-                },
-            },
+            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
+            BoxShadow = BoxShadows.Parse("0 12 40 0 #80000000"),
+            Child = new StackPanel { Spacing = 2, Children = { input, Label("Site officiel").WithMargin(12, 8, 12, 4), hitsPanel, new Border { Height = 6 } } },
         };
-        var hint = T("Entrée pour importer · Ctrl+K pour rouvrir", 12, Tok.Muted, mono: true).Centered();
-        hint.Margin = new Thickness(0, 18, 0, 0);
-
-        var grid = new Grid
+        var hint = T("Entrée pour importer le meilleur résultat · un clic ouvre le personnage dans un onglet · Ctrl+K pour revenir ici", 12, Tok.Muted, mono: true);
+        var list = new Border
         {
-            RowDefinitions =
-            {
-                new RowDefinition(new GridLength(14, GridUnitType.Star)), new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto), new RowDefinition(new GridLength(86, GridUnitType.Star)),
-            },
+            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
+            Child = new StackPanel { Children = { HistoryHeader(), historyPanel, new Border { Height = 6 } } },
         };
-        Grid.SetRow(palette, 1);
-        Grid.SetRow(hint, 2);
-        grid.Children.Add(palette);
-        grid.Children.Add(hint);
-        return grid;
+        var page = new StackPanel
+        {
+            Width = 860, Spacing = 14, Margin = new Thickness(0, 28, 0, 40), HorizontalAlignment = HorizontalAlignment.Center,
+            Children = { T("Nouvel onglet", 17, Tok.Text, FontWeight.SemiBold), palette, hint, list },
+        };
+        return new ScrollViewer { Content = page, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
     }
 
     static void Detach(Control control)
@@ -911,12 +899,22 @@ public sealed class MainWindow : Window
     Control HistoryHeader()
     {
         DockPanel.SetDock(historyCount, Dock.Right);
-        return new DockPanel { Margin = new Thickness(12, 8, 12, 4), Children = { historyCount, Label("Mes personnages · score") } };
+        return new DockPanel { Margin = new Thickness(12, 10, 12, 4), Children = { historyCount, Label($"Personnages enregistrés · score {ScreenViews.ModeLabel(prefs.Mode)}") } };
+    }
+
+    /// <summary>« ★ » range un personnage dans « Mes personnages » (les autres sont ceux consultés, ceux d'un pote par exemple).</summary>
+    void ToggleMine(SavedCharacter s)
+    {
+        var mine = (prefs.Mine ?? []).ToList();
+        if (!mine.Remove(s.Key)) mine.Add(s.Key);
+        prefs = prefs with { Mine = mine };
+        prefs.Save();
+        RenderHistory();
     }
 
     /// <summary>
-    /// Tous les personnages déjà consultés, du plus récent au plus ancien, filtrés par le nom tapé
-    /// (sans tenir compte des majuscules ni des accents).
+    /// Personnages enregistrés en deux groupes : les tiens (★), puis les autres consultés ; du plus récent au plus ancien,
+    /// filtrés par le nom tapé (sans tenir compte des majuscules ni des accents).
     /// </summary>
     void RenderHistory()
     {
@@ -928,35 +926,54 @@ public sealed class MainWindow : Window
             : all.Where(x => compare.IndexOf(x.Character.Name, query, System.Globalization.CompareOptions.IgnoreCase | System.Globalization.CompareOptions.IgnoreNonSpace) >= 0).ToList();
         historyCount.Text = query.Length == 0 ? all.Count.ToString() : $"{shown.Count} / {all.Count}";
 
-        if (all.Count == 0) { historyPanel.Children.Add(T("aucun personnage consulté pour l'instant", 13, Tok.Faint).WithMargin(12, 7)); return; }
-        if (shown.Count == 0) { historyPanel.Children.Add(T($"aucun personnage consulté ne correspond à « {query} »", 13, Tok.Faint).WithMargin(12, 7)); return; }
+        if (all.Count == 0) { historyPanel.Children.Add(T("aucun personnage pour l'instant : cherche le tien ou celui d'un pote ci-dessus", 13, Tok.Faint).WithMargin(12, 7)); return; }
+        if (shown.Count == 0) { historyPanel.Children.Add(T($"aucun personnage enregistré ne correspond à « {query} »", 13, Tok.Faint).WithMargin(12, 7)); return; }
         ComputeOverviewScores(shown.Select(x => x.Character).ToList());
-        foreach (var (s, viewedAt) in shown)
+
+        var mine = (prefs.Mine ?? []).ToHashSet();
+        var groups = new[]
         {
-            var date = T(viewedAt.ToLocalTime().ToString("dd/MM HH:mm"), 13, Tok.Muted, mono: true);
-            DockPanel.SetDock(date, Dock.Right);
-            var known = overviewScores.TryGetValue(s.Path, out var sc) && sc.FetchedAtUtc == s.FetchedAtUtc && sc.Mode == prefs.Mode;
-            var score = Tip(T(known ? sc.Score.ToString() : "··", 13, known ? Tok.Score(sc.Score) : Tok.Faint, FontWeight.SemiBold, mono: true),
-                known ? $"Score global {ScreenViews.ModeLabel(prefs.Mode)} : {sc.Score}/100 · stats {sc.Stats} · équipement {sc.Gear} · compétences {sc.Skills} · Daevanion {sc.Daevanion}" : "calcul du score…");
-            score.Width = 34;
-            score.TextAlignment = TextAlignment.Right;
-            score.Margin = new Thickness(0, 0, 14, 0);
-            DockPanel.SetDock(score, Dock.Right);
-            var isCurrent = current is not null && s.Name == current.Name && s.ServerName == current.ServerName && s.Region == current.Region;
-            var name = new StackPanel
-            {
-                Orientation = Orientation.Horizontal, Spacing = 6,
-                Children =
-                {
-                    T(s.Name, 13, isCurrent ? Accent.Main : null, isCurrent ? FontWeight.SemiBold : FontWeight.Normal),
-                    T($"— {db.FindClass(s.ClassCode)?.Name ?? s.ClassCode} · niv. {s.Level} · {s.ServerName} ({s.Region}) · obj {s.ItemLevel}", 13, Tok.Muted),
-                },
-            };
-            var saved = s;
-            var row = Clickable(new DockPanel { Children = { date, score, name } }, () => OpenSaved(saved), hover: Tok.HoverStrong, padding: new Thickness(12, 7));
-            ToolTip.SetTip(row, $"Consulté le {viewedAt.ToLocalTime():dd/MM/yyyy à HH:mm} · importé le {s.FetchedAtUtc.ToLocalTime():dd/MM/yyyy à HH:mm}");
-            historyPanel.Children.Add(row);
+            ("Mes personnages ★", shown.Where(x => mine.Contains(x.Character.Key)).ToList()),
+            ("Autres personnages consultés", shown.Where(x => !mine.Contains(x.Character.Key)).ToList()),
+        };
+        foreach (var (title, rows) in groups)
+        {
+            historyPanel.Children.Add(Label($"{title} · {rows.Count}").WithMargin(12, 10, 12, 4));
+            if (rows.Count == 0)
+                historyPanel.Children.Add(T(title.StartsWith("Mes", StringComparison.Ordinal)
+                    ? "clique ☆ devant un personnage pour le ranger ici" : "aucun", 12, Tok.Faint).WithMargin(12, 4));
+            foreach (var (s, viewedAt) in rows) historyPanel.Children.Add(HistoryRow(s, viewedAt, mine.Contains(s.Key)));
         }
+    }
+
+    Control HistoryRow(SavedCharacter s, DateTime viewedAt, bool isMine)
+    {
+        var known = overviewScores.TryGetValue(s.Path, out var sc) && sc.FetchedAtUtc == s.FetchedAtUtc && sc.Mode == prefs.Mode;
+        var score = Tip(T(known ? sc.Score.ToString() : "··", 13, known ? Tok.Score(sc.Score) : Tok.Faint, FontWeight.SemiBold, mono: true),
+            known ? $"Score global {ScreenViews.ModeLabel(prefs.Mode)} : {sc.Score}/100 · stats {sc.Stats} · équipement {sc.Gear} · compétences {sc.Skills} · Daevanion {sc.Daevanion}" : "calcul du score…");
+        score.TextAlignment = TextAlignment.Right;
+        var isOpen = tabs.Contains(s.Path);
+        var isCurrent = s.Path == currentPath;
+        var saved = s;
+        var star = Clickable(T(isMine ? "★" : "☆", 15, isMine ? Accent.Main : Tok.Muted).Centered(), () => ToggleMine(saved), hover: Tok.HoverStrong, padding: new Thickness(4, 0));
+        star.CornerRadius = new CornerRadius(3);
+        ToolTip.SetTip(star, isMine ? "Retirer de « Mes personnages »" : "Ranger dans « Mes personnages »");
+        var name = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 8,
+            Children =
+            {
+                T(s.Name, 13, isCurrent ? Accent.Main : null, FontWeight.SemiBold),
+                T($"{db.FindClass(s.ClassCode)?.Name ?? s.ClassCode} {s.Level}", 12, Tok.Text2, mono: true),
+            },
+        };
+        if (isOpen) name.Children.Add(new Border { Padding = new Thickness(5, 0), CornerRadius = new CornerRadius(3), Background = Accent.Dim, Child = T("ouvert", 10, Accent.Main, mono: true) });
+        var row = Clickable(ColumnsSpaced("26,*,150,70,40,110", 8,
+                star, name, T($"{s.ServerName} ({s.Region})", 12, Tok.Muted, mono: true), T($"obj {s.ItemLevel}", 12, Tok.Muted, mono: true), score,
+                T($"importé {s.FetchedAtUtc.ToLocalTime():dd/MM}", 12, Tok.Muted, mono: true)),
+            () => OpenSaved(saved), hover: Tok.HoverStrong, padding: new Thickness(8, 6));
+        ToolTip.SetTip(row, $"{(isOpen ? "Revenir à son onglet" : "Ouvrir dans un onglet")} · consulté le {viewedAt.ToLocalTime():dd/MM/yyyy à HH:mm} · importé le {s.FetchedAtUtc.ToLocalTime():dd/MM/yyyy à HH:mm}");
+        return row;
     }
 
     // Vue d'ensemble : score de chaque personnage enregistré (vue en cours), calculé en arrière-plan et gardé en mémoire.
