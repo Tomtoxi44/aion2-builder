@@ -1954,7 +1954,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var name = p.Skill.Skill.Name;
         var list = new StackPanel { Spacing = 6 };
         foreach (var o in p.Options)
-            list.Children.Add(Tip(ColumnsSpaced("44,*", 8, SpecMarker(o),
+            list.Children.Add(Tip(ColumnsSpaced("56,*", 8, SpecMarker(o),
                 T(o.Spec.Text, 12, o.Rank is not null ? Tok.Text : o.Unlocked ? Tok.Text2 : Tok.Muted, o.Rank is not null ? FontWeight.SemiBold : FontWeight.Normal, wrap: true)),
                 $"{o.Why} · {(o.Unlocked ? "débloquée" : $"débloquée au niveau {o.Spec.Level}")}"));
         if (p.NextSlot is { } next)

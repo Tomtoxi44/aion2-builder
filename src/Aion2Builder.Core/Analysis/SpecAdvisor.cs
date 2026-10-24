@@ -34,15 +34,15 @@ public static class SpecAdvisor
 {
     static readonly (SpecKind Kind, Regex Pattern)[] Rules =
     [
-        (SpecKind.Combo, new Regex(@"enchaînement", RegexOptions.IgnoreCase)),
-        (SpecKind.Control, new Regex(@"recul|étourdi|renvers|immobilis|ralenti|silence|aveugl|sommeil|peur|repouss|attir|entrav|gel|paralys|enracin|projet", RegexOptions.IgnoreCase)),
-        (SpecKind.Cooldown, new Regex(@"temps de recharge", RegexOptions.IgnoreCase)),
-        (SpecKind.Heal, new Regex(@"soin|restaur|drain|récupér|PV \+|régénération de PV", RegexOptions.IgnoreCase)),
-        (SpecKind.Resource, new Regex(@"\bPM\b", RegexOptions.IgnoreCase)),
-        (SpecKind.Speed, new Regex(@"VIT de compétence|VIT d'incantation|vitesse d'incantation|VIT d'attaque", RegexOptions.IgnoreCase)),
-        (SpecKind.Crit, new Regex(@"coup CRIT|DGT CRIT|critique", RegexOptions.IgnoreCase)),
-        (SpecKind.Defense, new Regex(@"DÉF|bouclier|DGT subis|réduction des DGT|blocage|esquive|invincib|résistance|immunité", RegexOptions.IgnoreCase)),
-        (SpecKind.Damage, new Regex(@"DGT|dégâts|multi-coups|attaque|cibles?", RegexOptions.IgnoreCase)),
+        (SpecKind.Combo, new Regex(@"enchaînement|\bactiver\b|déclench|activation supplémentaire|utilisations? consécutives?", RegexOptions.IgnoreCase)),
+        (SpecKind.Control, new Regex(@"recul|étourdi|renvers|immobilis|ralenti|lenteur|silence|scell|aveugl|cécité|sommeil|peur|terreur|repouss|attir|attraction|entrav|gel|paralys|enracin|projet|VIT de déplacement -|VIT de combat -|RÉS aux altérations d'état -", RegexOptions.IgnoreCase)),
+        (SpecKind.Cooldown, new Regex(@"recharge", RegexOptions.IgnoreCase)),
+        (SpecKind.Heal, new Regex(@"soin|restaur|drain|récupér|PV \+|régénèr|régénération|dissip", RegexOptions.IgnoreCase)),
+        (SpecKind.Resource, new Regex(@"\bPM\b|endurance", RegexOptions.IgnoreCase)),
+        (SpecKind.Speed, new Regex(@"VIT de compétence|VIT d'incantation|vitesse d'incantation|VIT d'attaque|VIT de combat \+", RegexOptions.IgnoreCase)),
+        (SpecKind.Crit, new Regex(@"\bCRIT\b|critique|coup parfait", RegexOptions.IgnoreCase)),
+        (SpecKind.Defense, new Regex(@"DÉF|bouclier|DGT subis|réduction des DGT|tolérance|ténacité|blocage|esquive|invincib|résistance|immunité", RegexOptions.IgnoreCase)),
+        (SpecKind.Damage, new Regex(@"DGT|dégâts|multi-coups|attaque|\bATQ\b|boost|fragilité|hémorragie|malédiction|précision de compétence|stats de l'Esprit|cibles?|zone", RegexOptions.IgnoreCase)),
     ];
 
     /// <summary>Poids de chaque type selon le rôle et le mode (1 = ce qu'on cherche en premier).</summary>
@@ -71,7 +71,12 @@ public static class SpecAdvisor
             },
         };
 
-    public static SpecKind Classify(string text) => Rules.FirstOrDefault(r => r.Pattern.IsMatch(text)) is { Pattern: not null } rule ? rule.Kind : SpecKind.Utility;
+    /// <summary>Type d'une spécialisation ; les noms de sorts entre crochets sont retirés (« [Coup puissant au bouclier] » n'est pas une défense).</summary>
+    public static SpecKind Classify(string text)
+    {
+        var plain = Regex.Replace(text, @"\[[^\]]*\]", "");
+        return Rules.FirstOrDefault(r => r.Pattern.IsMatch(plain)) is { Pattern: not null } rule ? rule.Kind : SpecKind.Utility;
+    }
 
     static string KindName(SpecKind kind) => kind switch
     {
