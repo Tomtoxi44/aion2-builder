@@ -377,6 +377,40 @@ public sealed class MainWindow : Window
 
     string StatusMessage => status.Length == 0 ? "" : statusError ? $"⚠ {status}" : status;
 
+    /// <summary>Toasts en bas à droite, gardés d'un rendu à l'autre (le contenu de la fenêtre est reconstruit à chaque rendu).</summary>
+    readonly StackPanel toasts = new()
+    {
+        Spacing = 8, Margin = new Thickness(0, 0, 16, 14), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
+    };
+
+    /// <summary>Message discret qui disparaît seul (4 s, 7 s pour une erreur) ; un clic le ferme. Trois au plus à l'écran.</summary>
+    void Toast(string title, string? detail = null, bool error = false)
+    {
+        var body = new StackPanel { Spacing = 2, Children = { T(title, 13, Tok.Text, FontWeight.SemiBold, wrap: true) } };
+        if (!string.IsNullOrEmpty(detail)) body.Children.Add(T(detail, 12, Tok.Text2, wrap: true).WithLineHeight(1.4));
+        var toast = new Border
+        {
+            Width = 320, Padding = new Thickness(12, 9), Background = Tok.Panel, CornerRadius = new CornerRadius(4),
+            BorderBrush = error ? Tok.Bad : Tok.Good, BorderThickness = new Thickness(3, 0, 0, 0),
+            BoxShadow = BoxShadows.Parse("0 6 20 0 #60000000"), Opacity = 0, Cursor = new Cursor(StandardCursorType.Hand),
+            Transitions = [new Avalonia.Animation.DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(180) }],
+            Child = new DockPanel { Children = { T(error ? "⚠" : "✓", 13, error ? Tok.Bad : Tok.Good, FontWeight.Bold).WithMargin(0, 0, 9, 0), body } },
+        };
+        ToolTip.SetTip(toast, "Clic pour fermer");
+        DockPanel.SetDock((Control)((DockPanel)toast.Child).Children[0], Dock.Left);
+        void Close()
+        {
+            if (!toasts.Children.Contains(toast)) return;
+            toast.Opacity = 0;
+            DispatcherTimer.RunOnce(() => toasts.Children.Remove(toast), TimeSpan.FromMilliseconds(200));
+        }
+        toast.PointerPressed += (_, e) => { e.Handled = true; Close(); };
+        while (toasts.Children.Count >= 3) toasts.Children.RemoveAt(0);
+        toasts.Children.Add(toast);
+        Dispatcher.UIThread.Post(() => toast.Opacity = 1, DispatcherPriority.Background);
+        DispatcherTimer.RunOnce(Close, TimeSpan.FromSeconds(error ? 7 : 4));
+    }
+
     // ----- Rendu -----
 
     void Render()
@@ -396,6 +430,9 @@ public sealed class MainWindow : Window
         root.Children.Add(title);
         root.Children.Add(middle);
         root.Children.Add(bar);
+        (toasts.Parent as Panel)?.Children.Remove(toasts);
+        Grid.SetRow(toasts, 1);
+        root.Children.Add(toasts);
         if (overlay != Overlay.None)
         {
             var layer = OverlayLayer();
@@ -1249,17 +1286,26 @@ public sealed class MainWindow : Window
                 loadStep = m;
                 if (loadText is not null) loadText.Text = m;
             }));
+            var previous = store.Find(snapshot.Name, snapshot.ServerName) is { } saved ? TryLoad(saved.Path) : null;
             var path = store.Save(snapshot);
             prefs = prefs with { LastFile = path, Name = search.Text ?? snapshot.Name, Region = snapshot.Region };
             prefs.Save();
             SetStatus($"importé depuis le site officiel");
             loading = null;
             Open(snapshot, path);
+            if (previous is null) Toast($"{snapshot.Name} importé", $"{db.FindClass(snapshot.ClassCode)?.Name} niv. {snapshot.Level} · {snapshot.ServerName}");
+            else
+            {
+                var changes = ProgressPoint.Of(snapshot).ChangesSince(ProgressPoint.Of(previous), db.SlotName);
+                Toast($"{snapshot.Name} actualisé", changes.Count == 0 ? "Rien n'a changé depuis le dernier import."
+                    : string.Join(" · ", changes.Take(3)) + (changes.Count > 3 ? $" · et {changes.Count - 3} autre(s)" : ""));
+            }
         }
         catch (ArmoryException ex)
         {
             importError = ex.Message;
             SetStatus(ex.Message, error: true);
+            Toast($"Import de {name} impossible", ex.Message, error: true);
         }
         finally
         {
@@ -1289,8 +1335,13 @@ public sealed class MainWindow : Window
             await using var writer = new StreamWriter(stream);
             await writer.WriteAsync(ReportMarkdown.Write(report, db, inputs));
             SetStatus($"rapport exporté : {file.Name}");
+            Toast("Rapport exporté", file.Name);
         }
-        catch (IOException ex) { SetStatus($"Export impossible : {ex.Message}", error: true); }
+        catch (IOException ex)
+        {
+            SetStatus($"Export impossible : {ex.Message}", error: true);
+            Toast("Export impossible", ex.Message, error: true);
+        }
     }
 
     /// <summary>Seul envoi réseau fait sans demande explicite : désactivable (politique de confidentialité, README).</summary>
