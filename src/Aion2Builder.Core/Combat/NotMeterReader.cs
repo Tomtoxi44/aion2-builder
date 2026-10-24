@@ -76,32 +76,45 @@ public static partial class NotMeterReader
 
     static bool HasLetters(OcrWord w) => Key(w.Text).Any(char.IsLetter);
 
-    /// <summary>Mots d'un nom ; deux morceaux collés (l'OCR coupe parfois un mot : « Pa rchemin ») sont recollés.</summary>
+    static double Gap(OcrWord left, OcrWord right) => right.X - (left.X + left.Width);
+
+    /// <summary>Mots d'un nom ; un morceau de deux lettres collé au suivant (l'OCR coupe parfois un mot : « Pa rchemin ») est recollé.</summary>
     static string Name(List<OcrWord> words)
     {
         var sb = new StringBuilder();
         for (var i = 0; i < words.Count; i++)
         {
-            if (i > 0 && words[i].X - (words[i - 1].X + words[i - 1].Width) > words[i].Height * 0.2) sb.Append(' ');
+            var glued = i > 0 && Key(words[i - 1].Text).Length <= 2 && Gap(words[i - 1], words[i]) <= words[i].Height * 0.3;
+            if (i > 0 && !glued) sb.Append(' ');
             sb.Append(words[i].Text);
         }
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Lignes de la fenêtre. Un mot rejoint la ligne en cours s'il chevauche en hauteur son premier mot (l'OCR décale de
+    /// quelques pixels les mots d'une même ligne) ; puis un nombre coupé en deux (« 98, » + « 7% ») est recollé.
+    /// </summary>
     static List<Row> Rows(IEnumerable<OcrWord> words)
     {
-        var sorted = words.OrderBy(w => w.Y + w.Height / 2).ToList();
-        if (sorted.Count == 0) return [];
-        var height = sorted.Select(w => w.Height).OrderBy(x => x).ElementAt(sorted.Count / 2);
-        var rows = new List<Row>();
-        foreach (var w in sorted)
+        var rows = new List<(OcrWord First, List<OcrWord> Words)>();
+        foreach (var w in words.OrderBy(w => w.Y))
         {
-            var center = w.Y + w.Height / 2;
-            if (rows.Count > 0 && Math.Abs(rows[^1].Y - center) <= height * 0.5) rows[^1].Words.Add(w);
-            else rows.Add(new Row(center, [w]));
+            var overlap = rows.Count == 0 ? 0 : Math.Min(rows[^1].First.Y + rows[^1].First.Height, w.Y + w.Height) - Math.Max(rows[^1].First.Y, w.Y);
+            if (rows.Count > 0 && overlap >= 0.4 * Math.Min(w.Height, rows[^1].First.Height)) rows[^1].Words.Add(w);
+            else rows.Add((w, [w]));
         }
-        foreach (var r in rows) r.Words.Sort((a, b) => a.X.CompareTo(b.X));
-        return rows;
+        return rows.Select(r =>
+        {
+            var sorted = r.Words.OrderBy(w => w.X).ToList();
+            var merged = new List<OcrWord>();
+            foreach (var w in sorted)
+                if (merged.Count > 0 && merged[^1].Text is [.., ',' or '.'] && merged[^1].Text.Any(char.IsDigit) && w.Text is [>= '0' and <= '9', ..]
+                    && Gap(merged[^1], w) <= w.Height * 0.6)
+                    merged[^1] = merged[^1] with { Text = merged[^1].Text + w.Text, Width = w.X + w.Width - merged[^1].X };
+                else merged.Add(w);
+            return new Row(r.First.Y + r.First.Height / 2, merged);
+        }).ToList();
     }
 
     /// <summary>Une capture de la fenêtre « Détails du combat ».</summary>
@@ -121,7 +134,7 @@ public static partial class NotMeterReader
         }
         double total = 0, dps = 0, duration = 0;
         var hits = 0;
-        var totalsLabel = rows.FindIndex(r => r.Has("degats") && r.Has("totaux"));
+        var totalsLabel = rows.FindIndex(r => r.Has("totaux"));
         if (totalsLabel >= 0)
         {
             // Les nombres sont sur la ligne suivante : dégâts totaux puis DPS, de gauche à droite.
@@ -137,7 +150,7 @@ public static partial class NotMeterReader
 
         // Titres des colonnes de la liste des sorts.
         var header = rows.FirstOrDefault(r => r.Has("competences"));
-        var damageX = header?.Words.FirstOrDefault(w => Key(w.Text) == "degats" && w.X > width * 0.3)?.X ?? width * 0.64;
+        var damageX = header?.Words.FirstOrDefault(w => Key(w.Text).StartsWith("deg") && w.X > width * 0.3)?.X ?? width * 0.64;
         var shareX = header?.Words.FirstOrDefault(w => Key(w.Text) == "part" && w.X > damageX)?.X ?? width * 0.72;
         var buffX = header?.Words.FirstOrDefault(w => Key(w.Text) is "temps" or "tems" or "tps")?.X
                     ?? (header?.Words.FirstOrDefault(w => Key(w.Text) == "actif")?.X - 40) ?? width * 0.83;

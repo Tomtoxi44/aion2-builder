@@ -1356,7 +1356,7 @@ public sealed class MainWindow : Window
             state.CombatSkill = null;
             Recompute();
             SetStatus($"combat importé : {log.Skills.Count} sorts lus");
-            Toast("Combat importé", $"{log.Skills.Count}{(log.SkillCount > 0 ? $"/{log.SkillCount}" : "")} sorts lus · DPS {Fmt.Num(Math.Round(log.Dps))} sur {log.Duration:0} s" +
+            Toast("Combat importé", $"{log.Skills.Count}{(log.SkillCount > 0 ? $"/{log.SkillCount}" : "")} sorts lus · DPS {Fmt.Big(log.Dps)} sur {log.Duration:0} s" +
                 (log.Complete || log.SkillCount == 0 ? "" : " · liste partielle : ajoute les captures de la suite de la liste"));
         }
         catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or IOException or UnauthorizedAccessException)

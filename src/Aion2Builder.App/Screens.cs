@@ -886,7 +886,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         if (sk.Focus.Count > 6)
             list.Children.Add(T($"et {sk.Focus.Count - 6} autres sorts : {Fmt.Pct(sk.Focus.Skip(6).Sum(a => a.DamageShare))} des dégâts à eux tous.", 12, Tok.Muted).WithMargin(6, 4, 0, 0));
         list.Children.Add(T($"Niveau = niveau total après la répartition conseillée (survole-le pour sa provenance). Les points montent un sort jusqu'à {db.Settings.Skills.BaseMax} ; " +
-            "au-delà, seules les cases Daevanion, les arcanes et l'équipement le montent. Simulation : sorts au niveau 1, sans buffs ni critiques.",
+            "au-delà, seules les cases Daevanion, les arcanes et l'équipement le montent. " + (sk.DamageSource?.StartsWith("mesuré") == true ? "Parts mesurées sur ton dernier combat NotMeter (écran Combat)." : "Simulation : sorts au niveau 1, sans buffs ni critiques ; importe un combat NotMeter (écran Combat) pour les vraies parts."),
             11, Tok.Muted, wrap: true).WithLineHeight(1.4).WithMargin(6, 6, 6, 2));
         return list;
     }
@@ -1011,7 +1011,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         // Ce qui fait les dégâts, puis ce qu'il faut faire tout de suite (réinitialisation gratuite) et où vont les points suivants.
         if (sk.Focus.Count > 0)
         {
-            panel.Children.Add(SectionHeader("Focus dégâts · les sorts où un niveau rapporte le plus", T(sk.DamageSource ?? "", 11, Tok.Muted, mono: true), 20));
+            panel.Children.Add(SectionHeader("Focus dégâts", T(sk.DamageSource ?? "", 11, Tok.Muted, mono: true), 20));
             panel.Children.Add(new Border { Padding = new Thickness(14, 6), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = Focus(sk) });
         }
         if (sk.Moves.Count > 0)
@@ -1212,7 +1212,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 var index = i;
                 var c = combats[i].Log;
                 var on = index == Math.Clamp(s.CombatIndex, 0, combats.Count - 1);
-                var chip = Clickable(T($"{c.ImportedAtUtc.ToLocalTime():dd/MM HH:mm} · {c.Target} · {Fmt.Num(Math.Round(c.Dps))}", 11, on ? Tok.OnAccent : Tok.Text2, mono: true),
+                var chip = Clickable(T($"{c.ImportedAtUtc.ToLocalTime():dd/MM HH:mm} · {c.Target} · {Fmt.Big(c.Dps)}", 11, on ? Tok.OnAccent : Tok.Text2, mono: true),
                     () => update(st => { st.CombatIndex = index; st.CombatSkill = null; }), on ? Accent.Main : null, on ? null : Tok.Hover, new Thickness(8, 3));
                 chip.CornerRadius = new CornerRadius(3);
                 chip.Margin = new Thickness(0, 0, 6, 6);
@@ -1227,8 +1227,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         {
             Spacing = 2, Margin = new Thickness(0, 0, 30, 8), Children = { Label(label), T(value, 20, color ?? Tok.Text, FontWeight.SemiBold, mono: true) },
         });
-        Tile("DPS", Fmt.Num(Math.Round(log.Dps)), Accent.Main);
-        Tile("dégâts", Fmt.Num(log.TotalDamage));
+        Tile("DPS", Fmt.Big(log.Dps), Accent.Main);
+        Tile("dégâts", Fmt.Big(log.TotalDamage));
         Tile("durée", $"{log.Duration:0} s");
         Tile("coups", log.Hits.ToString());
         if (cr.Crit is { } crit) Tile("critique", Fmt.Pct(crit));
@@ -1276,7 +1276,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var uses = x.Possible is { } max ? $"{x.Skill.Uses} / {max}" : x.Skill.Uses > 0 ? $"{x.Skill.Uses}" : "—";
             panel.Children.Add(TableRow(Columns(cols,
                     Tip(T(name, 13, x.Spell is null ? Tok.Text2 : null), x.Verdict), T(x.Skill.Level?.ToString() ?? "—", 12, Tok.Muted, mono: true),
-                    T(Fmt.Num(x.Skill.Damage), 12, mono: true), T(Fmt.Pct(x.Skill.Share), 12, Tok.Text, FontWeight.SemiBold, mono: true),
+                    T(Fmt.Big(x.Skill.Damage), 12, mono: true), T(Fmt.Pct(x.Skill.Share), 12, Tok.Text, FontWeight.SemiBold, mono: true),
                     T(x.Simulated is { } sim ? Fmt.Pct(sim) : "—", 12, Tok.Muted, mono: true),
                     Tip(T(uses, 12, x.Level <= Severity.Advice ? LevelColor(x.Level) : Tok.Text2, mono: true), x.Verdict),
                     T(x.Skill.Crit is { } c ? Fmt.Pct(c) : "—", 12, Tok.Muted, mono: true), T(x.Skill.Back is { } b ? Fmt.Pct(b) : "—", 12, Tok.Muted, mono: true)),
@@ -1313,7 +1313,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             body.Children.Add(Field("Verdict", x.Verdict, x.Level <= Severity.Advice ? LevelColor(x.Level) : Tok.Text2));
             body.Children.Add(KeyValue(
             [
-                ("dégâts", $"{Fmt.Num(x.Skill.Damage)} · {Fmt.Pct(x.Skill.Share)}", null),
+                ("dégâts", $"{Fmt.Big(x.Skill.Damage)} · {Fmt.Pct(x.Skill.Share)}", null),
                 ("simulé", x.Simulated is { } sim ? Fmt.Pct(sim) : "—", Tok.Text2),
                 ("lancers", x.Possible is { } max ? $"{x.Skill.Uses} sur {max} possibles" : $"{x.Skill.Uses}", null),
                 ("recharge", x.Spell is { Cooldown: > 0 } sp ? $"{Fmt.Num(sp.Cooldown)} s" : "aucune", null),

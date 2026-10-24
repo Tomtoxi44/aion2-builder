@@ -33,7 +33,29 @@ public sealed class CombatAnalyzer(GameDatabase db)
         var key = Key(name);
         if (spells.FirstOrDefault(s => Key(s.Name) == key) is { } exact) return exact;
         var truncated = name.TrimEnd().EndsWith("...") || name.TrimEnd().EndsWith('…');
-        return truncated && key.Length >= 8 ? spells.FirstOrDefault(s => Key(s.Name).StartsWith(key)) : null;
+        if (truncated && key.Length >= 8) return spells.FirstOrDefault(s => Key(s.Name).StartsWith(key));
+        // Une ou deux lettres mal lues par l'OCR (« Coup au cæur ») : le nom le plus proche, s'il est seul à cette distance.
+        if (key.Length < 8) return null;
+        var close = spells.Select(s => (Spell: s, Distance: Distance(Key(s.Name), key))).Where(x => x.Distance <= 2).OrderBy(x => x.Distance).ToList();
+        return close.Count > 0 && (close.Count == 1 || close[1].Distance > close[0].Distance) ? close[0].Spell : null;
+    }
+
+    /// <summary>Distance d'édition (insertions, suppressions, remplacements).</summary>
+    static int Distance(string a, string b)
+    {
+        var row = Enumerable.Range(0, b.Length + 1).ToArray();
+        for (var i = 1; i <= a.Length; i++)
+        {
+            var previous = row[0];
+            row[0] = i;
+            for (var j = 1; j <= b.Length; j++)
+            {
+                var current = row[j];
+                row[j] = Math.Min(Math.Min(row[j] + 1, row[j - 1] + 1), previous + (a[i - 1] == b[j - 1] ? 0 : 1));
+                previous = current;
+            }
+        }
+        return row[b.Length];
     }
 
     public CombatReport Analyze(CombatLog log, ResolvedProfile p)
@@ -53,7 +75,8 @@ public sealed class CombatAnalyzer(GameDatabase db)
                 return new SkillReview(s, null, null, sim, "Hors des données de sorts (enchaînement ou effet déclenché) : rien à comparer.", Severity.Info);
             var possible = Possible(duration, spell.Cooldown);
             if (possible is not { } max || s.Uses <= 0)
-                return new SkillReview(s, spell, null, sim, spell.Cooldown > 0 ? "Utilisations non lues." : "Sans recharge : sort de remplissage.", Severity.Info);
+                return new SkillReview(s, spell, null, sim, spell.Kind == "Passive" ? "Effet passif déclenché par tes coups : rien à comparer."
+                    : spell.Cooldown > 0 ? "Utilisations non lues." : "Sans recharge : sort de remplissage.", Severity.Info);
             if (s.Uses > max)
                 return new SkillReview(s, spell, max, sim,
                     $"{Times(s.Uses)} pour {max} permises par sa recharge seule ({spell.Cooldown:0} s) : réinitialisations ou réductions de recharge bien exploitées.", Severity.Info);
@@ -121,7 +144,7 @@ public sealed class CombatAnalyzer(GameDatabase db)
         // Parts mesurées face à la simulation, et part des enchaînements que la simulation ne compte pas.
         var top = skills.OrderByDescending(r => r.Skill.Share).Take(3).ToList();
         var outside = skills.Where(r => r.Spell is null).Sum(r => r.Skill.Share);
-        findings.Add(new Finding(Area.Skills, Severity.Info, $"DPS {Fmt.Num(Math.Round(log.Dps))} sur {seconds}{(log.Target.Length > 0 ? $" ({log.Target})" : "")}",
+        findings.Add(new Finding(Area.Skills, Severity.Info, $"DPS {Fmt.Big(log.Dps)} sur {seconds}{(log.Target.Length > 0 ? $" ({log.Target})" : "")}",
             $"Sorts qui font les dégâts : {string.Join(", ", top.Select(r => $"{r.Skill.Name} {Fmt.Pct(r.Skill.Share)}" + (r.Simulated is { } s ? $" (simulé {Fmt.Pct(s)})" : "")))}." +
             (outside > 0.05 ? $" Les enchaînements et effets hors données de sorts font {Fmt.Pct(outside)} des dégâts : la simulation ne les voit pas, d'où l'intérêt des parts mesurées." : "") +
             (crit is { } c ? $" Critique {Fmt.Pct(c)} des coups." : "")));

@@ -266,7 +266,7 @@ public sealed partial class SkillAdvisor(GameDatabase db)
             moves, nextPoints, nextShards)
         {
             Focus = focus,
-            DamageSource = measured is not null ? $"combat mesuré (NotMeter) : {combat!.Target}, {combat.Duration:0} s, importé le {combat.ImportedAtUtc.ToLocalTime():dd/MM}"
+            DamageSource = measured is not null ? $"mesuré : combat NotMeter du {combat!.ImportedAtUtc.ToLocalTime():dd/MM} ({combat.Duration:0} s)"
                 : shares.Count == 0 ? null
                 : $"rotation {(p.UsesDesigned && p.Class.Designed?.Play.ContainsKey(p.Mode) == true ? "conçue" : "des joueurs")} simulée, {mode}, 1 cible, 2 min",
             GearBonuses = gear,

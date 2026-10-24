@@ -241,12 +241,12 @@ static int CombatCommand(Args cli)
     var inputs = store.LoadInputs(snapshot);
     var profile = db.Resolve(snapshot.ClassCode, GameMode.PvE, inputs.UsesDesigned);
     var report = new CombatAnalyzer(db).Analyze(log, profile);
-    Console.WriteLine($"Combat de {log.Character} contre {log.Target} : {log.Duration:0} s, {Fmt.Num(log.TotalDamage)} dégâts, DPS {Fmt.Num(Math.Round(log.Dps))}, {log.Hits} coups, " +
+    Console.WriteLine($"Combat de {log.Character} contre {log.Target} : {log.Duration:0} s, {Fmt.Big(log.TotalDamage)} dégâts, DPS {Fmt.Big(log.Dps)}, {log.Hits} coups, " +
                       $"{log.Skills.Count}/{log.SkillCount} sorts lus sur {log.Pages} capture(s)" +
                       (report.Crit is { } c ? $", critique {Fmt.Pct(c)}" : "") + (report.Back is { } back ? $", de dos {Fmt.Pct(back)}" : ""));
     Console.WriteLine();
     foreach (var s in report.Skills)
-        Console.WriteLine($"  {s.Skill.Name,-30} niv. {s.Skill.Level?.ToString() ?? "?",-3} {Fmt.Num(s.Skill.Damage),9} {Fmt.Pct(s.Skill.Share),5}" +
+        Console.WriteLine($"  {s.Skill.Name,-30} niv. {s.Skill.Level?.ToString() ?? "?",-3} {Fmt.Big(s.Skill.Damage),9} {Fmt.Pct(s.Skill.Share),5}" +
                           $"  ×{s.Skill.Uses,-3}{(s.Possible is { } m ? $"/{m,-3}" : "    ")} crit {(s.Skill.Crit is { } sc ? Fmt.Pct(sc) : "?"),5}  dos {(s.Skill.Back is { } sb ? Fmt.Pct(sb) : "?"),5}" +
                           $"{(s.Simulated is { } sim ? $"  simulé {Fmt.Pct(sim)}" : "")}  {s.Verdict}");
     Console.WriteLine();

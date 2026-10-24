@@ -211,6 +211,8 @@ public static class Fmt
     static readonly CultureInfo Fr = CultureInfo.GetCultureInfo("fr-FR");
     public static string Num(double v) => v.ToString(Math.Abs(v - Math.Round(v)) < 0.05 ? "0" : "0.#", Fr);
     public static string Pct(double ratio) => $"{Math.Round(ratio * 100)} %";
+    /// <summary>Grand nombre avec séparateur de milliers : 537 198.</summary>
+    public static string Big(double v) => Math.Round(v).ToString("#,0", Fr);
 
     public static string Severity(Severity s) => s switch
     {

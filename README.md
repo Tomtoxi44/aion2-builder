@@ -72,6 +72,7 @@ Commandes du CLI :
 | `simulate <nom> [--daevanion next\|respec\|route] [--n 20] [--skills] [--build joueurs\|concu] [--gear]` | Et si… : notes, familles et stats avant → après |
 | `progress <nom>` | Imports successifs du personnage et ce qui a changé |
 | `rotation <classe\|nom> [--targets 4] [--duration 120] [--mode pvp]` | Rotations simulées : celle des joueurs contre la conçue, sort par sort |
+| `combat <nom> [mots.tsv…]` | Combat NotMeter lu sur des captures : lancers face aux recharges, buffs, sorts jamais lancés |
 | `list` | Personnages enregistrés |
 | `data [export] [--force]` | Montre / copie les fichiers de données modifiables |
 | `pets [--key <clé>] [--refresh] [--forget]` | Relie / relit la collection de familiers (Aion 2 Todo) ; « advise » la compte ensuite |
@@ -97,7 +98,7 @@ L'interface est organisée comme un éditeur :
   suis la répartition des compétences ou ouvres les 20 prochaines cases Daevanion, avec le même calcul que les notes ;
   aussi par pièce dans l'écran Équipement), sa progression d'un import à l'autre (niveau d'objet, puissance) et sa
   position parmi des joueurs niveau 45 de sa classe (« devant 30 % d'entre eux »).
-- **Rail à gauche** : Accueil, Stats, Équipement, Compétences, Build, Daevanion, Familiers, Et si, Progression, Détails, chacun avec sa note.
+- **Rail à gauche** : Accueil, Stats, Équipement, Compétences, Build, Combat, Daevanion, Familiers, Et si, Progression, Détails, chacun avec sa note.
 - **Et si** : simulation sur une copie du personnage ; tu choisis les changements (prochaines cases Daevanion, réorganisation
   ou route conçue, répartition des compétences conseillée, build joueurs ou conçu, pièces en retard au niveau du palier) et
   l'analyse est refaite : notes avant → après, familles de stats et stats qui changent (calculées à partir des effets réels
@@ -193,6 +194,15 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    l'ordre de la rotation dès qu'ils sont prêts et que leur condition est remplie, le meilleur sort sans recharge entre
    deux, les sorts déclenchés suivent leur déclencheur ; dégâts en % d'ATQ par seconde et part de chaque sort
    (CLI : `rotation <classe>`). Sans buffs, PM ni critiques : ça compare des ordres de priorité.
+9. **Combat (NotMeter).** L'écran Combat lit les captures de la fenêtre « Détails du combat » de
+   [NotMeter](https://notmeter.com) (en français) : une capture par écran de la liste des compétences, importées
+   ensemble. Le texte est lu sur le PC par la reconnaissance de texte de Windows (rien n'est envoyé). Pour chaque sort :
+   dégâts, part des dégâts, lancers face à ce que sa recharge permet (durée ÷ recharge + 1), critique, coups de dos ;
+   sorts de la rotation jamais lancés ; buffs relancés moins souvent que leur recharge le permet ou peu actifs
+   (déclencheur connu, ex. Position d'attaque surprise de l'Assassin) ; parchemins. Le dernier combat importé remplace
+   la simulation dans le **focus dégâts** de l'écran Compétences (parts réelles, enchaînements compris) et ajoute ses
+   conseils à l'accueil. Les dégâts évitables et les soins reçus ne sont pas sur cette fenêtre : non jugés.
+   CLI : `combat <nom> [mots.tsv…]` (mots reconnus, écrits par `Aion2Builder.exe --ocr capture.png mots.tsv`).
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par
