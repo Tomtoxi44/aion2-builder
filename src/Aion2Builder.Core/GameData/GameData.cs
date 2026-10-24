@@ -310,8 +310,9 @@ public sealed class GameDatabase
     readonly Dictionary<string, StatDef> byApiId;
     readonly Dictionary<string, StatDef> byLabel;
 
-    public GameDatabase(StatCatalogFile stats, ClassesFile classes, ProgressionFile progression, SettingsFile settings)
+    public GameDatabase(StatCatalogFile stats, ClassesFile classes, ProgressionFile progression, SettingsFile settings, SpellsFile? spells = null)
     {
+        Spells = spells?.Spells ?? [];
         Stats = stats.Stats;
         Roles = classes.Roles;
         Classes = classes.Classes;
@@ -333,6 +334,11 @@ public sealed class GameDatabase
     public List<ClassProfile> Classes { get; }
     public ProgressionFile Progression { get; }
     public SettingsFile Settings { get; }
+    /// <summary>Données des sorts par identifiant officiel (recharge, % d'ATQ, cibles).</summary>
+    public Dictionary<long, SpellData> Spells { get; }
+
+    /// <summary>Sort d'un code de compétence, y compris un code de combat (variante dans les 4 derniers chiffres).</summary>
+    public SpellData? Spell(long code) => Spells.GetValueOrDefault(code) ?? Spells.GetValueOrDefault(code / 10000 * 10000);
 
     public StatDef? Stat(string key) => byKey.GetValueOrDefault(key);
     public string StatName(string key) => byKey.TryGetValue(key, out var s) ? s.Name : key;
@@ -422,4 +428,20 @@ public sealed class GameDatabase
         }
         return sb.ToString();
     }
+}
+
+public sealed record SpellsFile
+{
+    public Dictionary<long, SpellData> Spells { get; init; } = [];
+}
+
+/// <summary>Un sort au niveau 1 (metabot.gg) : recharge en secondes (0 = sans), % d'ATQ maximal, cibles touchées au plus.</summary>
+public sealed record SpellData
+{
+    public string Class { get; init; } = "";
+    public string Name { get; init; } = "";
+    public string Kind { get; init; } = "";
+    public double Cooldown { get; init; }
+    public double Coef { get; init; }
+    public int Targets { get; init; } = 1;
 }

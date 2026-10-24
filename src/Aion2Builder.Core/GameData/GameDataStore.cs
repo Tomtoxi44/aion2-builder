@@ -20,7 +20,7 @@ public static class AppPaths
 /// </summary>
 public static class GameDataStore
 {
-    public static readonly string[] FileNames = ["stats.json", "classes.json", "progression.json", "settings.json"];
+    public static readonly string[] FileNames = ["stats.json", "classes.json", "progression.json", "settings.json", "spells.json"];
 
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -37,7 +37,8 @@ public static class GameDataStore
             Read<StatCatalogFile>("stats.json", overrideDir),
             Read<ClassesFile>("classes.json", overrideDir),
             Read<ProgressionFile>("progression.json", overrideDir),
-            Read<SettingsFile>("settings.json", overrideDir));
+            Read<SettingsFile>("settings.json", overrideDir),
+            Read<SpellsFile>("spells.json", overrideDir));
     }
 
     /// <summary>Indique, pour chaque fichier, s'il vient du dossier utilisateur ou de l'application.</summary>

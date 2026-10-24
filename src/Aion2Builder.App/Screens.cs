@@ -983,6 +983,17 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 ("maintenant", a.Delta == 0 ? "rien à changer" : DeltaText(a), DeltaColor(a)),
                 ("priorité", a.Priority.ToString("0.00"), null),
             ]));
+            // Données du sort (niveau 1, metabot.gg) : recharge, % d'ATQ, cibles, et ce que ça représente par seconde.
+            if (db.Spell(a.Skill.Id) is { Coef: > 0 } spell)
+            {
+                var perSecond = spell.Cooldown > 0 ? spell.Coef / spell.Cooldown : 0;
+                body.Children.Add(KeyValue(
+                [
+                    ("recharge", spell.Cooldown > 0 ? $"{Fmt.Num(spell.Cooldown)} s" : "aucune", null),
+                    ("dégâts", $"{Fmt.Num(spell.Coef)} % d'ATQ{(spell.Targets > 1 ? $" · jusqu'à {spell.Targets} cibles" : "")}", null),
+                    ("par seconde", perSecond > 0 ? $"{Fmt.Num(perSecond)} % d'ATQ sur une cible" : "sans recharge : limitée par le temps de lancer et les PM", Tok.Text2),
+                ]));
+            }
             body.Children.Add(Field("Pourquoi", a.Why, a.Unverified ? Tok.Warn : null));
             // Échanges : d'où viennent ses points, ou à qui elle les cède, et pourquoi.
             var exchanges = r.Skills.Moves.Where(m => m.To == a).Select(m => m.From is null
