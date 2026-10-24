@@ -65,6 +65,11 @@ public sealed class CombatAnalyzer(GameDatabase db)
         var simulated = new SkillAdvisor(db).DamageShares(p);
         var duration = log.Duration;
         var seconds = $"{duration:0} s";
+        // Global de plusieurs combats : lancers possibles comptés combat par combat (chacun commence recharge prête).
+        int? PossibleFor(double cooldown) => log.Segments is { Count: > 1 } segments
+            ? cooldown > 0 ? segments.Sum(d => (int)Math.Floor(d / cooldown) + 1) : null
+            : Possible(duration, cooldown);
+        var boundaries = log.Segments is { Count: > 1 } s2 ? s2.Select((_, i) => s2.Take(i + 1).Sum()).ToList() : [];
 
         // Sorts : lancers face à la recharge.
         var skills = log.Skills.Select(s =>
@@ -73,7 +78,7 @@ public sealed class CombatAnalyzer(GameDatabase db)
             var sim = simulated.TryGetValue(GameDatabase.NormalizeLabel(s.Name), out var v) ? v : (double?)null;
             if (spell is null)
                 return new SkillReview(s, null, null, sim, "Hors des données de sorts (enchaînement ou effet déclenché) : rien à comparer.", Severity.Info);
-            var possible = Possible(duration, spell.Cooldown);
+            var possible = PossibleFor(spell.Cooldown);
             if (possible is not { } max || s.Uses <= 0)
                 return new SkillReview(s, spell, null, sim, spell.Kind == "Passive" ? "Effet passif déclenché par tes coups : rien à comparer."
                     : spell.Cooldown > 0 ? "Utilisations non lues." : "Sans recharge : sort de remplissage.", Severity.Info);
@@ -100,7 +105,7 @@ public sealed class CombatAnalyzer(GameDatabase db)
         if (unseen.Count > 0 && log.Complete)
             findings.Add(new Finding(Area.Skills, Severity.Important, $"Jamais lancé{(unseen.Count > 1 ? "s" : "")} : {string.Join(", ", unseen)}",
                 string.Join(" · ", unseen.Select(n => expected.First(s => s.Name == n)).Select(s =>
-                    $"{s.Name} : dans ta rotation {mode}{(s.Coef > 0 ? $", {s.Coef:0} % d'ATQ" : "")}{(Possible(duration, s.Cooldown) is { } m ? $", jusqu'à {m} lancer{(m > 1 ? "s" : "")} en {seconds}" : "")}")),
+                    $"{s.Name} : dans ta rotation {mode}{(s.Coef > 0 ? $", {s.Coef:0} % d'ATQ" : "")}{(PossibleFor(s.Cooldown) is { } m ? $", jusqu'à {m} lancer{(m > 1 ? "s" : "")} en {seconds}" : "")}")),
                 "Ajoute-les à ta rotation (écran Build).", 65));
         else if (!log.Complete && log.SkillCount > 0)
             findings.Add(new Finding(Area.Skills, Severity.Info, $"Liste partielle : {log.Skills.Count} sorts lus sur {log.SkillCount}",
@@ -118,7 +123,7 @@ public sealed class CombatAnalyzer(GameDatabase db)
                     ? new BuffReview(b, null, null, $"Actif {uptime} du combat : relance-le juste avant.", Severity.Advice)
                     : new BuffReview(b, null, null, "Consommable actif tout le combat.", Severity.Info);
             var spell = Find(p.Class.Code, b.Name);
-            if (spell is { Cooldown: > 0 } && Possible(duration, spell.Cooldown) is { } max)
+            if (spell is { Cooldown: > 0 } && PossibleFor(spell.Cooldown) is { } max)
                 return b.Count < max
                     ? new BuffReview(b, spell, max, $"Lancé {Times(b.Count)} sur {max} possibles en {seconds} (recharge {spell.Cooldown:0} s), actif {uptime} : relance-le dès qu'il revient.", Severity.Advice)
                     : new BuffReview(b, spell, max, $"Lancé à chaque recharge ({spell.Cooldown:0} s), actif {uptime}.", Severity.Info);
@@ -148,7 +153,8 @@ public sealed class CombatAnalyzer(GameDatabase db)
                     $"Enchaîne « {spell.Name} » juste après « {spell.Requires![0]} ».", 55));
             }
             // Pauses entre deux lancers (un lancer dure environ 1 s ; au-delà de 2,5 s, la rotation s'arrête).
-            var gaps = casts.Zip(casts.Skip(1), (a, b) => b.T - a.T).Where(g => g > 2.5).ToList();
+            var gaps = casts.Zip(casts.Skip(1), (a, b) => (Gap: b.T - a.T, Across: boundaries.Any(x => x > a.T && x <= b.T)))
+                .Where(g => g.Gap > 2.5 && !g.Across).Select(g => g.Gap).ToList();
             var idle = gaps.Sum(g => g - 1);
             if (duration > 0 && idle / duration > 0.1)
                 findings.Add(new Finding(Area.Skills, Severity.Advice, $"Temps morts : {gaps.Count} pause{(gaps.Count > 1 ? "s" : "")}, {idle:0} s sur {seconds}",

@@ -7,6 +7,9 @@ namespace Aion2Builder.Storage;
 /// <summary>Combats importés, par personnage : %APPDATA%\Aion2Builder\combat\&lt;perso&gt;\&lt;date&gt;.json, le plus récent d'abord.</summary>
 public sealed class CombatStore
 {
+    /// <summary>Combats gardés par personnage.</summary>
+    public const int Keep = 20;
+
     static string Dir(string characterKey) => Path.Combine(AppPaths.Root, "combat", characterKey);
 
     public string Save(string characterKey, CombatLog log)
@@ -33,6 +36,25 @@ public sealed class CombatStore
     }
 
     public CombatLog? Latest(string characterKey) => List(characterKey).Select(x => x.Log).FirstOrDefault();
+
+    /// <summary>Ne garde que les <paramref name="keep"/> combats les plus récents.</summary>
+    public void Prune(string characterKey, int keep = Keep)
+    {
+        if (!Directory.Exists(Dir(characterKey))) return;
+        foreach (var path in Directory.GetFiles(Dir(characterKey), "*.json").OrderDescending().Skip(keep)) Delete(path);
+    }
+
+    static string ImportedPath(string characterKey) => Path.Combine(Dir(characterKey), "imported.txt");
+
+    /// <summary>Fichiers du Pet Meter déjà repris (même ceux supprimés depuis) : un combat n'est jamais importé deux fois.</summary>
+    public HashSet<string> Imported(string characterKey) =>
+        File.Exists(ImportedPath(characterKey)) ? File.ReadAllLines(ImportedPath(characterKey)).Where(l => l.Length > 0).ToHashSet() : [];
+
+    public void MarkImported(string characterKey, IEnumerable<string> files)
+    {
+        Directory.CreateDirectory(Dir(characterKey));
+        File.AppendAllLines(ImportedPath(characterKey), files);
+    }
 
     public void Delete(string path)
     {

@@ -16,7 +16,7 @@ public static class PetMeterFights
     static readonly Dictionary<long, string> Creatures = new() { [2400032] = "Mannequin d'entraînement" };
 
     public sealed record Fight(int Version, string Meter, string Character, long Entity, string Start, string StartUtc, double Duration,
-        double Damage, int Hits, FightTarget Target, List<FightSkill> Skills, List<double[]> Casts, FightTaken Taken, FightHeals Heals);
+        double Damage, int Hits, FightTarget Target, List<FightSkill> Skills, List<double[]> Casts, FightTaken Taken, FightHeals Heals, long Map = 0);
     public sealed record FightTarget(long Entity, long Code, double Damage);
     public sealed record FightSkill(long Code, int Hits, double Damage, int Crits, int Back, int Front, int Positioned, double Max, bool Summon);
     public sealed record FightTaken(double Damage, int Hits, double Max);
@@ -65,7 +65,7 @@ public static class PetMeterFights
             Duration = f.Duration, TotalDamage = f.Damage, Dps = f.Duration > 0 ? f.Damage / f.Duration : 0, Hits = f.Hits,
             SkillCount = skills.Count, Skills = skills.OrderByDescending(s => s.Damage).ToList(), Pages = 0,
             SourceFile = Path.GetFileName(path), DamageTaken = f.Taken.Damage, HitsTaken = f.Taken.Hits, MaxTaken = f.Taken.Max,
-            Heals = f.Heals.Amount, Casts = casts,
+            Heals = f.Heals.Amount, Casts = casts, Map = f.Map > 0 ? f.Map : null,
         };
     }
 }

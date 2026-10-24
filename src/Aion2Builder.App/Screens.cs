@@ -40,8 +40,9 @@ sealed class UiState
     public SimulationOptions Sim { get; set; } = new();
     /// <summary>Rotations simulées de l'écran Build : 1 cible ou 4.</summary>
     public int RotationTargets { get; set; } = 1;
-    /// <summary>Combat : combat importé affiché (0 = le plus récent) et sort sélectionné.</summary>
-    public int CombatIndex { get; set; }
+    /// <summary>Combat : combat ouvert (null = historique), séance dont le global est ouvert, sort sélectionné.</summary>
+    public int? CombatIndex { get; set; }
+    public int? CombatGroup { get; set; }
     public string? CombatSkill { get; set; }
     public HashSet<Area> Collapsed { get; } = [];
 }
@@ -1172,9 +1173,71 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
     CombatReport? combatReport;
 
-    /// <summary>Combat affiché, jugé avec le profil JcE (les combats mesurés sont des combats JcE : mannequin, boss).</summary>
-    CombatReport? Combat => combatReport ??= combats.Count == 0 ? null
-        : new CombatAnalyzer(db).Analyze(combats[Math.Clamp(s.CombatIndex, 0, combats.Count - 1)].Log, db.Resolve(r.Character.ClassCode, GameMode.PvE, inputs.UsesDesigned));
+    /// <summary>Séances (donjons) : index des combats, du plus récent au plus ancien.</summary>
+    List<List<int>> CombatSessions => combatSessions ??= CombatLog.Sessions(combats.Select(x => x.Log).ToList());
+    List<List<int>>? combatSessions;
+
+    /// <summary>
+    /// Combat affiché (null : l'historique) : un combat, ou le global d'une séance. Jugé avec le profil JcE (les combats
+    /// mesurés sont des combats JcE : mannequin, boss, donjon).
+    /// </summary>
+    CombatReport? Combat => combatReport ??= CombatLogShown is { } log
+        ? new CombatAnalyzer(db).Analyze(log, db.Resolve(r.Character.ClassCode, GameMode.PvE, inputs.UsesDesigned)) : null;
+
+    CombatLog? CombatLogShown =>
+        s.CombatGroup is int g && g < CombatSessions.Count ? CombatLog.Merge(CombatSessions[g].Select(i => combats[i].Log).ToList())
+        : s.CombatIndex is int i && i < combats.Count ? combats[i].Log : null;
+
+    static string Duration(double seconds) => seconds >= 60 ? $"{(int)seconds / 60} min {(int)seconds % 60:00}" : $"{seconds:0} s";
+
+    /// <summary>
+    /// Historique : les combats gardés (les 20 derniers), regroupés par séance (même carte, moins de 10 min d'écart) ;
+    /// un clic ouvre le détail, « global » additionne une séance (un donjon).
+    /// </summary>
+    Control CombatHistory()
+    {
+        var list = new StackPanel { Margin = new Thickness(0, 0, 0, 14) };
+        const string cols = "90,*,80,90,90,70";
+        list.Children.Add(TableHeader(cols, "Heure", "Cible", "Durée", "DPS", "Source", "À revoir"));
+        var profile = db.Resolve(r.Character.ClassCode, GameMode.PvE, inputs.UsesDesigned);
+        var analyzer = new CombatAnalyzer(db);
+        for (var g = 0; g < CombatSessions.Count; g++)
+        {
+            var session = CombatSessions[g];
+            var logs = session.Select(i => combats[i].Log).ToList();
+            var first = logs.Min(l => l.ImportedAtUtc).ToLocalTime();
+            var last = logs.Max(l => l.ImportedAtUtc.AddSeconds(l.Duration)).ToLocalTime();
+            var group = g;
+            var header = new DockPanel { Margin = new Thickness(20, 12, 20, 4) };
+            if (session.Count > 1)
+            {
+                var total = logs.Sum(l => l.TotalDamage) / Math.Max(1, logs.Sum(l => l.Duration));
+                var global = Clickable(T($"global · {Fmt.Big(total)} DPS ›", 11, Accent.Main, FontWeight.SemiBold, mono: true),
+                    () => update(st => { st.CombatGroup = group; st.CombatIndex = null; st.CombatSkill = null; }), hover: Tok.HoverStrong, padding: new Thickness(6, 2));
+                DockPanel.SetDock(global, Dock.Right);
+                header.Children.Add(global);
+            }
+            var map = logs.Select(l => l.Map).FirstOrDefault(m => m is not null);
+            header.Children.Add(Label($"{first:dd/MM} · {first:HH:mm}–{last:HH:mm} · {session.Count} combat{(session.Count > 1 ? "s" : "")}" +
+                $" · {Duration(logs.Sum(l => l.Duration))} de combat" + (map is { } m ? $" · carte {m}" : "")));
+            list.Children.Add(header);
+            foreach (var i in session)
+            {
+                var (_, log) = combats[i];
+                var index = i;
+                var todo = analyzer.Analyze(log, profile).Findings.Count(f => f.Severity <= Severity.Advice);
+                list.Children.Add(TableRow(Columns(cols,
+                        T(log.ImportedAtUtc.ToLocalTime().ToString("HH:mm:ss"), 12, Tok.Muted, mono: true), T(log.Target, 13),
+                        T(Duration(log.Duration), 12, mono: true), T(Fmt.Big(log.Dps), 13, Accent.Main, FontWeight.SemiBold, mono: true),
+                        T(log.Source == "Pet Meter" ? "Pet Meter" : "captures", 12, Tok.Muted),
+                        T(todo == 0 ? "✓" : $"{todo}", 12, todo == 0 ? Tok.Good : Tok.Warn, mono: true)),
+                    false, () => update(st => { st.CombatIndex = index; st.CombatGroup = null; st.CombatSkill = null; })));
+            }
+        }
+        list.Children.Add(T($"Les {CombatStore.Keep} derniers combats sont gardés ; une séance = même carte et moins de 10 min entre deux combats (un donjon).",
+            11, Tok.Muted, wrap: true).WithMargin(20, 10, 20, 0));
+        return list;
+    }
 
     static IBrush LevelColor(Severity level) => level switch { Severity.Critical => Tok.Bad, Severity.Important => Tok.Warn, Severity.Advice => Tok.Info, _ => Tok.Text2 };
 
@@ -1183,6 +1246,11 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var panel = new StackPanel();
         var import = Clickable(T("+ importer des captures…", 12, Accent.Main, FontWeight.SemiBold, mono: true), importCombat, hover: Tok.HoverStrong, padding: new Thickness(8, 2));
         panel.Children.Add(SectionHeader("Combat · Pet Meter, ou captures NotMeter « Détails du combat »", import, 20));
+        if (Combat is null && combats.Count > 0)
+        {
+            panel.Children.Add(CombatHistory());
+            return panel;
+        }
         if (Combat is not { } cr)
         {
             var steps = new StackPanel { Spacing = 10, Margin = new Thickness(20, 16) };
@@ -1204,24 +1272,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             return panel;
         }
         var log = cr.Log;
-
-        // Combats importés : le plus récent d'abord.
-        if (combats.Count > 1)
-        {
-            var history = new WrapPanel { Margin = new Thickness(20, 10, 20, 0) };
-            for (var i = 0; i < combats.Count; i++)
-            {
-                var index = i;
-                var c = combats[i].Log;
-                var on = index == Math.Clamp(s.CombatIndex, 0, combats.Count - 1);
-                var chip = Clickable(T($"{c.ImportedAtUtc.ToLocalTime():dd/MM HH:mm} · {c.Target} · {Fmt.Big(c.Dps)}", 11, on ? Tok.OnAccent : Tok.Text2, mono: true),
-                    () => update(st => { st.CombatIndex = index; st.CombatSkill = null; }), on ? Accent.Main : null, on ? null : Tok.Hover, new Thickness(8, 3));
-                chip.CornerRadius = new CornerRadius(3);
-                chip.Margin = new Thickness(0, 0, 6, 6);
-                history.Children.Add(chip);
-            }
-            panel.Children.Add(history);
-        }
+        panel.Children.Add(Clickable(T(s.CombatGroup is not null ? $"‹ historique · global de la séance ({log.Target})" : "‹ historique", 12, Accent.Main),
+            () => update(st => { st.CombatIndex = null; st.CombatGroup = null; st.CombatSkill = null; }), hover: Tok.Hover, padding: new Thickness(20, 8)));
 
         // Résumé.
         var tiles = new WrapPanel { Margin = new Thickness(20, 12, 20, 4) };
@@ -1244,21 +1296,22 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         }
         else Tile("sorts lus", log.SkillCount > 0 ? $"{log.Skills.Count}/{log.SkillCount}" : $"{log.Skills.Count}", log.Complete ? Tok.Good : Tok.Warn);
         panel.Children.Add(tiles);
-        var path = combats[Math.Clamp(s.CombatIndex, 0, combats.Count - 1)].Path;
-        panel.Children.Add(new Border
+        var line = new StackPanel
         {
-            Padding = new Thickness(20, 0, 20, 12), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1),
-            Child = new StackPanel
+            Orientation = Orientation.Horizontal, Spacing = 14,
+            Children =
             {
-                Orientation = Orientation.Horizontal, Spacing = 14,
-                Children =
-                {
-                    T($"{log.Character} contre {log.Target} · " + (log.Source == "Pet Meter" ? $"enregistré par le Pet Meter le {log.ImportedAtUtc.ToLocalTime():dd/MM HH:mm}"
+                T(s.CombatGroup is not null ? $"{log.Character} · {log.Target} du {log.ImportedAtUtc.ToLocalTime():dd/MM HH:mm}, mis bout à bout" + (log.Map is { } mapId ? $" · carte {mapId}" : "")
+                    : $"{log.Character} contre {log.Target} · " + (log.Source == "Pet Meter" ? $"enregistré par le Pet Meter le {log.ImportedAtUtc.ToLocalTime():dd/MM HH:mm}"
                         : $"importé le {log.ImportedAtUtc.ToLocalTime():dd/MM HH:mm} · {log.Pages} capture{(log.Pages > 1 ? "s" : "")}"), 12, Tok.Muted),
-                    Clickable(T("supprimer ce combat", 12, Tok.Muted), () => deleteCombat(path), hover: Tok.Hover, padding: new Thickness(4, 0)),
-                },
             },
-        });
+        };
+        if (s.CombatGroup is null && s.CombatIndex is int shown && shown < combats.Count)
+        {
+            var path = combats[shown].Path;
+            line.Children.Add(Clickable(T("supprimer ce combat", 12, Tok.Muted), () => deleteCombat(path), hover: Tok.Hover, padding: new Thickness(4, 0)));
+        }
+        panel.Children.Add(new Border { Padding = new Thickness(20, 0, 20, 12), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = line });
 
         // À améliorer : ce que les chiffres montrent, avec la raison et quoi faire.
         var todo = cr.Findings.Where(f => f.Severity <= Severity.Advice).ToList();
