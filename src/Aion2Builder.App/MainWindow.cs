@@ -27,7 +27,7 @@ namespace Aion2Builder.App;
 sealed record UiPrefs(string Region = "eu", string Server = "", string Name = "", GameMode Mode = GameMode.PvE, string? LastFile = null,
     int Tab = 0, string Screen = "Home", string Accent = "Orange", bool AutoUpdate = true,
     List<string>? Tabs = null, double InspectorWidth = 340, bool InspectorHidden = false, int AutoRefreshHours = 0,
-    List<string>? Mine = null, bool BottomHidden = false, double BottomHeight = 190, string BottomTab = "advice")
+    List<string>? Mine = null, bool BottomHidden = false, double BottomHeight = 190, string BottomTab = "advice", List<string>? RailOrder = null)
 {
     static string PathOf => System.IO.Path.Combine(AppPaths.Root, "ui.json");
 
@@ -149,11 +149,11 @@ public sealed class MainWindow : Window
             if (e.Key == Key.Escape && overlay != Overlay.None) { e.Handled = true; ShowOverlay(Overlay.None); return; }
             if (e.Key == Key.F5) { e.Handled = true; _ = RefreshAsync(); return; }
             if (!e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
-            // Ctrl+1 à Ctrl+8 : les écrans du rail, dans l'ordre.
-            if (e.Key is >= Key.D1 and <= Key.D9 && report is not null && e.Key - Key.D1 < ScreenViews.Nav.Length)
+            // Ctrl+1 à Ctrl+9 : les écrans du rail, dans l'ordre choisi.
+            if (e.Key is >= Key.D1 and <= Key.D9 && report is not null && e.Key - Key.D1 < RailNav.Count)
             {
                 e.Handled = true;
-                Navigate(ScreenViews.Nav[e.Key - Key.D1].Screen);
+                Navigate(RailNav[e.Key - Key.D1].Screen);
                 return;
             }
             switch (e.Key)
@@ -642,27 +642,128 @@ public sealed class MainWindow : Window
         ToolTip.SetTip(avatar, "Importer ou changer de personnage (Ctrl+K)");
         panel.Children.Add(avatar);
 
-        foreach (var (screen, title, shortName) in ScreenViews.Nav)
+        var nav = RailNav;
+        var entries = new List<Border>();
+        for (var index = 0; index < nav.Count; index++)
         {
+            var (screen, title, shortName) = nav[index];
             var on = state.Screen == screen;
             var score = report is null ? null : ScreenViews.ScoreOf(report, screen);
-            var entry = Clickable(new StackPanel
-                {
-                    Spacing = 1, HorizontalAlignment = HorizontalAlignment.Center,
-                    Children =
-                    {
-                        T(score?.ToString() ?? "···", 13, score is { } v ? Tok.Score(v) : Tok.Muted, FontWeight.SemiBold, mono: true).Centered(),
-                        T(shortName, 10, on ? Tok.Text : Tok.Muted).Centered(),
-                    },
-                },
-                () => { if (report is not null) Navigate(screen); }, padding: new Thickness(0, 8));
-            entry.Width = 52;
-            entry.BorderBrush = on ? Accent.Main : Brushes.Transparent;
-            entry.BorderThickness = new Thickness(2, 0, 0, 0);
-            ToolTip.SetTip(entry, title);
+            Control top = score is { } v ? T(v.ToString(), 13, Tok.Score(v), FontWeight.SemiBold, mono: true).Centered() : RailIcon(screen, on);
+            var entry = new Border
+            {
+                Width = 52, Padding = new Thickness(0, 8), Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand),
+                BorderBrush = on ? Accent.Main : Brushes.Transparent, BorderThickness = new Thickness(2, 0, 0, 0),
+                Child = new StackPanel { Spacing = 2, HorizontalAlignment = HorizontalAlignment.Center, Children = { top, T(shortName, 10, on ? Tok.Text : Tok.Muted).Centered() } },
+            };
+            ToolTip.SetTip(entry, $"{title} · glisse pour changer l'ordre");
+            RailDrag(entry, index, entries, panel, () => { if (report is not null) Navigate(screen); });
+            entries.Add(entry);
             panel.Children.Add(entry);
         }
         return new Border { Background = Tok.Chrome, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 1, 0), Child = panel };
+    }
+
+    /// <summary>Ordre par défaut du rail : les écrans notés d'abord (leurs notes se suivent), puis les autres.</summary>
+    static readonly Screen[] DefaultRail =
+        [Screen.Home, Screen.Stats, Screen.Gear, Screen.Skills, Screen.Daeva, Screen.Pets, Screen.Build, Screen.Combat, Screen.Simulate, Screen.Progress, Screen.Details];
+
+    /// <summary>Écrans du rail dans l'ordre choisi (glisser-déposer), les écrans inconnus de cet ordre à leur place par défaut.</summary>
+    List<(Screen Screen, string Title, string Short)> RailNav
+    {
+        get
+        {
+            var order = (prefs.RailOrder ?? []).Select(s => Enum.TryParse<Screen>(s, out var x) ? x : (Screen?)null).OfType<Screen>()
+                .Concat(DefaultRail).Distinct().ToList();
+            return order.Select(s => ScreenViews.Nav.FirstOrDefault(n => n.Screen == s)).Where(n => n.Title is not null).ToList();
+        }
+    }
+
+    /// <summary>
+    /// Entrée du rail : un clic l'ouvre ; maintenir et glisser verticalement la déplace (l'entrée suit la souris, l'ordre
+    /// est enregistré au relâchement).
+    /// </summary>
+    void RailDrag(Border entry, int index, List<Border> entries, Panel panel, Action open)
+    {
+        Point start = default;
+        var pressed = false;
+        var dragging = false;
+        entry.PointerEntered += (_, _) => { if (!dragging) entry.Background = Tok.Hover; };
+        entry.PointerExited += (_, _) => { if (!dragging) entry.Background = Brushes.Transparent; };
+        entry.PointerPressed += (_, e) =>
+        {
+            if (!e.GetCurrentPoint(entry).Properties.IsLeftButtonPressed) return;
+            pressed = true;
+            start = e.GetPosition(panel);
+            e.Pointer.Capture(entry);
+            e.Handled = true;
+        };
+        entry.PointerMoved += (_, e) =>
+        {
+            if (!pressed) return;
+            var y = e.GetPosition(panel).Y - start.Y;
+            if (!dragging && Math.Abs(y) < 6) return;
+            dragging = true;
+            entry.ZIndex = 10;
+            entry.Opacity = 0.85;
+            entry.Background = Tok.HoverStrong;
+            entry.RenderTransform = new TranslateTransform(0, y);
+        };
+        entry.PointerReleased += (_, e) =>
+        {
+            if (!pressed) return;
+            pressed = false;
+            e.Pointer.Capture(null);
+            if (!dragging) { open(); return; }
+            dragging = false;
+            // Nouvelle place : avant la première entrée dont le milieu est sous le centre de l'entrée déplacée.
+            var center = entry.Bounds.Center.Y + e.GetPosition(panel).Y - start.Y;
+            var target = entries.Count(other => other != entry && other.Bounds.Center.Y < center);
+            var order = RailNav.Select(n => n.Screen.ToString()).ToList();
+            var moved = order[index];
+            order.RemoveAt(index);
+            order.Insert(Math.Clamp(target, 0, order.Count), moved);
+            prefs = prefs with { RailOrder = order };
+            prefs.Save();
+            Render();
+        };
+    }
+
+    /// <summary>
+    /// Icône des écrans sans note. Progression : la vraie courbe de la note globale (vue en cours) dès deux imports notés.
+    /// </summary>
+    Control RailIcon(Screen screen, bool on)
+    {
+        var color = on ? Accent.Main : Tok.Muted;
+        if (screen == Screen.Progress && current is not null)
+        {
+            var key = prefs.Mode.ToString();
+            var scores = progress.Where(p => p.Scores?.ContainsKey(key) == true).Select(p => (double)p.Scores![key].Overall).TakeLast(12).ToList();
+            if (scores.Count >= 2)
+            {
+                double min = scores.Min() - 1, max = scores.Max() + 1;
+                var points = scores.Select((v, i) => new Point(1 + 22.0 * i / (scores.Count - 1), 13 - 12 * (v - min) / (max - min))).ToList();
+                return new Polyline
+                {
+                    Points = points, Stroke = on ? Accent.Main : Tok.Score((int)scores[^1]), StrokeThickness = 1.6, StrokeJoin = PenLineJoin.Round,
+                    Width = 24, Height = 14, HorizontalAlignment = HorizontalAlignment.Center,
+                };
+            }
+        }
+        var data = screen switch
+        {
+            Screen.Progress => "M1,12 L6,7 L10,9 L16,3 L19,5",
+            Screen.Build => "M1,2 H17 M1,7 H13 M1,12 H9",
+            Screen.Combat => "M2,2 L14,14 M16,2 L4,14 M1,11 L5,15 M17,11 L13,15",
+            Screen.Simulate => "M1,8 H6 L11,2 H17 M6,8 L11,14 H17",
+            Screen.Details => "M1,2 H3 M6,2 H17 M1,7 H3 M6,7 H17 M1,12 H3 M6,12 H17",
+            _ => "M2,7 H16",
+        };
+        return new Avalonia.Controls.Shapes.Path
+        {
+            Data = Geometry.Parse(data), Stroke = color, StrokeThickness = 1.6, StrokeLineCap = PenLineCap.Round, StrokeJoin = PenLineJoin.Round,
+            Width = 18, Height = 15, HorizontalAlignment = HorizontalAlignment.Center,
+        };
     }
 
     Control MainArea()

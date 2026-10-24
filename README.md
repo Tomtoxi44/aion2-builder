@@ -98,7 +98,7 @@ L'interface est organisée comme un éditeur :
   suis la répartition des compétences ou ouvres les 20 prochaines cases Daevanion, avec le même calcul que les notes ;
   aussi par pièce dans l'écran Équipement), sa progression d'un import à l'autre (niveau d'objet, puissance) et sa
   position parmi des joueurs niveau 45 de sa classe (« devant 30 % d'entre eux »).
-- **Rail à gauche** : Accueil, Stats, Équipement, Compétences, Build, Combat, Daevanion, Familiers, Et si, Progression, Détails, chacun avec sa note.
+- **Rail à gauche** : Accueil, Stats, Équipement, Compétences, Daevanion, Familiers (chacun avec sa note), puis Build, Combat, Et si, Progression, Détails avec une icône (Progression : la courbe de ta note globale). Maintiens et glisse une entrée pour changer l'ordre (gardé, Ctrl+1…9 le suit).
 - **Et si** : simulation sur une copie du personnage ; tu choisis les changements (prochaines cases Daevanion, réorganisation
   ou route conçue, répartition des compétences conseillée, build joueurs ou conçu, pièces en retard au niveau du palier) et
   l'analyse est refaite : notes avant → après, familles de stats et stats qui changent (calculées à partir des effets réels
