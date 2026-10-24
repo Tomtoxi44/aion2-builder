@@ -22,7 +22,7 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
     public double NodeCost(DaevanionNode n) => n.IsStart ? 0 : Math.Max(0.1, db.Settings.Daevanion.NodeCost.GetValueOrDefault(n.Grade, 1));
 
     sealed record Context(ResolvedProfile Profile, StatProfile Stats, Dictionary<string, SkillInfo> Skills, SkillAdvisor Skill,
-        Dictionary<StatCategory, double> Balance);
+        Dictionary<StatCategory, double> Balance, Dictionary<string, double> Shares);
 
     double NodeValue(DaevanionNode n, Context ctx)
     {
@@ -37,9 +37,11 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
             }
             else if (e.IsSkill && ctx.Skills.TryGetValue(GameDatabase.NormalizeLabel(e.SkillName!), out var skill) && skill.Acquired)
             {
-                // Un niveau de compétence vaut selon l'importance de la compétence dans la rotation de la classe.
+                // Un niveau de compétence vaut selon l'importance de la compétence dans la rotation de la classe,
+                // et d'autant plus que le sort pèse lourd dans les dégâts de la rotation simulée.
                 var priority = ctx.Skill.Priority(skill, ctx.Profile);
-                v += e.Value * s.SkillNodeValue * priority * (priority >= 0.85 ? s.CoreSkillMultiplier : 1);
+                v += e.Value * s.SkillNodeValue * priority * (priority >= 0.85 ? s.CoreSkillMultiplier : 1)
+                     * (1 + ctx.Shares.GetValueOrDefault(GameDatabase.NormalizeLabel(e.SkillName!)) * s.SkillDamageWeight);
             }
         }
         return v;
@@ -57,7 +59,8 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
             c.Skills.GroupBy(s => GameDatabase.NormalizeLabel(s.Name)).ToDictionary(g => g.Key, g => g.First()),
             new SkillAdvisor(db),
             // Famille déjà au-dessus de sa cible : ses cases valent moins ; en dessous : plus (entre ×0,6 et ×1,4).
-            sp.Categories.ToDictionary(x => x.Category, x => x.Target > 0 ? Math.Clamp(1 - x.Gap / x.Target, 0.6, 1.4) : 1));
+            sp.Categories.ToDictionary(x => x.Category, x => x.Target > 0 ? Math.Clamp(1 - x.Gap / x.Target, 0.6, 1.4) : 1),
+            new SkillAdvisor(db).DamageShares(p));
         var settings = db.Settings.Daevanion;
         var boards = c.Boards.Where(b => b.Nodes.Count > 0).ToList();
         var open = boards.ToDictionary(b => b.Id, b => b.Nodes.Where(n => n.Open || n.IsStart).Select(n => (n.Row, n.Col)).ToHashSet());

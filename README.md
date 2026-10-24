@@ -163,8 +163,9 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
      l'ordre d'ouverture (utile après une réinitialisation), avec sa valeur comparée à ton placement, les cases à ouvrir,
      celles hors route, et la suite pour tes prochains points.
    Sous le plateau, l'écran Daevanion liste ces cases dans l'ordre (mêmes numéros que la grille), avec la raison de chacune.
-   Les niveaux de compétence valent selon l'importance de la compétence, les stats selon leur poids et l'équilibre des
-   familles (une famille déjà au-dessus de sa cible vaut moins).
+   Les niveaux de compétence valent selon l'importance de la compétence et sa part des dégâts simulés (un sort à 30 % des
+   dégâts : × 1,6, `skillDamageWeight`), les stats selon leur poids et l'équilibre des familles (une famille déjà
+   au-dessus de sa cible vaut moins).
 6. **Gravures d'âme et pierres.** Chaque option de pièce et chaque pierre est jugée selon l'importance de sa stat pour
    ta classe et le mode : ✓ utile (≥ 0,5), ~ moyenne, ✕ à remplacer (< 0,25) ; une stat principale (Force…) vaut un peu
    moins que la stat qu'elle augmente (ATQ). Le **lien d'âme** (0 à 100 %) fait monter les options vers leur maximum et

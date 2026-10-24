@@ -203,6 +203,8 @@ public sealed record DaevanionSettings
     public Dictionary<string, double> NodeCost { get; init; } = [];
     public double SkillNodeValue { get; init; } = 2;
     public double CoreSkillMultiplier { get; init; } = 1.6;
+    /// <summary>Case de compétence : × (1 + part des dégâts simulés × ce poids) ; 2 = un sort à 30 % des dégâts vaut × 1,6.</summary>
+    public double SkillDamageWeight { get; init; } = 2;
     public double UnequippedSkillNodeValue { get; init; } = 0.2;
     public int MaxPathLength { get; init; } = 5;
     public int PlanLength { get; init; } = 15;

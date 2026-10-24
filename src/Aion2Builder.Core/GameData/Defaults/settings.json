@@ -8,6 +8,8 @@
     "pointSources": "Quêtes secondaires et quêtes régionales, cristaux des donjons scellés, boutique du festival Shugo (50 max, saisonnière). Ariel : Épreuve de l'ascension et quêtes JcE. Azphel : champs de bataille hebdomadaires, monolithe Abyssal, boutique JcJ (50 max). Aucun guide ne donne de total maximum par personnage.",
     "skillNodeValue": 3.0,
     "coreSkillMultiplier": 1.6,
+    "_skillDamageWeight": "Case de compétence : valeur × (1 + part du sort dans les dégâts de la rotation simulée × ce poids). 2 = un sort à 30 % des dégâts vaut × 1,6.",
+    "skillDamageWeight": 2.0,
     "unequippedSkillNodeValue": 0.2,
     "maxPathLength": 5,
     "planLength": 30,
