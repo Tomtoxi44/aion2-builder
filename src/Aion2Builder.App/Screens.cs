@@ -701,8 +701,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         if (plan.Steps.Count == 0)
             shown.Children.Add(T("Tes pièces sont au palier accessible et à +10 : le score monte maintenant par les cartes d'arcanes, le Daevanion et les pierres.",
                 13, Tok.Good, wrap: true).WithMargin(14, 10));
-        else if (ahead.Count > 0)
-            shown.Children.Add(T($"Avec tout ça : {Fmt.Num(total)}. Pour {Fmt.Num(ahead[0].Score)} (+{ahead[0].Score - total}) : cartes d'arcanes, Daevanion et pierres" +
+        else if ((ahead.FirstOrDefault(g => !g.Optional) ?? ahead.FirstOrDefault()) is { } further)
+            shown.Children.Add(T($"Avec tout ça : {Fmt.Num(total)}. Pour {Fmt.Num(further.Score)} (+{further.Score - total}) : cartes d'arcanes, Daevanion et pierres" +
                                  (plan.NextTier is { } nt ? $", puis les pièces {nt.ItemLevel} (score {Fmt.Num(nt.Gate ?? 0)})." : "."),
                 12, Tok.Muted, wrap: true).WithMargin(14, 10));
         var title = plan.Next is { } goal ? $"Pour passer {Fmt.Num(goal.Score)} : +{goal.Score - plan.Score}" : "Pour progresser encore";
