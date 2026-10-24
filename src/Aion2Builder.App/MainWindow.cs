@@ -274,9 +274,10 @@ public sealed class MainWindow : Window
     void Recompute()
     {
         if (current is null) { Render(); return; }
-        progress = store.Progress(current);
         try { report = new Advisor(db).Analyze(current, prefs.Mode, inputs, pets.Collection); }
         catch (InvalidOperationException ex) { report = null; SetStatus(ex.Message, error: true); state.Screen = Screen.Import; }
+        if (report is not null) store.RecordScores(current, prefs.Mode, report.Scores);
+        progress = store.Progress(current);
         Render();
     }
 
@@ -418,7 +419,7 @@ public sealed class MainWindow : Window
     static readonly (string Keys, string What)[] Shortcuts =
     [
         ("Ctrl+K", "importer ou ouvrir un autre personnage"), ("Ctrl+Tab · Ctrl+Maj+Tab", "personnage suivant / précédent"),
-        ("Ctrl+W", "fermer l'onglet du personnage"), ("Ctrl+1 … Ctrl+8", "écrans du rail (Accueil, Stats, Équipement…)"),
+        ("Ctrl+W", "fermer l'onglet du personnage"), ("Ctrl+1 … Ctrl+9", "écrans du rail (Accueil, Stats, Équipement…, Et si, Progression)"),
         ("Ctrl+M", "basculer JcE / JcJ"), ("Ctrl+R · F5", "actualiser depuis le site officiel"),
         ("Ctrl+I", "afficher / masquer l'inspecteur (sa largeur se règle en glissant sa bordure)"),
         ("Ctrl+E", "exporter le rapport en Markdown"), ("Ctrl+,", "paramètres"), ("F1", "cette aide"), ("Échap", "fermer"),
@@ -630,7 +631,8 @@ public sealed class MainWindow : Window
     /// <summary>Fil d'Ariane, puis le contenu et l'inspecteur, séparés par une poignée qui règle la largeur de l'inspecteur.</summary>
     Control Page(AdviceReport r)
     {
-        var (content, inspector) = new ScreenViews(db, r, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key), progress).Build();
+        var (content, inspector) = new ScreenViews(db, r, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key), progress,
+            o => Simulator.Run(db, r, inputs, pets.Collection, o)).Build();
         var grid = new Grid { RowDefinitions = new RowDefinitions("36,*") };
         grid.Children.Add(Breadcrumb(r, inspector is not null));
         var body = new Grid();

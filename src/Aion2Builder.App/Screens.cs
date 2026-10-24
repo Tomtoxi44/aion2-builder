@@ -14,7 +14,7 @@ using static Aion2Builder.App.Ui;
 
 namespace Aion2Builder.App;
 
-enum Screen { Import, Home, Stats, Gear, Skills, Build, Daeva, Pets, Details }
+enum Screen { Import, Home, Stats, Gear, Skills, Build, Daeva, Pets, Simulate, Progress, Details }
 
 /// <summary>État de l'interface : écran, sélections et blocs repliés (hors rapport).</summary>
 sealed class UiState
@@ -35,6 +35,8 @@ sealed class UiState
     public bool ShowInfo { get; set; }
     /// <summary>Stats : afficher aussi les stats qui ne comptent pas pour la classe.</summary>
     public bool AllStats { get; set; }
+    /// <summary>Simulation « et si » : changements appliqués à une copie du personnage.</summary>
+    public SimulationOptions Sim { get; set; } = new();
     public HashSet<Area> Collapsed { get; } = [];
 }
 
@@ -44,12 +46,13 @@ sealed class UiState
 /// </summary>
 sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, UiState s,
     Action<Action<UiState>> update, Action<PlayerInputs> onInputs, string? petKeyHint, Action<string?> onPets,
-    IReadOnlyList<ProgressPoint> progress)
+    IReadOnlyList<ProgressPoint> progress, Func<SimulationOptions, AdviceReport> simulate)
 {
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
         (Screen.Home, "Accueil", "Accueil"), (Screen.Stats, "Stats", "Stats"), (Screen.Gear, "Équipement", "Équip."),
         (Screen.Skills, "Compétences", "Compét."), (Screen.Build, "Build et rotation", "Build"), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Pets, "Familiers", "Famil."),
+        (Screen.Simulate, "Simulation « et si »", "Et si"), (Screen.Progress, "Progression", "Prog."),
         (Screen.Details, "Détails", "Détails"),
     ];
 
@@ -84,6 +87,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         Screen.Build => (BuildScreen(), BuildInspector()),
         Screen.Daeva => (Daeva(), DaevaInspector()),
         Screen.Pets => (Pets(), PetInspector()),
+        Screen.Simulate => (Simulate(), SimulateInspector()),
+        Screen.Progress => (ProgressScreen(), null),
         _ => (Details(), null),
     };
 
@@ -525,10 +530,16 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var rows = new StackPanel { Spacing = 6, Margin = new Thickness(14, 10) };
             foreach (var g in gains)
             {
-                var screen = g.Area switch { Area.Gear => Screen.Gear, Area.Skills => Screen.Skills, _ => Screen.Daeva };
+                // Un clic ouvre le simulateur avec ce changement déjà choisi (stats recalculées en entier).
+                var preset = g.Area switch
+                {
+                    Area.Gear => new SimulationOptions(GearAtStage: true),
+                    Area.Skills => new SimulationOptions(Skills: true),
+                    _ => new SimulationOptions(DaevanionChoice.Next),
+                };
                 rows.Children.Add(Tip(Clickable(ColumnsSpaced("40,*,Auto", 8, T($"+{g.Delta}", 13, Tok.Good, FontWeight.SemiBold, mono: true),
                         T(g.Label, 12, Tok.Text2), T($"→ {g.Overall}", 12, Tok.Score(g.Overall), mono: true)),
-                    () => GoTo(screen), hover: Tok.Hover, padding: new Thickness(4, 3)), g.Detail));
+                    () => update(st => { st.Screen = Screen.Simulate; st.Sim = preset; }), hover: Tok.Hover, padding: new Thickness(4, 3)), $"{g.Detail}\nClic : ouvrir la simulation."));
             }
             panel.Children.Add(rows);
         }
@@ -563,7 +574,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             static string Delta(int d) => d == 0 ? "" : d > 0 ? $" (+{d})" : $" ({d})";
             var first = progress[0];
             var last = progress[^1];
-            panel.Children.Add(SectionHeader("Progression", T($"{progress.Count} imports", 11, Tok.Muted, mono: true)));
+            panel.Children.Add(SectionHeader("Progression", Clickable(T($"tout voir ({progress.Count} imports)", 11, Accent.Main), () => GoTo(Screen.Progress))));
             var rows = new StackPanel { Spacing = 5, Margin = new Thickness(14, 10) };
             rows.Children.Add(T($"depuis le {first.FetchedAtUtc.ToLocalTime():dd/MM} : obj {Delta(last.ItemLevel - first.ItemLevel).Trim()} · pc {Delta(last.CombatPower - first.CombatPower).Trim()}",
                 12, last.ItemLevel > first.ItemLevel || last.CombatPower > first.CombatPower ? Tok.Good : Tok.Text2, mono: true));
@@ -1662,6 +1673,262 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     }
 
     // ----- Détails -----
+
+    // ----- Simulation « et si » -----
+
+    /// <summary>Choix exclusifs en boutons (l'actif en couleur secondaire).</summary>
+    static Control Choice(IEnumerable<(string Text, bool On, Action Do)> options)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        foreach (var (text, on, act) in options)
+        {
+            var b = Clickable(T(text, 12, on ? Tok.OnAccent : Tok.Text2, FontWeight.SemiBold, mono: true), act, on ? Accent.Main : Tok.Window, on ? null : Tok.HoverStrong, new Thickness(10, 3));
+            b.CornerRadius = new CornerRadius(3);
+            b.BorderBrush = Tok.Border;
+            b.BorderThickness = new Thickness(1);
+            row.Children.Add(b);
+        }
+        return row;
+    }
+
+    void Sim(Func<SimulationOptions, SimulationOptions> change) => update(st => st.Sim = change(st.Sim));
+
+    Control Simulate()
+    {
+        var o = s.Sim;
+        var panel = new StackPanel();
+        var reset = Clickable(T("tout remettre", 11, Accent.Main), () => Sim(_ => new SimulationOptions()));
+        panel.Children.Add(SectionHeader($"Simulation « et si » · {Mode} · sur une copie de ton personnage", o.Any ? reset : null, 20));
+
+        // Options : ce qu'on change.
+        var designedNow = inputs.UsesDesigned;
+        var options = new StackPanel { Spacing = 12, Margin = new Thickness(20, 14) };
+        var daeva = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        daeva.Children.Add(Choice([
+            ("rien", o.Daevanion == DaevanionChoice.None, () => Sim(x => x with { Daevanion = DaevanionChoice.None })),
+            ("prochaines cases", o.Daevanion == DaevanionChoice.Next, () => Sim(x => x with { Daevanion = DaevanionChoice.Next })),
+            ("réorganisation", o.Daevanion == DaevanionChoice.Respec, () => Sim(x => x with { Daevanion = DaevanionChoice.Respec })),
+            ("route conçue", o.Daevanion == DaevanionChoice.Route, () => Sim(x => x with { Daevanion = DaevanionChoice.Route })),
+        ]));
+        if (o.Daevanion == DaevanionChoice.Next)
+            daeva.Children.Add(new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center,
+                Children = { Stepper(o.NextNodes, v => Sim(x => x with { NextNodes = Math.Clamp(v, 1, 200) })), T("cases par réserve", 12, Tok.Muted, mono: true) },
+            });
+        options.Children.Add(ColumnsSpaced("110,*", 12, T("Daevanion", 13, weight: FontWeight.Medium), daeva));
+        options.Children.Add(ColumnsSpaced("110,*", 12, T("Compétences", 13, weight: FontWeight.Medium), Choice([
+            ("telles quelles", !o.Skills, () => Sim(x => x with { Skills = false })),
+            ("répartition conseillée", o.Skills, () => Sim(x => x with { Skills = true })),
+        ])));
+        options.Children.Add(ColumnsSpaced("110,*", 12, T("Build suivi", 13, weight: FontWeight.Medium), Choice([
+            ($"joueurs{(designedNow ? "" : " (actuel)")}", (o.Designed ?? designedNow) == false, () => Sim(x => x with { Designed = designedNow ? false : null })),
+            ($"conçu{(designedNow ? " (actuel)" : "")}", (o.Designed ?? designedNow), () => Sim(x => x with { Designed = designedNow ? null : true })),
+        ])));
+        options.Children.Add(ColumnsSpaced("110,*", 12, T("Équipement", 13, weight: FontWeight.Medium), Choice([
+            ("tel quel", !o.GearAtStage, () => Sim(x => x with { GearAtStage = false })),
+            ("pièces en retard au niveau du palier", o.GearAtStage, () => Sim(x => x with { GearAtStage = true })),
+        ])));
+        panel.Children.Add(new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Child = options });
+
+        if (!o.Any)
+        {
+            panel.Children.Add(T("Choisis un ou plusieurs changements : les notes, la répartition des familles et les stats sont recalculées sur une copie de ton personnage, rien n'est enregistré.",
+                13, Tok.Muted, wrap: true).WithLineHeight(1.5).WithMargin(20, 16));
+            return panel;
+        }
+
+        var after = simulate(o);
+        // Notes avant → après.
+        var tiles = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*,*"), ColumnSpacing = 8, Margin = new Thickness(20, 14, 20, 6) };
+        var scores = new[]
+        {
+            ("Global", r.Scores.Overall, after.Scores.Overall), ("Stats", r.Scores.Stats, after.Scores.Stats), ("Équip.", r.Scores.Gear, after.Scores.Gear),
+            ("Compét.", r.Scores.Skills, after.Scores.Skills), ("Daeva.", r.Scores.Daevanion, after.Scores.Daevanion),
+        };
+        for (var i = 0; i < scores.Length; i++)
+        {
+            var (label, before, now) = scores[i];
+            var delta = now - before;
+            var tile = new Border
+            {
+                Padding = new Thickness(12, 8), Background = Tok.Panel, BorderBrush = i == 0 ? Accent.Main : Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
+                Child = new StackPanel
+                {
+                    Spacing = 2,
+                    Children =
+                    {
+                        new StackPanel
+                        {
+                            Orientation = Orientation.Horizontal, Spacing = 6,
+                            Children = { T(before.ToString(), 13, Tok.Muted, mono: true), T("→", 13, Tok.Muted), T(now.ToString(), 20, Tok.Score(now), FontWeight.SemiBold, mono: true) },
+                        },
+                        T($"{label}  {(delta > 0 ? "+" : "")}{(delta == 0 ? "=" : delta.ToString())}", 11, delta > 0 ? Tok.Good : delta < 0 ? Tok.Bad : Tok.Muted, mono: true),
+                    },
+                },
+            };
+            Grid.SetColumn(tile, i);
+            tiles.Children.Add(tile);
+        }
+        panel.Children.Add(tiles);
+
+        // Ce que ça demande en jeu.
+        var cost = new StackPanel { Spacing = 4, Margin = new Thickness(20, 8, 20, 10) };
+        switch (o.Daevanion)
+        {
+            case DaevanionChoice.Next:
+                foreach (var pool in r.Daevanion.ByPool)
+                {
+                    var taken = pool.Take(o.NextNodes).ToList();
+                    cost.Children.Add(T($"Daevanion ({PoolShort(pool.Key)}) : ouvrir {taken.Count} case(s), {Fmt.Num(taken.Sum(x => x.Cost))} points.", 12, Tok.Text2));
+                }
+                break;
+            case DaevanionChoice.Respec:
+                foreach (var x in r.Daevanion.Respecs.Where(x => x.Remove.Count > 0))
+                    cost.Children.Add(T($"Daevanion ({PoolShort(x.Pool)}) : retirer {x.Remove.Count} case(s) et en prendre {x.Add.Count} (réinitialisation du plateau).", 12, Tok.Text2));
+                break;
+            case DaevanionChoice.Route:
+                foreach (var x in r.Daevanion.Routes.Where(x => x.Nodes.Count > 0))
+                {
+                    var inBudget = x.InBudget.ToList();
+                    cost.Children.Add(T($"Daevanion ({PoolShort(x.Pool)}) : réinitialiser et suivre la route conçue, {inBudget.Count} cases pour {x.Budget} points ({inBudget.Count(n => !n.Node.Open)} à ouvrir).", 12, Tok.Text2));
+                }
+                break;
+        }
+        if (o.Skills) cost.Children.Add(T($"Compétences : réinitialiser (gratuit) et refaire la répartition conseillée ({r.Skills.Skills.Count(a => a.Delta != 0)} compétence(s) changent).", 12, Tok.Text2));
+        if (o.Designed is { } designed) cost.Children.Add(T($"Build : suivre le build {(designed ? "conçu" : "des joueurs")} (écran Build).", 12, Tok.Text2));
+        if (o.GearAtStage)
+            cost.Children.Add(T($"Équipement : {r.Gear.Slots.Count(x => x.Status is SlotStatus.Empty or SlotStatus.Replace or SlotStatus.Weak)} pièce(s) à remplacer ou monter (note seulement : leurs stats futures sont inconnues).", 12, Tok.Text2));
+        panel.Children.Add(new StackPanel { Children = { SectionHeader("Ce que ça demande en jeu", padX: 20, topBorder: true), cost } });
+
+        // Familles de stats avant → après.
+        var families = new StackPanel { Spacing = 8, Margin = new Thickness(20, 10, 20, 12) };
+        foreach (var (b, a) in r.Stats.Categories.Zip(after.Stats.Categories))
+        {
+            var d = (int)Math.Round((a.Share - b.Share) * 100);
+            families.Children.Add(ColumnsSpaced("80,*,190", 12, T(GameDatabase.CategoryName(b.Category), 13),
+                new StackPanel { Spacing = 3, Children = { Bar(b.Share * 1.6, Tok.Border, 4, b.Target * 1.6), Bar(a.Share * 1.6, Accent.Main, 4, a.Target * 1.6) } },
+                T($"{Fmt.Pct(b.Share)} → {Fmt.Pct(a.Share)} ({(d >= 0 ? "+" : "")}{d} pts) · visé {Fmt.Pct(a.Target)}", 12, d == 0 ? Tok.Muted : Tok.Text2, mono: true)));
+        }
+        panel.Children.Add(new StackPanel { Children = { SectionHeader("Familles de stats · gris = avant, couleur = après", padX: 20, topBorder: true), families } });
+
+        // Stats qui changent.
+        var changes = Simulator.StatChanges(r, after);
+        panel.Children.Add(SectionHeader($"Stats qui changent · {changes.Count}", padX: 20, topBorder: true));
+        if (changes.Count == 0)
+            panel.Children.Add(T("Aucune stat ne change : ce choix agit sur les niveaux de compétences ou sur la note seulement.", 12, Tok.Muted, wrap: true).WithMargin(20, 10));
+        const string cols = "*,130,130,90";
+        if (changes.Count > 0) panel.Children.Add(TableHeader(cols, "Stat", "Avant", "Après", "Poids"));
+        foreach (var (b, a) in changes)
+        {
+            var up = a.Budget > b.Budget;
+            panel.Children.Add(new Border
+            {
+                Padding = new Thickness(20, 5),
+                Child = Columns(cols, T(a.Def.Name, 13), T(CompactTotal(b), 13, Tok.Muted, mono: true), T(CompactTotal(a), 13, up ? Tok.Good : Tok.Bad, FontWeight.SemiBold, mono: true),
+                    T(a.Weight.ToString("0.00"), 12, Tok.Muted, mono: true)),
+            });
+        }
+        return panel;
+    }
+
+    Control SimulateInspector()
+    {
+        var panel = new StackPanel { Children = { SectionHeader("Comment ça marche") } };
+        panel.Children.Add(new StackPanel
+        {
+            Spacing = 10, Margin = new Thickness(14, 12),
+            Children =
+            {
+                T("Les changements choisis sont appliqués à une copie de ton personnage, puis toute l'analyse est refaite : notes, familles de stats, stats.", 13, Tok.Text2, wrap: true).WithLineHeight(1.5),
+                T("Daevanion : les stats viennent des effets réels des cases ouvertes ou retirées. Compétences : les niveaux de la répartition conseillée. Build : les priorités du build choisi.", 13, Tok.Text2, wrap: true).WithLineHeight(1.5),
+                T("Équipement : une pièce « au niveau du palier » ne change que la note d'équipement ; ses stats futures ne sont pas connues, elles ne sont donc pas ajoutées.", 13, Tok.Text2, wrap: true).WithLineHeight(1.5),
+                T("Rien n'est enregistré : ton personnage et tes conseils ne changent pas.", 12, Tok.Muted, wrap: true).WithLineHeight(1.45),
+            },
+        });
+        return panel;
+    }
+
+    // ----- Progression -----
+
+    /// <summary>Courbe simple sur les imports (un point par import), avec la dernière valeur et l'écart depuis le premier.</summary>
+    static Control Curve(string title, IReadOnlyList<(DateTime At, double Value)> points, Func<double, string> format)
+    {
+        const double width = 260, height = 70;
+        var box = new StackPanel { Spacing = 6, Width = width + 24 };
+        var last = points[^1].Value;
+        var delta = last - points[0].Value;
+        box.Children.Add(new DockPanel
+        {
+            Children =
+            {
+                new TextBlock { Text = $"{(delta >= 0 ? "+" : "")}{format(delta)}", FontFamily = Fonts.Mono, FontSize = 11, Foreground = delta > 0 ? Tok.Good : delta < 0 ? Tok.Bad : Tok.Muted, [DockPanel.DockProperty] = Dock.Right },
+                T($"{title} · {format(last)}", 12, Tok.Text2),
+            },
+        });
+        var canvas = new Canvas { Width = width, Height = height };
+        var min = points.Min(p => p.Value);
+        var max = points.Max(p => p.Value);
+        var span = Math.Max(1e-9, max - min);
+        var coords = points.Select((p, i) => new Point(points.Count == 1 ? width / 2 : i * width / (points.Count - 1), height - 6 - (p.Value - min) / span * (height - 12))).ToList();
+        canvas.Children.Add(new Polyline { Points = coords, Stroke = Accent.Main, StrokeThickness = 2 });
+        foreach (var c in coords)
+        {
+            var dot = new Ellipse { Width = 6, Height = 6, Fill = Accent.Main };
+            Canvas.SetLeft(dot, c.X - 3);
+            Canvas.SetTop(dot, c.Y - 3);
+            canvas.Children.Add(dot);
+        }
+        box.Children.Add(new Border { Padding = new Thickness(12, 8), Background = Tok.Frame, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Child = canvas });
+        return box;
+    }
+
+    Control ProgressScreen()
+    {
+        var panel = new StackPanel();
+        if (progress.Count < 2)
+        {
+            panel.Children.Add(SectionHeader($"Progression · {progress.Count} import", padX: 20));
+            panel.Children.Add(T("Un seul import pour l'instant. Actualise ton personnage (Ctrl+R) après tes progrès : chaque import qui change quelque chose " +
+                "(pièces, compétences, cases Daevanion, niveau d'objet) ajoute un point ici, avec ce qui a changé.", 13, Tok.Muted, wrap: true).WithLineHeight(1.5).WithMargin(20, 14));
+            return panel;
+        }
+        var first = progress[0];
+        panel.Children.Add(SectionHeader($"Progression · {progress.Count} imports depuis le {first.FetchedAtUtc.ToLocalTime():dd/MM/yyyy}", padX: 20));
+        var key = r.Mode.ToString();
+        var curves = new WrapPanel { Margin = new Thickness(20, 14, 20, 6), ItemSpacing = 16, LineSpacing = 12 };
+        curves.Children.Add(Curve("Niveau d'objet", progress.Select(p => (p.FetchedAtUtc, (double)p.ItemLevel)).ToList(), v => Fmt.Num(v)));
+        curves.Children.Add(Curve("Puissance", progress.Select(p => (p.FetchedAtUtc, (double)p.CombatPower)).ToList(), v => Fmt.Num(v)));
+        var scored = progress.Where(p => p.Scores?.ContainsKey(key) == true).Select(p => (p.FetchedAtUtc, (double)p.Scores![key].Overall)).ToList();
+        if (scored.Count >= 2) curves.Children.Add(Curve($"Score global ({Mode})", scored, v => Fmt.Num(v)));
+        panel.Children.Add(curves);
+        if (scored.Count < 2)
+            panel.Children.Add(T("La courbe du score apparaît dès deux imports notés (le score est gardé à chaque calcul depuis cette version).", 12, Tok.Muted, wrap: true).WithMargin(20, 0, 20, 8));
+
+        panel.Children.Add(SectionHeader("Imports, du plus récent au plus ancien", padX: 20, topBorder: true));
+        static string Delta(int d) => d == 0 ? "" : d > 0 ? $" (+{d})" : $" ({d})";
+        for (var i = progress.Count - 1; i >= 0; i--)
+        {
+            var p = progress[i];
+            var prev = i > 0 ? progress[i - 1] : null;
+            var score = p.Scores?.GetValueOrDefault(key);
+            var prevScore = prev?.Scores?.GetValueOrDefault(key);
+            var head = ColumnsSpaced("120,*", 12, T(p.FetchedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm"), 12, Tok.Muted, mono: true),
+                T($"niv. {p.Level} · obj {p.ItemLevel}{Delta(p.ItemLevel - (prev?.ItemLevel ?? p.ItemLevel))} · pc {p.CombatPower}{Delta(p.CombatPower - (prev?.CombatPower ?? p.CombatPower))}" +
+                  (score is null ? "" : $" · score {score.Overall}{(prevScore is null ? "" : Delta(score.Overall - prevScore.Overall))}"), 13, mono: true));
+            var block = new StackPanel { Spacing = 3, Children = { head } };
+            if (prev is not null)
+            {
+                var changes = p.ChangesSince(prev, db.SlotName);
+                foreach (var change in changes.Take(10)) block.Children.Add(T($"· {change}", 12, Tok.Text2).WithMargin(132, 0, 0, 0));
+                if (changes.Count > 10) block.Children.Add(Tip(T($"· et {changes.Count - 10} autre(s) changement(s)", 12, Tok.Muted).WithMargin(132, 0, 0, 0), string.Join("\n", changes.Skip(10))));
+                if (changes.Count == 0 && p.Gear is not null && prev.Gear is not null) block.Children.Add(T("· rien d'autre de visible", 12, Tok.Faint).WithMargin(132, 0, 0, 0));
+            }
+            else block.Children.Add(T("· premier import enregistré", 12, Tok.Faint).WithMargin(132, 0, 0, 0));
+            panel.Children.Add(new Border { Padding = new Thickness(20, 8), BorderBrush = Tok.RowLine, BorderThickness = new Thickness(0, 0, 0, 1), Child = block });
+        }
+        return panel;
+    }
 
     Control Details()
     {

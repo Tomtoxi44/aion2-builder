@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Aion2Builder.Analysis;
 using Aion2Builder.GameData;
 using Aion2Builder.Model;
 
@@ -6,8 +7,64 @@ namespace Aion2Builder.Storage;
 
 public sealed record SavedCharacter(string Key, string Name, string ServerName, string Region, string ClassCode, int Level, int ItemLevel, DateTime FetchedAtUtc, string Path);
 
-/// <summary>Un import, pour suivre la progression : niveau, niveau d'objet, puissance de combat.</summary>
-public sealed record ProgressPoint(DateTime FetchedAtUtc, int Level, int ItemLevel, int CombatPower);
+/// <summary>
+/// Un import, pour suivre la progression : niveau, niveau d'objet, puissance de combat, et de quoi dire ce qui a changé
+/// d'un import à l'autre (pièces, niveaux de compétences, cases Daevanion ouvertes), avec les notes calculées par mode.
+/// </summary>
+public sealed record ProgressPoint(DateTime FetchedAtUtc, int Level, int ItemLevel, int CombatPower)
+{
+    /// <summary>Notes calculées pour cet import, par mode (« PvE », « PvP ») ; mises à jour au dernier calcul.</summary>
+    public Dictionary<string, AreaScores>? Scores { get; init; }
+    /// <summary>Emplacement → « nom +enchantement (grade) ».</summary>
+    public Dictionary<string, string>? Gear { get; init; }
+    /// <summary>« nom|catégorie » → niveau total (compétences apprises).</summary>
+    public Dictionary<string, int>? Skills { get; init; }
+    /// <summary>Plateau Daevanion → cases ouvertes.</summary>
+    public Dictionary<string, int>? Boards { get; init; }
+
+    public static ProgressPoint Of(CharacterSnapshot c) => new(c.FetchedAtUtc, c.Level, c.ItemLevel, c.CombatPower)
+    {
+        Gear = c.Equipment.GroupBy(i => i.Slot).ToDictionary(g => g.Key, g => $"{g.First().Name} +{g.First().EnchantLevel} ({g.First().Grade})"),
+        Skills = c.Skills.Where(s => s.Acquired).GroupBy(s => $"{s.Name}|{s.Category}").ToDictionary(g => g.Key, g => g.First().Level),
+        Boards = c.Boards.Where(b => b.Unlocked).GroupBy(b => b.Name).ToDictionary(g => g.Key, g => g.First().OpenNodes),
+    };
+
+    /// <summary>Même état que l'autre point (hors date et notes).</summary>
+    public bool SameState(ProgressPoint o) =>
+        Level == o.Level && ItemLevel == o.ItemLevel && CombatPower == o.CombatPower
+        && Same(Gear, o.Gear) && Same(Skills, o.Skills) && Same(Boards, o.Boards);
+
+    static bool Same<T>(Dictionary<string, T>? a, Dictionary<string, T>? b) =>
+        a is null || b is null ? a is null == b is null : a.Count == b.Count && a.All(kv => b.TryGetValue(kv.Key, out var v) && Equals(v, kv.Value));
+
+    /// <summary>Ce qui a changé depuis le point précédent, en phrases courtes (pièces, compétences, plateaux).</summary>
+    public List<string> ChangesSince(ProgressPoint previous, Func<string, string> slotName)
+    {
+        var changes = new List<string>();
+        if (Level != previous.Level) changes.Add($"niveau {previous.Level} → {Level}");
+        if (Gear is not null && previous.Gear is not null)
+            foreach (var slot in Gear.Keys.Union(previous.Gear.Keys))
+            {
+                var before = previous.Gear.GetValueOrDefault(slot);
+                var after = Gear.GetValueOrDefault(slot);
+                if (before != after) changes.Add($"{slotName(slot)} : {before ?? "vide"} → {after ?? "vide"}");
+            }
+        if (Skills is not null && previous.Skills is not null)
+            foreach (var key in Skills.Keys.Union(previous.Skills.Keys))
+            {
+                var before = previous.Skills.GetValueOrDefault(key);
+                var after = Skills.GetValueOrDefault(key);
+                if (before != after) changes.Add($"{key.Split('|')[0]} {(before == 0 ? "apprise" : before.ToString())} → {after}");
+            }
+        if (Boards is not null && previous.Boards is not null)
+            foreach (var (board, open) in Boards)
+            {
+                var delta = open - previous.Boards.GetValueOrDefault(board);
+                if (delta != 0) changes.Add($"Daevanion {board} : {(delta > 0 ? "+" : "")}{delta} case(s)");
+            }
+        return changes;
+    }
+}
 
 /// <summary>Personnages importés, un fichier JSON chacun, pour travailler hors ligne et comparer dans le temps.</summary>
 public sealed class CharacterStore(string? dir = null)
@@ -36,9 +93,31 @@ public sealed class CharacterStore(string? dir = null)
     void AddProgress(CharacterSnapshot c)
     {
         var points = Progress(c);
-        var point = new ProgressPoint(c.FetchedAtUtc, c.Level, c.ItemLevel, c.CombatPower);
-        if (points.Count > 0 && points[^1] with { FetchedAtUtc = point.FetchedAtUtc } == point) return; // rien de neuf
+        var point = ProgressPoint.Of(c);
+        if (points.Count > 0 && points[^1].SameState(point)) return; // rien de neuf
         points.Add(point);
+        SaveProgress(c, points);
+    }
+
+    /// <summary>Notes calculées pour l'import en cours (un mode à la fois), gardées dans son point de progression.</summary>
+    public void RecordScores(CharacterSnapshot c, GameMode mode, AreaScores scores)
+    {
+        var points = Progress(c);
+        var index = points.FindLastIndex(p => p.FetchedAtUtc == c.FetchedAtUtc);
+        if (index < 0)
+        {
+            points.Add(ProgressPoint.Of(c));
+            index = points.Count - 1;
+        }
+        var key = mode.ToString();
+        var current = points[index].Scores ?? [];
+        if (current.TryGetValue(key, out var known) && known == scores) return;
+        points[index] = points[index] with { Scores = new Dictionary<string, AreaScores>(current) { [key] = scores } };
+        SaveProgress(c, points);
+    }
+
+    void SaveProgress(CharacterSnapshot c, List<ProgressPoint> points)
+    {
         try
         {
             System.IO.Directory.CreateDirectory(Path.GetDirectoryName(ProgressPath(c))!);

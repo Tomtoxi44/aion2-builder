@@ -22,6 +22,8 @@ try
         "list" => List(),
         "data" => Data(cli),
         "pets" or "familiers" => await Pets(cli),
+        "simulate" or "simuler" => Simulate(cli),
+        "progress" or "progression" => Progress(cli),
         _ => Help(),
     };
 }
@@ -48,6 +50,9 @@ static int Help()
                  [--sp N] [--dp N] [--ariel N] [--azphel N]  points non dépensés (compétences, Daevanion), gardés par personnage
                  [--build joueurs|concu]                      build qui guide les conseils (joueurs ou conçu), gardé par personnage
                  [--md <fichier.md>]                          écrit le rapport en Markdown (à garder ou partager)
+          simulate <nom> [--daevanion next|respec|route] [--n 20] [--skills] [--build joueurs|concu] [--gear] [--mode pvp]
+                                                              Et si… : notes, familles et stats avant → après
+          progress <nom>                                      Imports successifs et ce qui a changé
           list                                                Personnages enregistrés
           data [export]                                       Fichiers de données (poids, paliers…) modifiables
           pets [--key <clé>] [--refresh] [--forget]            Familiers du Pet Meter, lus sur Aion 2 Todo (clé : onglet
@@ -147,6 +152,7 @@ static async Task<int> Advise(Args cli)
     var advisor = new Advisor(db);
     var pets = new PetStore().Load().Collection;
     var reports = modes.Select(m => advisor.Analyze(snapshot, m, inputs, pets)).ToList();
+    foreach (var r in reports) store.RecordScores(snapshot, r.Mode, r.Scores);
     if (cli.Has("json"))
     {
         Console.WriteLine(JsonSerializer.Serialize<object>(reports.Count == 1 ? reports[0] : reports, GameDataStore.Json));
@@ -159,6 +165,67 @@ static async Task<int> Advise(Args cli)
         return 0;
     }
     foreach (var r in reports) new ReportPrinter(db).Print(r);
+    return 0;
+}
+
+/// <summary>Personnage enregistré (nom ou fichier), sans import.</summary>
+static (CharacterStore Store, CharacterSnapshot Snapshot) Saved(Args cli, string usage)
+{
+    var target = cli.Positional(0) ?? throw new InvalidOperationException(usage);
+    var store = new CharacterStore();
+    if (File.Exists(target)) return (store, store.Load(target));
+    var saved = store.Find(target, cli.Get("server")) ?? throw new InvalidOperationException($"« {target} » n'est pas enregistré : advise {target} --server <serveur> l'importe.");
+    return (store, store.Load(saved.Path));
+}
+
+static int Simulate(Args cli)
+{
+    var (store, snapshot) = Saved(cli, "Précise un personnage : simulate <nom> [--daevanion next|respec|route] [--n 20] [--skills] [--build joueurs|concu] [--gear]");
+    var db = GameDataStore.Load();
+    var mode = (cli.Get("mode") ?? "pve").ToLowerInvariant() is "pvp" or "jcj" ? GameMode.PvP : GameMode.PvE;
+    var inputs = store.LoadInputs(snapshot);
+    var pets = new PetStore().Load().Collection;
+    var before = new Advisor(db).Analyze(snapshot, mode, inputs, pets);
+    var options = new SimulationOptions(
+        cli.Get("daevanion")?.ToLowerInvariant() switch { "next" or "suite" => DaevanionChoice.Next, "respec" => DaevanionChoice.Respec, "route" => DaevanionChoice.Route, _ => DaevanionChoice.None },
+        int.TryParse(cli.Get("n"), out var n) ? Math.Max(1, n) : 20,
+        cli.Has("skills"),
+        cli.Get("build")?.ToLowerInvariant() switch { "designed" or "concu" or "conçu" => true, "players" or "joueurs" => false, _ => null },
+        cli.Has("gear"));
+    if (!options.Any) throw new InvalidOperationException("Rien à simuler : --daevanion next|respec|route, --skills, --build joueurs|concu ou --gear.");
+    var after = Simulator.Run(db, before, inputs, pets, options);
+
+    Console.WriteLine($"Simulation {snapshot.Name} ({GameDatabase.ModeName(mode)}) : {options}");
+    string Line(string label, int b, int a) => $"  {label,-12} {b,3} → {a,3}  ({(a - b >= 0 ? "+" : "")}{a - b})";
+    Console.WriteLine(Line("Global", before.Scores.Overall, after.Scores.Overall));
+    Console.WriteLine(Line("Stats", before.Scores.Stats, after.Scores.Stats));
+    Console.WriteLine(Line("Équipement", before.Scores.Gear, after.Scores.Gear));
+    Console.WriteLine(Line("Compétences", before.Scores.Skills, after.Scores.Skills));
+    Console.WriteLine(Line("Daevanion", before.Scores.Daevanion, after.Scores.Daevanion));
+    Console.WriteLine("Familles :");
+    foreach (var (b, a) in before.Stats.Categories.Zip(after.Stats.Categories))
+        Console.WriteLine($"  {GameDatabase.CategoryName(b.Category),-9} {Fmt.Pct(b.Share),5} → {Fmt.Pct(a.Share),5}  (visé {Fmt.Pct(a.Target)})");
+    var changes = Simulator.StatChanges(before, after);
+    Console.WriteLine($"Stats qui changent ({changes.Count}) :");
+    foreach (var (b, a) in changes.Take(25))
+        Console.WriteLine($"  {a.Def.Name,-30} {b.Display,-16} → {a.Display}");
+    return 0;
+}
+
+static int Progress(Args cli)
+{
+    var (store, snapshot) = Saved(cli, "Précise un personnage : progress <nom> [--server <serveur>]");
+    var db = GameDataStore.Load();
+    var points = store.Progress(snapshot);
+    Console.WriteLine($"Progression de {snapshot.Name} : {points.Count} import(s)");
+    for (var i = 0; i < points.Count; i++)
+    {
+        var p = points[i];
+        var score = p.Scores is null ? "" : " · score " + string.Join(" / ", p.Scores.Select(s => $"{GameDatabase.ModeName(Enum.Parse<GameMode>(s.Key))} {s.Value.Overall}"));
+        Console.WriteLine($"  {p.FetchedAtUtc.ToLocalTime():dd/MM/yyyy HH:mm}  niv. {p.Level} · obj {p.ItemLevel} · pc {p.CombatPower}{score}");
+        if (i > 0)
+            foreach (var change in p.ChangesSince(points[i - 1], db.SlotName)) Console.WriteLine($"      · {change}");
+    }
     return 0;
 }
 
