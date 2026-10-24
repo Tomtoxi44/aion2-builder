@@ -86,7 +86,8 @@ L'interface est organisée comme un éditeur :
 
 - **Onglets de personnages** en haut, comme les fichiers d'un éditeur : un onglet par personnage ouvert (initiale, nom,
   classe, niveau), **Ctrl+Tab** pour passer de l'un à l'autre, **Ctrl+W** ou × pour fermer, **+** pour en ouvrir un autre.
-  Les onglets sont rouverts au lancement suivant.
+  Les onglets sont rouverts au lancement suivant. Clic droit sur un onglet : actualiser ce personnage depuis le site
+  officiel, l'ajouter à « Mes personnages », fermer l'onglet ou les autres.
 - **Import** (**+**, avatar du rail ou **Ctrl+K**) : tape le nom, les résultats du site officiel s'affichent au fil de la
   saisie ; Entrée importe le meilleur résultat. L'étiquette « eu · tous serveurs » choisit la région et le serveur (liste
   filtrable, noms français). « Mes personnages » liste ceux déjà importés avec leur score (calculé en arrière-plan) ;

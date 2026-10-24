@@ -817,7 +817,9 @@ public sealed class MainWindow : Window
             var tab = Clickable(label, () => SwitchTab(tabPath), on ? Tok.Window : null, on ? null : Tok.Hover, new Thickness(10, 0, 6, 0));
             tab.BorderBrush = on ? Accent.Main : Brushes.Transparent;
             tab.BorderThickness = new Thickness(0, 2, 0, 0);
-            ToolTip.SetTip(tab, $"{c.Name} — {className} niv. {c.Level} · {c.ServerName} ({c.Region}) · niveau d'objet {c.ItemLevel} · importé le {c.FetchedAtUtc.ToLocalTime():dd/MM HH:mm}");
+            ToolTip.SetTip(tab, $"{c.Name} — {className} niv. {c.Level} · {c.ServerName} ({c.Region}) · niveau d'objet {c.ItemLevel} · importé le {c.FetchedAtUtc.ToLocalTime():dd/MM HH:mm}" +
+                " · clic droit : actualiser, fermer…");
+            tab.ContextFlyout = TabMenu(tabPath, c);
             row.Children.Add(new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 1, 0), Child = tab });
         }
         var plus = Clickable(T("+", 16, state.Screen == Screen.Import ? Accent.Main : Tok.Muted).Centered(), ShowImport, hover: Tok.Hover, padding: new Thickness(14, 0));
@@ -827,6 +829,39 @@ public sealed class MainWindow : Window
         {
             Background = Tok.Chrome, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1),
             Child = new ScrollViewer { Content = row, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled },
+        };
+    }
+
+    /// <summary>Clic droit sur un onglet : actualiser ce personnage (sans devoir l'afficher d'abord), le marquer, fermer.</summary>
+    MenuFlyout TabMenu(string path, CharacterSnapshot c)
+    {
+        var key = System.IO.Path.GetFileNameWithoutExtension(path);
+        var mine = (prefs.Mine ?? []).Contains(key);
+        MenuItem Item(string header, Action action, bool enabled = true)
+        {
+            var item = new MenuItem { Header = header, IsEnabled = enabled };
+            item.Click += (_, _) => action();
+            return item;
+        }
+        return new MenuFlyout
+        {
+            Placement = PlacementMode.BottomEdgeAlignedLeft,
+            ItemsSource = new List<Control>
+            {
+                Item("Actualiser depuis le site officiel", () => _ = ImportAsync(c.Name, (client, progress) => client.Fetch(db, c.Region, c.ServerId, c.CharacterId, progress)),
+                    loading is null),
+                Item(mine ? "Retirer de « Mes personnages »" : "Ajouter à « Mes personnages » ★", () =>
+                {
+                    var list = (prefs.Mine ?? []).ToList();
+                    if (!list.Remove(key)) list.Add(key);
+                    prefs = prefs with { Mine = list };
+                    prefs.Save();
+                    Render();
+                }),
+                new Separator(),
+                Item("Fermer l'onglet", () => CloseTab(path)),
+                Item("Fermer les autres onglets", () => { foreach (var other in tabs.Where(t => t != path).ToList()) CloseTab(other); SwitchTab(path); }, tabs.Count > 1),
+            },
         };
     }
 
