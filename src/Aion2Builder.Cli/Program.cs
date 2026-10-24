@@ -236,7 +236,21 @@ static int CombatCommand(Args cli)
         log = NotMeterReader.Read(pages);
         if (!cli.Has("dry")) Console.WriteLine($"Enregistré : {combats.Save(key, log)}");
     }
-    else log = combats.Latest(key) ?? throw new InvalidOperationException($"Aucun combat importé pour {snapshot.Name} : combat {snapshot.Name} <mots-ocr.tsv>.");
+    else
+    {
+        // Comme l'appli : les nouveaux combats du Pet Meter pour ce perso sont repris d'abord.
+        var known = combats.Imported(key);
+        known.UnionWith(combats.List(key).Select(x => x.Log.SourceFile).OfType<string>());
+        var fresh = PetMeterFights.For(snapshot.Name).Where(x => !known.Contains(Path.GetFileName(x.Path))).Take(CombatStore.Keep).ToList();
+        foreach (var (path, fight) in fresh) combats.Save(key, PetMeterFights.ToLog(fight, path, db));
+        if (fresh.Count > 0)
+        {
+            combats.MarkImported(key, fresh.Select(x => Path.GetFileName(x.Path)));
+            combats.Prune(key);
+            Console.WriteLine($"{fresh.Count} combat(s) du Pet Meter repris.");
+        }
+        log = combats.Latest(key) ?? throw new InvalidOperationException($"Aucun combat pour {snapshot.Name} : lance le Pet Meter pendant tes combats, ou combat {snapshot.Name} <mots-ocr.tsv>.");
+    }
 
     var inputs = store.LoadInputs(snapshot);
     var profile = db.Resolve(snapshot.ClassCode, GameMode.PvE, inputs.UsesDesigned);

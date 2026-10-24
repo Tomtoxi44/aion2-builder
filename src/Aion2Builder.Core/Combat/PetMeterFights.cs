@@ -45,12 +45,13 @@ public static class PetMeterFights
 
     public static CombatLog ToLog(Fight f, string path, GameDatabase db)
     {
-        // Lancers : un même sort annoncé deux fois en moins de 0,3 s ne compte qu'une fois.
+        // Lancers : chaque utilisation envoie deux messages (le lancer sur la cible, puis sa suite 0,15 à 0,4 s après) :
+        // un même sort à moins de 0,6 s ne compte qu'une fois (recoupé avec NotMeter : une utilisation par coup).
         var casts = new List<CombatCast>();
         foreach (var c in f.Casts.Where(c => c.Length >= 2).OrderBy(c => c[0]))
         {
             var code = (long)c[1];
-            if (casts.LastOrDefault(x => x.Code == code) is { } previous && c[0] - previous.T < 0.3) continue;
+            if (casts.LastOrDefault(x => x.Code == code) is { } previous && c[0] - previous.T < 0.6) continue;
             casts.Add(new CombatCast(c[0], code, Name(db, code)));
         }
         var skills = f.Skills.Select(s => new CombatSkill(Name(db, s.Code), null, s.Damage, f.Damage > 0 ? s.Damage / f.Damage : 0,
