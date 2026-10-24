@@ -28,7 +28,7 @@ namespace Aion2Builder.App;
 sealed record UiPrefs(string Region = "eu", string Server = "", string Name = "", GameMode Mode = GameMode.PvE, string? LastFile = null,
     int Tab = 0, string Screen = "Home", string Accent = "Orange", bool AutoUpdate = true,
     List<string>? Tabs = null, double InspectorWidth = 340, bool InspectorHidden = false, int AutoRefreshHours = 0,
-    List<string>? Mine = null, bool BottomHidden = false, double BottomHeight = 190, string BottomTab = "advice", List<string>? RailOrder = null, string GearPage = "Overview")
+    List<string>? Mine = null, bool BottomHidden = false, double BottomHeight = 190, string BottomTab = "advice", List<string>? RailOrder = null, string GearPage = "Overview", string SkillPage = "Overview", string BuildPage = "Compare", bool SideHidden = false)
 {
     static string PathOf => System.IO.Path.Combine(AppPaths.Root, "ui.json");
 
@@ -174,6 +174,7 @@ public sealed class MainWindow : Window
                     SwitchTab(tabs[(tabs.IndexOf(currentPath) + step + tabs.Count) % tabs.Count]);
                     break;
                 case Key.I: e.Handled = true; ToggleInspector(); break;
+                case Key.B: e.Handled = true; ToggleSide(); break;
                 case Key.J: e.Handled = true; ToggleBottom(); break;
             }
         };
@@ -196,6 +197,8 @@ public sealed class MainWindow : Window
         {
             state.Screen = Enum.TryParse<Screen>(prefs.Screen, out var screen) ? screen : Screen.Home;
             state.GearPage = Enum.TryParse<GearPage>(prefs.GearPage, out var gearPage) ? gearPage : GearPage.Overview;
+            state.SkillPage = Enum.TryParse<SkillPage>(prefs.SkillPage, out var skillPage) ? skillPage : SkillPage.Overview;
+            state.BuildPage = Enum.TryParse<BuildPage>(prefs.BuildPage, out var buildPage) ? buildPage : BuildPage.Compare;
             Open(opened[last], last, keepScreen: true);
         }
         else
@@ -305,7 +308,7 @@ public sealed class MainWindow : Window
     void Update(Action<UiState> change)
     {
         change(state);
-        prefs = prefs with { Screen = state.Screen.ToString(), GearPage = state.GearPage.ToString() };
+        prefs = prefs with { Screen = state.Screen.ToString(), GearPage = state.GearPage.ToString(), SkillPage = state.SkillPage.ToString(), BuildPage = state.BuildPage.ToString() };
         prefs.Save();
         Render();
     }
@@ -481,6 +484,7 @@ public sealed class MainWindow : Window
         ("Ctrl+K", "importer ou ouvrir un autre personnage"), ("Ctrl+Tab · Ctrl+Maj+Tab", "personnage suivant / précédent"),
         ("Ctrl+W", "fermer l'onglet du personnage"), ("Ctrl+1 … Ctrl+9", "écrans du rail (Accueil, Stats, Équipement…, Et si, Progression)"),
         ("Ctrl+M", "basculer JcE / JcJ"), ("Ctrl+R · F5", "actualiser depuis le site officiel"),
+        ("Ctrl+B", "afficher / masquer la barre secondaire (sous-pages, combats, plateaux)"),
         ("Ctrl+I", "afficher / masquer l'inspecteur (sa largeur se règle en glissant sa bordure)"), ("Ctrl+J", "afficher / masquer le panneau du bas : conseils et journal"),
         ("Ctrl+E", "exporter le rapport en Markdown"), ("Ctrl+,", "paramètres"), ("F1", "cette aide"), ("Échap", "fermer"),
     ];
@@ -522,6 +526,8 @@ public sealed class MainWindow : Window
                 Choice("Inspecteur", "Le panneau de droite ; sa largeur se règle en glissant sa bordure gauche.",
                     [("affiché", !prefs.InspectorHidden, () => Set(prefs with { InspectorHidden = false })), ("masqué", prefs.InspectorHidden, () => Set(prefs with { InspectorHidden = true })),
                      ("largeur par défaut", false, () => Set(prefs with { InspectorWidth = 340 }))]),
+                Choice("Barre secondaire", "La colonne à côté du rail : sous-pages, combats, plateaux (Ctrl+B).",
+                    [("affichée", !prefs.SideHidden, () => Set(prefs with { SideHidden = false })), ("masquée", prefs.SideHidden, () => Set(prefs with { SideHidden = true }))]),
                 Choice("Données", dataSource,
                     [("ouvrir le dossier", false, OpenDataFolder), ("recharger", false, () => { ShowOverlay(Overlay.None); ReloadData(); })]),
             },
@@ -670,39 +676,58 @@ public sealed class MainWindow : Window
                 Child = new StackPanel { Spacing = 2, HorizontalAlignment = HorizontalAlignment.Center, Children = { top, T(shortName, 10, on ? Tok.Text : Tok.Muted).Centered() } },
             };
             ToolTip.SetTip(entry, $"{title} · glisse (ou clic droit) pour changer l'ordre");
-            RailDrag(entry, index, entries, panel, () =>
-            {
-                if (report is null) return;
-                // Un clic sur l'écran déjà ouvert revient à sa première sous-page.
-                if (on && screen == Screen.Gear) Update(st => st.GearPage = GearPage.Overview);
-                else Navigate(screen);
-            });
+            RailDrag(entry, index, entries, panel, () => { if (report is not null) Navigate(screen); });
             entries.Add(entry);
             panel.Children.Add(entry);
-            if (on && screen == Screen.Gear && report is not null) panel.Children.Add(GearSubMenu());
         }
         return new Border { Background = Tok.Chrome, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 1, 0), Child = panel };
     }
 
     /// <summary>
-    /// Sous-menu de l'écran Équipement, déplié sous son entrée du rail quand il est ouvert : une ligne par sous-page,
-    /// la page ouverte en couleur secondaire avec un trait à gauche (comme un nœud d'arbre dans un éditeur).
+    /// Barre secondaire, entre le rail et la page (comme l'explorateur d'un éditeur) : sous-pages, combats ou plateaux de
+    /// l'écran ouvert. Masquée (bouton ‹ ou Ctrl+B), il n'en reste qu'une bande étroite avec › pour la rouvrir.
     /// </summary>
-    Control GearSubMenu()
+    Control SideBar(SidePanel side)
     {
-        var list = new StackPanel { Spacing = 1, Margin = new Thickness(0, 0, 0, 6) };
-        foreach (var (page, title, shortName) in ScreenViews.GearPages)
+        if (prefs.SideHidden)
         {
-            var on = state.GearPage == page;
-            var item = Clickable(T(shortName, 10, on ? Accent.Main : Tok.Muted, on ? FontWeight.SemiBold : FontWeight.Normal).Centered(),
-                () => Update(st => st.GearPage = page), on ? Tok.Hover : null, Tok.Hover, new Thickness(0, 4));
-            item.Width = 52;
-            item.BorderBrush = on ? Accent.Main : Tok.Border;
-            item.BorderThickness = new Thickness(on ? 2 : 1, 0, 0, 0);
-            ToolTip.SetTip(item, $"Équipement › {title}");
-            list.Children.Add(item);
+            var open = Clickable(T("›", 13, Tok.Text2, mono: true).Centered(), ToggleSide, hover: Tok.HoverStrong, padding: new Thickness(0, 9));
+            ToolTip.SetTip(open, $"Afficher la barre {side.Title} (Ctrl+B)");
+            return new Border { Width = 22, Background = Tok.Frame, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 1, 0), Child = new StackPanel { Children = { open } } };
         }
-        return list;
+        var close = Clickable(T("‹", 12, Tok.Text2, mono: true).Centered(), ToggleSide, hover: Tok.HoverStrong, padding: new Thickness(7, 1));
+        close.BorderBrush = Tok.Border;
+        close.BorderThickness = new Thickness(1);
+        close.CornerRadius = new CornerRadius(3);
+        ToolTip.SetTip(close, "Masquer la barre (Ctrl+B)");
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        if (side.Actions is not null) actions.Children.Add(side.Actions);
+        actions.Children.Add(close);
+        DockPanel.SetDock(actions, Dock.Right);
+        var head = new Border
+        {
+            Height = 36, Padding = new Thickness(14, 0, 10, 0), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = new DockPanel { Children = { actions, Label(side.Title) } },
+        };
+        DockPanel.SetDock(head, Dock.Top);
+        var foot = new Border
+        {
+            Padding = new Thickness(14, 7), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 1, 0, 0),
+            Child = T("Ctrl+B masque la barre · Ctrl+I l'inspecteur", 11, Tok.Muted, mono: true),
+        };
+        DockPanel.SetDock(foot, Dock.Bottom);
+        return new Border
+        {
+            Width = 232, Background = Tok.Frame, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 1, 0),
+            Child = new DockPanel { Children = { head, foot, Scroll(new Border { Padding = new Thickness(0, 4, 0, 8), Child = side.Body }) } },
+        };
+    }
+
+    void ToggleSide()
+    {
+        prefs = prefs with { SideHidden = !prefs.SideHidden };
+        prefs.Save();
+        Render();
     }
 
     /// <summary>Ordre par défaut du rail : les écrans notés d'abord (leurs notes se suivent), puis les autres.</summary>
@@ -844,13 +869,30 @@ public sealed class MainWindow : Window
 
     Control MainArea()
     {
-        var grid = new Grid { RowDefinitions = new RowDefinitions(tabs.Count > 0 ? "34,*" : "0,*") };
-        if (tabs.Count > 0) grid.Children.Add(TabBar());
+        // Colonne 0 : la barre secondaire de l'écran (sur toute la hauteur, à côté du rail) ; colonne 1 : onglets puis page.
+        var grid = new Grid { RowDefinitions = new RowDefinitions(tabs.Count > 0 ? "34,*" : "0,*"), ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+        if (tabs.Count > 0)
+        {
+            var bar = TabBar();
+            Grid.SetColumn(bar, 1);
+            grid.Children.Add(bar);
+        }
+        side = null;
         var page = state.Screen == Screen.Import || report is null ? ImportHost() : Page(report);
         Grid.SetRow(page, 1);
+        Grid.SetColumn(page, 1);
         grid.Children.Add(page);
+        if (side is not null)
+        {
+            var bar = SideBar(side);
+            Grid.SetRowSpan(bar, 2);
+            grid.Children.Add(bar);
+        }
         return grid;
     }
+
+    /// <summary>Barre secondaire de l'écran rendu (null : écran d'une seule page).</summary>
+    SidePanel? side;
 
     /// <summary>Fil d'Ariane, puis le contenu et l'inspecteur, séparés par une poignée qui règle la largeur de l'inspecteur.</summary>
     Control Page(AdviceReport r)
@@ -859,6 +901,7 @@ public sealed class MainWindow : Window
             o => Simulator.Run(db, r, inputs, pets.Collection, o),
             combats, () => _ = ImportCombatAsync(), DeleteCombat);
         var (content, inspector) = views.Build();
+        side = views.Side();
         var grid = new Grid { RowDefinitions = new RowDefinitions("36,*") };
         if (!prefs.BottomHidden)
         {
@@ -878,7 +921,7 @@ public sealed class MainWindow : Window
             Grid.SetRow(bottom, 3);
             grid.Children.Add(bottom);
         }
-        grid.Children.Add(Breadcrumb(r, inspector is not null));
+        grid.Children.Add(Breadcrumb(r, inspector is not null, views.Crumb()));
         var body = new Grid();
         body.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star) { MinWidth = 420 });
         body.Children.Add(KeepScroll(Scroll(content)));
@@ -913,7 +956,7 @@ public sealed class MainWindow : Window
     /// </summary>
     ScrollViewer KeepScroll(ScrollViewer scroll)
     {
-        var key = $"{currentPath}|{state.Screen}|{state.GearPage}";
+        var key = $"{currentPath}|{state.Screen}|{state.GearPage}|{state.SkillPage}|{state.BuildPage}|{state.CombatIndex}|{state.CombatGroup}|{state.CombatList}|{state.Board}";
         if (contentScroll is { } previous && contentScrollKey == key && previous.Offset != default)
         {
             var offset = previous.Offset;
@@ -1130,7 +1173,7 @@ public sealed class MainWindow : Window
         };
     }
 
-    Control Breadcrumb(AdviceReport r, bool hasInspector)
+    Control Breadcrumb(AdviceReport r, bool hasInspector, string? crumb)
     {
         var c = r.Character;
         TextBlock Value(string label, string value) => new()
@@ -1168,10 +1211,10 @@ public sealed class MainWindow : Window
             Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center,
             Children = { T(c.Name.ToLowerInvariant(), 12, Tok.Muted, mono: true), T("›", 12, Tok.Muted, mono: true), T(ScreenViews.Title(state.Screen), 12, Tok.Text, mono: true) },
         };
-        if (state.Screen == Screen.Gear)
+        if (crumb is not null)
         {
             left.Children.Add(T("›", 12, Tok.Muted, mono: true));
-            left.Children.Add(T(ScreenViews.GearPages.First(p => p.Page == state.GearPage).Title, 12, Tok.Text, mono: true));
+            left.Children.Add(T(crumb, 12, Tok.Text, mono: true));
         }
         return new Border
         {
