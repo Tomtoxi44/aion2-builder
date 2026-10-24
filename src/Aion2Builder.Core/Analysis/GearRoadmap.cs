@@ -48,12 +48,28 @@ public static class GearRoadmap
         // Enchanter jusqu'à +10 est garanti et peu cher : d'abord ; puis les remplacements, le plus gros gain d'abord.
         steps.AddRange(enchants.Where(e => e.Verdict is EnchantVerdict.Raise && e.Gain > 0).OrderByDescending(e => e.Gain)
             .Select(e => new RouteStep(RouteKind.Enchant, e.Slot, $"{e.SlotName} : +{e.Item.EnchantLevel} → +{e.Target}", e.Text, e.Gain)));
-        steps.AddRange(slots.Where(x => x.Gain > 0 && x.Target is not null).OrderByDescending(x => x.Gain).Select(x => new RouteStep(
-            x.Item is null ? RouteKind.Fill : RouteKind.Replace, x.Slot, $"{x.SlotName} : pièce {x.Target!.ItemLevel} · {x.Where}",
-            x.Item is null ? "Emplacement vide."
-                : $"{x.Item.Name} ({x.Item.ItemLevel} +{x.Item.EnchantLevel} = {x.Power}) → {x.NewPower}" +
-                  (x.Item.Grade == "Unique" && x.Item.EnchantLevel > 0 ? $" en transférant le +{x.Item.EnchantLevel}" : ""),
-            x.Gain)));
+        // Les pièces qui gagnent autant au même endroit (souvent tout un set) tiennent sur une ligne.
+        foreach (var g in slots.Where(x => x.Gain > 0 && x.Target is not null)
+                     .GroupBy(x => (x.Target!.ItemLevel, x.Where, x.Gain, Empty: x.Item is null))
+                     .OrderByDescending(g => g.Key.Gain).ThenByDescending(g => g.Count()))
+        {
+            var list = g.ToList();
+            var kind = g.Key.Empty ? RouteKind.Fill : RouteKind.Replace;
+            if (list.Count == 1)
+            {
+                var x = list[0];
+                steps.Add(new RouteStep(kind, x.Slot, $"{x.SlotName} : pièce {g.Key.ItemLevel} · {x.Where}",
+                    x.Item is null ? "Emplacement vide."
+                        : $"{x.Item.Name} ({x.Item.ItemLevel} +{x.Item.EnchantLevel} = {x.Power}) → {x.NewPower}" +
+                          (x.Item.Grade == "Unique" && x.Item.EnchantLevel > 0 ? $" en transférant le +{x.Item.EnchantLevel}" : ""),
+                    x.Gain));
+                continue;
+            }
+            var transfer = list.All(x => x.Item is { Grade: "Unique", EnchantLevel: > 0 });
+            steps.Add(new RouteStep(kind, list[0].Slot, $"{list.Count} pièces {g.Key.ItemLevel} · {g.Key.Where}",
+                $"{string.Join(", ", list.Select(x => x.SlotName))} : +{g.Key.Gain} chacune{(transfer ? " en transférant leur enchantement" : "")}",
+                g.Key.Gain * list.Count));
+        }
 
         var sacred = slots.Where(x => x.Item is { GodStoneSlots: > 0 }).Select(x => (x.SlotName, x.Item!.GodStoneSlots)).ToList();
         return new GearRoadmapPlan(score, c.Level, rules.MaxLevel, reached, next, available, nextTier, steps, slots, enchants, sacred);
