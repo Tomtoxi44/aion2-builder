@@ -75,6 +75,65 @@
     "safeLevel": 5,
     "transitionalMax": 3
   },
+  "roadmap": {
+    "_note": "Feuille de route au niveau 45 (serveurs Global, oct. 2026) d'après raidrelay.com (21/10), odealo.com (07/10), metabot.gg (15/10), expcarry.com et ateliergaming.fr. Noms de lieux traduits des guides anglais : à valider en jeu. 'gates' : score d'équipement (niveau d'objet du personnage) qui ouvre du contenu. 'tiers' : niveau d'objet d'une pièce et où la trouver, par groupe (Weapon = arme, Guard = main secondaire, Armor, Accessory) ; 'gate' = score qui ouvre ce contenu (absent = artisanat).",
+    "maxLevel": 45,
+    "levelUp": "Monte au niveau 45 par l'histoire principale : avant, l'équipement change trop vite pour y investir.",
+    "gates": [
+      { "score": 700, "unlocks": "Conquête de la Grotte de Krao et de Draupnir (pièces 54)",
+        "how": ["Arme de fin d'histoire (forgée par l'esprit) à +10", "Remplis les emplacements vides : accessoires, runes", "Ceinture et amulette : transmutation en Épique", "Dépense tes cristaux Daevanion", "Équipement de quête à +5, pas plus"] },
+      { "score": 1000, "unlocks": "Fin de l'histoire principale (Réshanta inférieure), Abysses, Épreuve de l'Ascension",
+        "how": ["Garde de fin d'histoire (forgée par l'esprit) à +10", "Set du Pèlerin ou du Libérateur (niveau 43) à +5", "Ceinture et amulette en Unique", "Quêtes régionales et donjons scellés (cristaux Daevanion)", "Plumes des Abysses"] },
+      { "score": 1400, "unlocks": "Conquête de l'Île céleste de Vakron et du Canyon Urugugu (pièces 70)",
+        "how": ["Île céleste de Vakron d'abord (armures, garde), puis Canyon Urugugu (arme, accessoires)", "Remplace d'abord tes pièces les plus faibles", "Une pièce d'artisanat Seigneur dragon véritable (62) pour un emplacement qui ne tombe pas"] },
+      { "score": 1600, "unlocks": "Transcendance 1 (Base de recherche Deus, Arkanis brisé) : cartes d'arcanes",
+        "how": ["Remplis les 5 emplacements d'arcanes, le calice d'abord", "Puis reviens aux pièces 70 de Vakron et d'Urugugu"] },
+      { "score": 1900, "unlocks": "Transcendance 2 : cartes épiques",
+        "how": ["Cartes épiques de Transcendance 2", "Pièces 70 manquantes, cristaux Daevanion", "Pierres sacrées sur les armes"] },
+      { "score": 2100, "unlocks": "Conquête du Temple du feu et de la Tanière de la Corne féroce (pièces 86)",
+        "how": ["Temple du feu : arme (Kromède enragée) et accessoires", "Tanière de la Corne féroce : garde (Nuakum) et armures", "Transfère l'enchantement des pièces 70 sur les 86"] },
+      { "score": 2200, "unlocks": "Transcendance 3 (facultative : premières cartes uniques)", "optional": true,
+        "how": ["Facultative : vise plutôt 2 500 avec les pièces 86 à +10 et leurs emplacements remplis"] },
+      { "score": 2500, "unlocks": "Transcendance 4 : cartes uniques",
+        "how": ["Cartes uniques d'arcanes", "Pièces 86 au-delà de +10 seulement si tu les gardes (très cher)", "Relance des gravures d'âme vers le jaune"] },
+      { "score": 2600, "unlocks": "Grotte de Krao et Draupnir en difficile (fragments d'Ariel, pas d'équipement)", "optional": true,
+        "how": ["Pour les fragments d'Ariel (cristaux Daevanion) et les kinahs, pas pour l'équipement"] },
+      { "score": 2800, "unlocks": "Raid Forge abyssale : Ludra (pièces 102, quand il revient sur les serveurs Global)",
+        "how": ["Au-delà, les armures et accessoires 102 viennent de l'artisanat Seigneur dragon"] }
+    ],
+    "tiers": [
+      { "itemLevel": 54, "gate": 700, "where": { "Weapon": "Conquête : Grotte de Krao", "Guard": "Conquête : Draupnir", "Armor": "Conquête : Grotte de Krao, Draupnir", "Accessory": "Conquête : Grotte de Krao, Draupnir" } },
+      { "itemLevel": 62, "where": { "Weapon": "Artisanat : Seigneur dragon véritable", "Guard": "Artisanat : Seigneur dragon véritable", "Armor": "Artisanat : Seigneur dragon véritable", "Accessory": "Artisanat : Seigneur dragon véritable" } },
+      { "itemLevel": 70, "gate": 1400, "where": { "Weapon": "Conquête : Canyon Urugugu", "Guard": "Conquête : Île céleste de Vakron", "Armor": "Conquête : Île céleste de Vakron", "Accessory": "Conquête : Canyon Urugugu" } },
+      { "itemLevel": 78, "where": { "Weapon": "Artisanat : Seigneur dragon blanc", "Guard": "Artisanat : Seigneur dragon blanc", "Armor": "Artisanat : Seigneur dragon blanc", "Accessory": "Artisanat : Seigneur dragon blanc" } },
+      { "itemLevel": 86, "gate": 2100, "where": { "Weapon": "Conquête : Temple du feu", "Guard": "Conquête : Tanière de la Corne féroce", "Armor": "Conquête : Tanière de la Corne féroce", "Accessory": "Conquête : Temple du feu" } },
+      { "itemLevel": 94, "where": { "Weapon": "Artisanat : Seigneur dragon sage", "Guard": "Artisanat : Seigneur dragon sage", "Armor": "Artisanat : Seigneur dragon sage", "Accessory": "Artisanat : Seigneur dragon sage" } },
+      { "itemLevel": 102, "gate": 2800, "where": { "Weapon": "Raid Forge abyssale : Ludra", "Guard": "Raid Forge abyssale : Ludra", "Armor": "Artisanat : Seigneur dragon sage ou d'ébène éclatant", "Accessory": "Artisanat : Seigneur dragon sage ou d'ébène éclatant" } }
+    ],
+    "craftNote": "L'artisanat Seigneur dragon (véritable 62, blanc 78, sage 94 ; éclatant 70, 86, 102) remplace une pièce qui ne tombe pas ; ses recettes d'amélioration gardent l'enchantement, l'amplification et le lien d'âme.",
+    "enchant": {
+      "guaranteed": 10,
+      "rates": [65, 50, 35, 25, 20],
+      "transfer": "Le transfert (pierre de transfert unique, entre pièces uniques liées) garde l'enchantement, la percée et le lien d'âme ; il perd les pierres de mana, la pierre sacrée et le potentiel.",
+      "keepTen": "Au-delà de +10, chaque niveau est une chance (65 % puis 50, 35, 25, 20 %) pour 1 point de score : seulement sur une pièce que tu gardes.",
+      "transmute": "Ceinture et amulette : +10 à chaque grade, puis transmutation (Transmutation de matière) vers le grade supérieur, qui repart de +0."
+    },
+    "stones": {
+      "mana": "Pierres de mana (armes, armures) et pierres d'âme (accessoires) : 1 à 3 points de score selon leur grade. Elles ne passent pas au transfert et une nouvelle gravure efface les anciennes : les bonnes pierres seulement sur les pièces que tu gardes (86, 102).",
+      "sacred": "Pierre sacrée : emplacement des armes (1 sur l'arme et la garde), effet qui se déclenche à l'attaque (dégâts, dégâts sur la durée ou contrôle). 17 effets en Rare, Épique et Unique ; combinaison Rare → Épique ≈ 11 %, Épique → Unique ≈ 9 %. Deux pierres identiques ne se cumulent pas. Perdue au transfert : pas de pierre unique sur une arme provisoire.",
+      "sacredPvP": "En JcJ : un contrôle (paralysie, étourdissement, silence, enracinement, aveuglement, ralentissement).",
+      "sacredPvE": {
+        "default": "En JcE : un effet de dégâts peu cher suffit ; c'est secondaire après les pièces, les pierres de mana et le lien d'âme.",
+        "TEMPLAR": "En JcE : −50 % de vitesse de combat sur la cible (le boss frappe moins vite).",
+        "ASSASSIN": "En JcE : dégâts élémentaires sur une cible (gros déclenchement, faible chance).",
+        "ELEMENTALIST": "En JcE : poison.",
+        "CLERIC": "En JcE : un déclenchement de dégâts fréquent et simple.",
+        "CHANTER": "En JcE : un déclenchement de dégâts fréquent et simple.",
+        "GLADIATOR": "En JcE : dégâts élémentaires de zone (classe multi-cibles).",
+        "SORCERER": "En JcE : dégâts élémentaires de zone (classe multi-cibles)."
+      }
+    }
+  },
   "_stagesNote": "Paliers calés sur 9 personnages niveau 45 des serveurs EU (oct. 2026) : vers 1000 de niveau d'objet, surtout du bleu enchanté +1 à +4 ; vers 1450, majorité de jaune ; de 1860 à 2582, presque tout en jaune enchanté +7/+8 en moyenne. Aucun orange ni rouge observé.",
   "stages": [
     {

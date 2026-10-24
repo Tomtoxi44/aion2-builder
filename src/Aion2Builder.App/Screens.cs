@@ -17,10 +17,14 @@ namespace Aion2Builder.App;
 
 enum Screen { Import, Home, Stats, Gear, Skills, Build, Combat, Daeva, Pets, Simulate, Progress, Details }
 
+/// <summary>Sous-pages de l'écran Équipement (sous-menu du rail).</summary>
+enum GearPage { Overview, Roadmap, Pieces, Enchant, Stones }
+
 /// <summary>État de l'interface : écran, sélections et blocs repliés (hors rapport).</summary>
 sealed class UiState
 {
     public Screen Screen { get; set; } = Screen.Home;
+    public GearPage GearPage { get; set; } = GearPage.Overview;
     public string? Slot { get; set; }
     public string? Stat { get; set; }
     public string? Skill { get; set; }
@@ -64,6 +68,12 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         (Screen.Skills, "Compétences", "Compét."), (Screen.Build, "Build et rotation", "Build"), (Screen.Combat, "Combat (Pet Meter, NotMeter)", "Combat"), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Pets, "Familiers", "Famil."),
         (Screen.Simulate, "Simulation « et si »", "Et si"), (Screen.Progress, "Progression", "Prog."),
         (Screen.Details, "Détails", "Détails"),
+    ];
+
+    public static readonly (GearPage Page, string Title, string Short)[] GearPages =
+    [
+        (GearPage.Overview, "Vue d'ensemble", "Vue"), (GearPage.Roadmap, "Feuille de route", "Route"), (GearPage.Pieces, "Pièces à remplacer", "Pièces"),
+        (GearPage.Enchant, "Enchantement", "Enchant."), (GearPage.Stones, "Pierres et gravures", "Pierres"),
     ];
 
     public const string HowText = "Score global = moyenne pondérée des quatre notes. Stats : part de tes stats ajustables placée dans des stats " +
@@ -145,7 +155,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         switch (st.Screen)
         {
             case Screen.Gear:
-                st.Slot = r.Gear.Slots.FirstOrDefault(x => f.Title.StartsWith(x.SlotName, StringComparison.Ordinal))?.Slot
+                st.GearPage = f.Area == Area.Enchant ? GearPage.Enchant : GearPage.Overview;
+                st.Slot =r.Gear.Slots.FirstOrDefault(x => f.Title.StartsWith(x.SlotName, StringComparison.Ordinal))?.Slot
                           ?? (f.Area == Area.Enchant ? r.Gear.Slots.Where(x => x.Status == SlotStatus.Enchant).OrderByDescending(x => x.Priority).FirstOrDefault()?.Slot : null)
                           ?? st.Slot;
                 break;
@@ -416,7 +427,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         if (p.Item is not null) power.Children.Add(T($"+{p.Item.EnchantLevel}", 13, Tok.Muted, mono: true));
         var dock = new DockPanel { Children = { bar, codeText, new StackPanel { Children = { T(p.SlotName, 11, Tok.Muted), power } } } };
 
-        var tile = Clickable(dock, () => update(st => { st.Screen = Screen.Gear; st.Slot = p.Slot; }),
+        var tile = Clickable(dock, () => update(st => { if (st.Screen != Screen.Gear) st.GearPage = GearPage.Overview; st.Screen = Screen.Gear; st.Slot = p.Slot; }),
             selected ? Accent.Dim : Tok.Panel, selected ? null : Tok.TileHover, new Thickness(9, 6));
         tile.CornerRadius = new CornerRadius(3);
         tile.BorderBrush = selected ? Accent.Main : Tok.Border;
@@ -550,8 +561,23 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         return panel;
     }
 
-    /// <summary>Écran Équipement : la silhouette, puis le tableau des gravures (pièces à revoir en tête).</summary>
-    Control GearScreen()
+    // ----- Équipement : vue d'ensemble et sous-pages (sous-menu du rail) -----
+
+    /// <summary>Feuille de route d'équipement (paliers de score, pièces, enchantement), calculée une fois par rendu.</summary>
+    GearRoadmapPlan Route => route ??= GearRoadmap.Build(db, r);
+    GearRoadmapPlan? route;
+
+    Control GearScreen() => s.GearPage switch
+    {
+        GearPage.Roadmap => GearRoadmapPage(),
+        GearPage.Pieces => GearPiecesPage(),
+        GearPage.Enchant => GearEnchantPage(),
+        GearPage.Stones => GearStonesPage(),
+        _ => GearOverview(),
+    };
+
+    /// <summary>Badges d'état des pièces : vides, à remplacer, en retard, à enchanter.</summary>
+    StackPanel GearBadges()
     {
         var g = r.Gear;
         var badges = Badges(new[] { (SlotStatus.Empty, "vide"), (SlotStatus.Replace, "à remplacer"), (SlotStatus.Weak, "en retard"), (SlotStatus.Enchant, "à enchanter") }
@@ -559,8 +585,299 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             .Where(x => x.Count > 0)
             .Select(x => (Control)Badge($"{x.Count} {x.Item1}{(x.Item1 == "vide" && x.Count > 1 ? "s" : "")}", x.Color)).ToArray());
         if (badges.Children.Count == 0) badges.Children.Add(Badge("✓ tout au niveau du palier", Tok.Good));
+        return badges;
+    }
+
+    /// <summary>Tuile d'accès à une sous-page : ce qu'elle contient en un chiffre, clic = la sous-page.</summary>
+    Border GearHub(string label, string value, string detail, IBrush color, GearPage page)
+    {
+        var tile = Clickable(new StackPanel
+            {
+                Spacing = 4,
+                Children = { Label(label), T(value, 20, color, FontWeight.SemiBold, mono: true), T(detail, 12, Tok.Text2, wrap: true).WithLineHeight(1.35) },
+            },
+            () => update(st => st.GearPage = page), Tok.Panel, Tok.TileHover, new Thickness(14, 10));
+        tile.CornerRadius = new CornerRadius(4);
+        tile.BorderBrush = Tok.Border;
+        tile.BorderThickness = new Thickness(1);
+        tile.Margin = new Thickness(0, 0, 10, 0);
+        return tile;
+    }
+
+    /// <summary>Vue d'ensemble : un chiffre par sous-page, la silhouette, puis les trois actions les plus rentables.</summary>
+    Control GearOverview()
+    {
+        var plan = Route;
+        var replace = plan.Slots.Where(x => x.Gain > 0).ToList();
+        var raise = plan.Enchants.Count(e => e.Verdict == EnchantVerdict.Raise);
+        var engr = r.Engravings.Items.Count(e => e.NeedsWork);
+        var hubs = new Avalonia.Controls.Primitives.UniformGrid { Columns = 4 };
+        hubs.Children.Add(plan.Next is { } next
+            ? GearHub("Feuille de route", Fmt.Num(next.Score), $"prochain palier, +{next.Score - plan.Score} · {next.Unlocks}", Accent.Main, GearPage.Roadmap)
+            : GearHub("Feuille de route", "✓", "tous les paliers de score atteints", Tok.Good, GearPage.Roadmap));
+        hubs.Children.Add(replace.Count > 0
+            ? GearHub("Pièces", $"+{replace.Sum(x => x.Gain)}", $"{replace.Count} pièce(s) à remplacer par des pièces {plan.Available?.ItemLevel}", Tok.Warn, GearPage.Pieces)
+            : GearHub("Pièces", "✓", "toutes au palier accessible", Tok.Good, GearPage.Pieces));
+        hubs.Children.Add(raise > 0
+            ? GearHub("Enchantement", $"{raise}", "pièce(s) à monter à +10 (réussite garantie)", Tok.Warn, GearPage.Enchant)
+            : GearHub("Enchantement", "✓", "rien à monter sans risque", Tok.Good, GearPage.Enchant));
+        hubs.Children.Add(engr > 0
+            ? GearHub("Pierres", $"{engr}", "pièce(s) aux gravures ou pierres à revoir ; pierre sacrée des armes", Tok.Warn, GearPage.Stones)
+            : GearHub("Pierres", "✓", "gravures et pierres en ordre ; pierre sacrée des armes", Tok.Good, GearPage.Stones));
+        return Page($"Équipement · {Mode}", GearBadges(), hubs, Doll(), TodoCards(Area.Gear, Area.Enchant));
+    }
+
+    /// <summary>
+    /// Feuille de route : le score d'équipement sur la piste des paliers, puis les actions chiffrées (enchantement garanti,
+    /// pièces du palier accessible) jusqu'aux paliers suivants, et ce qui compte aussi hors des pièces.
+    /// </summary>
+    Control GearRoadmapPage()
+    {
+        var plan = Route;
+        var rules = db.Progression.Roadmap;
+        var badges = Badges(Badge($"score {Fmt.Num(plan.Score)}", Accent.Main),
+            plan.Next is { } n ? Badge($"prochain palier {Fmt.Num(n.Score)} · +{n.Score - plan.Score}", Tok.Warn) : Badge("✓ tous les paliers", Tok.Good));
+
+        // 1. Où tu en es : la piste des paliers, ce qui est atteint et le suivant.
+        var track = new MilestoneTrack(plan.Score, 500, rules.Gates.Count > 0 ? rules.Gates.Max(g => g.Score) + 100 : 3000, Accent.Main);
+        foreach (var g in rules.Gates)
+            track.Mark(g.Score, Fmt.Num(g.Score), g.Score <= plan.Score ? Tok.Good : g == plan.Next ? Tok.Warn : Tok.Muted);
+        var where = new StackPanel { Spacing = 10, Children = { track } };
+        if (plan.Reached is { } reached)
+            where.Children.Add(ColumnsSpaced("90,*", 8, T("✓ atteint", 12, Tok.Good, mono: true), T($"{Fmt.Num(reached.Score)} · {reached.Unlocks}", 13, Tok.Text2, wrap: true)));
+        if (plan.Next is { } next)
+            where.Children.Add(ColumnsSpaced("90,*", 8, T("▶ prochain", 12, Tok.Warn, mono: true), T($"{Fmt.Num(next.Score)} · {next.Unlocks}", 13, Tok.Text, FontWeight.SemiBold, wrap: true)));
+        where.Children.Add(Expander($"Les {rules.Gates.Count} paliers", IsOpen("route:gates"), () => Toggle("route:gates"), () =>
+        {
+            var all = new StackPanel { Spacing = 4, Margin = new Thickness(22, 0, 0, 0) };
+            foreach (var g in rules.Gates)
+            {
+                var (mark, color) = g.Score <= plan.Score ? ("✓", Tok.Good) : g == plan.Next ? ("▶", Tok.Warn) : ("○", Tok.Muted);
+                all.Children.Add(ColumnsSpaced("16,56,*", 8, T(mark, 12, color, mono: true), T(Fmt.Num(g.Score), 12, color, mono: true),
+                    T(g.Unlocks + (g.Optional ? " (facultatif)" : ""), 12, Tok.Text2, wrap: true)));
+            }
+            return all;
+        }));
+
+        Control? levelUp = plan.Level < plan.MaxLevel
+            ? Card(T(rules.LevelUp, 13, Tok.Text, wrap: true), $"D'abord : niveau {plan.MaxLevel} (tu es niveau {plan.Level})")
+            : null;
+
+        // 2. Les actions chiffrées, avec les paliers franchis entre elles ; au-delà des deux prochains paliers, c'est replié.
+        var shown = new StackPanel();
+        var more = new StackPanel();
+        var total = plan.Score;
+        var ahead = rules.Gates.Where(g => g.Score > plan.Score).ToList();
+        var crossed = 0;
+        var hidden = 0;
+        foreach (var step in plan.Steps)
+        {
+            total += step.Gain;
+            var target = crossed >= 2 ? more : shown;
+            if (target == more) hidden++;
+            target.Children.Add(RouteRow(step, total));
+            while (ahead.Count > 0 && ahead[0].Score <= total)
+            {
+                target.Children.Add(GateRow(ahead[0]));
+                ahead.RemoveAt(0);
+                crossed++;
+            }
+        }
+        if (plan.Steps.Count == 0)
+            shown.Children.Add(T("Tes pièces sont au palier accessible et à +10 : le score monte maintenant par les cartes d'arcanes, le Daevanion et les pierres.",
+                13, Tok.Good, wrap: true).WithMargin(14, 10));
+        else if (ahead.Count > 0 && ahead[0] == plan.Next)
+            shown.Children.Add(T($"Avec tout ça : {Fmt.Num(total)}. Les {ahead[0].Score - total} points qui manquent pour {Fmt.Num(ahead[0].Score)} viennent des cartes d'arcanes, du Daevanion et des pierres.",
+                12, Tok.Muted, wrap: true).WithMargin(14, 10));
+        if (more.Children.Count > 0)
+            shown.Children.Add(Expander($"{hidden} autre(s) action(s) pour la suite",
+                IsOpen("route:more"), () => Toggle("route:more"), () => more, new Thickness(10, 6)));
+        var title = plan.Next is { } goal ? $"Pour passer {Fmt.Num(goal.Score)} : +{goal.Score - plan.Score}" : "Pour progresser encore";
+
+        // 3. Ce qui compte aussi pour le palier suivant, hors des pièces.
+        Control? how = null;
+        if (plan.Next is { How.Count: > 0 } nextGate)
+        {
+            var list = new StackPanel { Spacing = 5 };
+            foreach (var x in nextGate.How) list.Children.Add(ColumnsSpaced("14,*", 6, T("•", 13, Accent.Main), T(x, 13, Tok.Text2, wrap: true).WithLineHeight(1.4)));
+            how = Card(list, $"Ce que conseillent les guides pour {Fmt.Num(nextGate.Score)}");
+        }
+
+        return Page($"Équipement · feuille de route · {Mode}", badges,
+            Card(where, "Paliers de score d'équipement", T("score = niveau d'objet du personnage", 11, Tok.Muted, mono: true)),
+            levelUp,
+            Card(shown, title, T("1 niveau de pièce ou d'enchantement = 1 point", 11, Tok.Muted, mono: true), new Thickness(0)),
+            how,
+            Expander("D'où viennent ces seuils et ces sources", IsOpen("route:source"), () => Toggle("route:source"), () =>
+                T("Seuils et sources des serveurs Global relevés dans les guides (raidrelay.com, odealo.com, metabot.gg, expcarry.com, ateliergaming.fr, octobre 2026) ; " +
+                  "noms de lieux traduits de l'anglais : à valider en jeu. Le score d'équipement compte aussi le Daevanion, les arcanes, les quêtes et les pierres : " +
+                  "les gains ci-dessus ne comptent que le niveau des pièces et leur enchantement. " + rules.CraftNote, 12, Tok.Text2, wrap: true).WithLineHeight(1.45).WithMargin(22, 0, 0, 0)));
+    }
+
+    /// <summary>Une action de la feuille de route : gain, titre et détail, score cumulé ; clic = la pièce dans l'inspecteur.</summary>
+    Border RouteRow(RouteStep step, int total)
+    {
+        var text = new StackPanel { Spacing = 2, Children = { T(step.Title, 13, Tok.Text, FontWeight.Medium, wrap: true), T(step.Detail, 12, Tok.Muted, wrap: true).WithLineHeight(1.35) } };
+        var row = Clickable(ColumnsSpaced("52,*,70", 10,
+                T(step.Gain > 0 ? $"+{step.Gain}" : "—", 13, step.Gain > 0 ? Tok.Good : Tok.Muted, FontWeight.SemiBold, mono: true).AlignRight(),
+                text, T($"= {Fmt.Num(total)}", 12, Tok.Muted, mono: true).AlignRight()),
+            () => { if (step.Slot is { } slot) update(st => st.Slot = slot); }, hover: Tok.Hover, padding: new Thickness(10, 8, 14, 8));
+        row.BorderBrush = Tok.RowLine;
+        row.BorderThickness = new Thickness(0, 0, 0, 1);
+        return row;
+    }
+
+    /// <summary>Palier franchi entre deux actions : liseré vert et ce qu'il ouvre.</summary>
+    static Border GateRow(GearScoreGate gate) => new()
+    {
+        Background = Tok.Alpha(Tok.Good, 0.08), BorderBrush = Tok.Good, BorderThickness = new Thickness(3, 0, 0, 0), Padding = new Thickness(14, 6),
+        Child = T($"▶ {Fmt.Num(gate.Score)} atteint · {gate.Unlocks}{(gate.Optional ? " (facultatif)" : "")}", 12, Tok.Good, FontWeight.SemiBold, wrap: true),
+    };
+
+    /// <summary>Pièces à remplacer : où trouver mieux palier par palier (donjons puis artisanat), puis chaque pièce et son gain.</summary>
+    Control GearPiecesPage()
+    {
+        var plan = Route;
+        var rules = db.Progression.Roadmap;
+        var replace = plan.Slots.Where(x => x.Gain > 0).ToList();
+        var badges = Badges(
+            replace.Count > 0 ? Badge($"{replace.Count} à remplacer · +{replace.Sum(x => x.Gain)}", Tok.Warn) : Badge("✓ au palier accessible", Tok.Good),
+            plan.Available is { } av ? Badge($"pièces {av.ItemLevel} accessibles", Tok.Info) : null);
+
+        // Où trouver mieux : à partir du palier accessible, les donjons puis l'artisanat jusqu'au dernier palier.
+        const string tcols = "50,96,*,*,*,*";
+        var tierRows = new List<Control>();
+        foreach (var t in rules.Tiers.Where(t => t.ItemLevel >= (plan.Available?.ItemLevel ?? 0)))
+        {
+            var open = t.Gate is { } gate && gate <= plan.Score;
+            var access = t.Gate is { } g2 ? (open ? "accessible" : $"score {Fmt.Num(g2)}") : "artisanat";
+            tierRows.Add(new Border
+            {
+                Padding = new Thickness(20, 7), BorderBrush = Tok.RowLine, BorderThickness = new Thickness(0, 0, 0, 1),
+                Background = t == plan.Available ? Tok.Alpha(Tok.Good, 0.06) : null,
+                Child = Columns(tcols, T($"{t.ItemLevel}", 13, open ? Tok.Good : Tok.Text, FontWeight.SemiBold, mono: true),
+                    T(access, 12, open ? Tok.Good : t.Gate is null ? Tok.Info : Tok.Muted, mono: true),
+                    T(t.WhereFor("Weapon"), 12, Tok.Text2, wrap: true), T(t.WhereFor("Guard"), 12, Tok.Text2, wrap: true),
+                    T(t.WhereFor("Armor"), 12, Tok.Text2, wrap: true), T(t.WhereFor("Accessory"), 12, Tok.Text2, wrap: true)),
+            });
+        }
+
+        // Tes pièces, du plus gros gain au plus petit.
+        const string cols = "120,*,70,46,*,46";
+        var selected = SelectedSlot?.Slot;
+        var rows = plan.Slots.Where(x => !x.Special).OrderByDescending(x => x.Gain).ThenBy(x => x.Power).Select(x => (Control)Tip(TableRow(Columns(cols,
+                T(x.SlotName, 13), T(x.Item?.Name ?? "vide", 13, x.Item is null ? Tok.Bad : GradeBrush(x.Item)),
+                T(x.Item is null ? "—" : $"{x.Item.ItemLevel} +{x.Item.EnchantLevel}", 12, Tok.Text2, mono: true),
+                T(x.Target is { } t ? $"{t.ItemLevel}" : "—", 13, x.Gain > 0 ? Tok.Warn : Tok.Muted, mono: true),
+                T(x.Where, 12, x.Gain > 0 ? Tok.Text : Tok.Muted, wrap: true),
+                T(x.Gain > 0 ? $"+{x.Gain}" : "—", 13, x.Gain > 0 ? Tok.Good : Tok.Faint, FontWeight.SemiBold, mono: true)),
+            x.Slot == selected, () => update(st => st.Slot = x.Slot)),
+            x.Item is null ? "Emplacement vide."
+                : x.Gain > 0 ? $"{x.Item.Name} : {x.Power} → {x.NewPower}" + (x.Item.Grade == "Unique" && x.Item.EnchantLevel > 0 ? $" (transfert du +{x.Item.EnchantLevel})" : " (pièce non unique : l'enchantement ne se transfère pas)")
+                : x.Target is null ? "Rien de mieux connu pour cet emplacement." : $"Au palier accessible ; ensuite : pièce {x.Target.ItemLevel}.")).ToList();
+
+        var special = new StackPanel { Spacing = 6 };
+        foreach (var x in plan.Slots.Where(x => x.Special))
+            special.Children.Add(ColumnsSpaced("120,90,*", 10, T(x.SlotName, 13),
+                T(x.Item is null ? "vide" : $"{x.Item.ItemLevel} +{x.Item.EnchantLevel}", 12, x.Item is null ? Tok.Bad : Tok.Text2, mono: true),
+                T(x.Where, 12, Tok.Text2, wrap: true)));
+
+        return Page($"Équipement · pièces à remplacer · {Mode}", badges,
+            TableCard("Où trouver mieux : donjons, puis artisanat", T("noms traduits des guides : à valider", 11, Tok.Muted, mono: true),
+                TableHeader(tcols, "Niveau", "Accès", "Arme", "Garde", "Armures", "Accessoires"), tierRows),
+            TableCard("Tes pièces, du plus gros gain au plus petit", T("gain = points de score", 11, Tok.Muted, mono: true),
+                TableHeader(cols, "Emplacement", "Pièce", "Actuelle", "Visée", "Où", "Gain"), rows),
+            Card(special, "Ceinture, amulette et runes"),
+            Expander("Remplacer sans perdre l'enchantement", IsOpen("pieces:transfer"), () => Toggle("pieces:transfer"), () =>
+                T($"{rules.Enchant.Transfer} {rules.CraftNote}", 12, Tok.Text2, wrap: true).WithLineHeight(1.45).WithMargin(22, 0, 0, 0)));
+    }
+
+    static IBrush EnchantBrush(EnchantVerdict v) => v switch
+    {
+        EnchantVerdict.Raise => Tok.Warn,
+        EnchantVerdict.Transmute => Tok.Info,
+        EnchantVerdict.Replace => Tok.Bad,
+        EnchantVerdict.Done => Tok.Good,
+        EnchantVerdict.Optional => Tok.Muted,
+        _ => Tok.Text2,
+    };
+
+    /// <summary>Enchantement : les trois règles en chiffres, puis chaque pièce (cases faites / à faire) et quoi en faire.</summary>
+    Control GearEnchantPage()
+    {
+        var plan = Route;
+        var rules = db.Progression.Roadmap.Enchant;
+        var raise = plan.Enchants.Where(e => e.Verdict == EnchantVerdict.Raise).ToList();
+        var stop = plan.Enchants.Count(e => e.Verdict == EnchantVerdict.Stop);
+        var badges = Badges(
+            raise.Count > 0 ? Badge($"{raise.Count} à monter · +{raise.Sum(e => e.Gain)}", Tok.Warn) : Badge("✓ rien à monter sans risque", Tok.Good),
+            stop > 0 ? Badge($"{stop} à laisser à +10", Tok.Info) : null);
+
+        var kpis = new Avalonia.Controls.Primitives.UniformGrid { Columns = 3 };
+        kpis.Children.Add(Kpi("+1 à +10", "garanti", Tok.Good, 18).WithMargin(0, 0, 10, 0));
+        kpis.Children.Add(Kpi("+11 à +15", rules.Rates.Count > 0 ? $"{rules.Rates[0]} → {rules.Rates[^1]} %" : "chance", Tok.Warn, 18).WithMargin(0, 0, 10, 0));
+        kpis.Children.Add(Kpi("Transfert", "garde le +", Tok.Info, 18));
+
+        var order = new[] { EnchantVerdict.Raise, EnchantVerdict.Transmute, EnchantVerdict.Replace, EnchantVerdict.Stop, EnchantVerdict.Push, EnchantVerdict.Optional, EnchantVerdict.Done };
+        const string cols = "120,190,64,*";
+        var selected = SelectedSlot?.Slot;
+        var rows = plan.Enchants.OrderBy(e => Array.IndexOf(order, e.Verdict)).Select(e =>
+        {
+            var level = e.Item.EnchantLevel;
+            // Cases : vert = fait, orange = à monter (jusqu'au niveau visé), vert pâle = au-delà de +10.
+            var pips = Pips(Math.Min(level, rules.Guaranteed), e.Verdict == EnchantVerdict.Raise ? e.Target : Math.Min(level, rules.Guaranteed), 10, 8);
+            var exceed = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Children = { pips } };
+            for (var i = rules.Guaranteed; i < Math.Min(level, e.Max); i++)
+                exceed.Children.Add(new Border { Width = 10, Height = 8, CornerRadius = new CornerRadius(2), Background = Tok.Alpha(Tok.Good, 0.45), Margin = new Thickness(0, 2, 3, 2) });
+            return (Control)TableRow(Columns(cols, T(e.SlotName, 13), exceed, T($"+{level} / {e.Max}", 12, Tok.Text2, mono: true),
+                T(e.Text, 12, EnchantBrush(e.Verdict), wrap: true)), e.Slot == selected, () => update(st => st.Slot = e.Slot));
+        }).ToList();
+
+        return Page($"Équipement · enchantement · {Mode}", badges, kpis,
+            TableCard("Pièce par pièce", T("vert = fait · orange = à monter", 11, Tok.Muted, mono: true), TableHeader(cols, "Emplacement", "Niveau", "", "Conseil"), rows),
+            Expander("Les règles, en détail", IsOpen("enchant:rules"), () => Toggle("enchant:rules"), () => new StackPanel
+            {
+                Spacing = 6, Margin = new Thickness(22, 0, 0, 0),
+                Children =
+                {
+                    T(rules.KeepTen, 12, Tok.Text2, wrap: true).WithLineHeight(1.45),
+                    T(rules.Transfer, 12, Tok.Text2, wrap: true).WithLineHeight(1.45),
+                    T(rules.Transmute, 12, Tok.Text2, wrap: true).WithLineHeight(1.45),
+                },
+            }));
+    }
+
+    /// <summary>Pierres : pierre sacrée des armes (conseil selon la classe et le mode), puis gravures et pierres de mana ou d'âme.</summary>
+    Control GearStonesPage()
+    {
+        var plan = Route;
+        var stones = db.Progression.Roadmap.Stones;
+        var todo = r.Engravings.Items.Count(e => e.NeedsWork);
+        var sacredCount = plan.SacredSlots.Sum(x => x.Count);
+        var badges = Badges(
+            todo > 0 ? Badge($"{todo} pièce(s) à revoir", Tok.Warn) : Badge("✓ gravures en ordre", Tok.Good),
+            sacredCount > 0 ? Badge($"{sacredCount} emplacement(s) de pierre sacrée", Tok.Info) : null);
+
+        var sacred = new StackPanel { Spacing = 8 };
+        foreach (var (slotName, count) in plan.SacredSlots)
+            sacred.Children.Add(ColumnsSpaced("120,*", 10, T(slotName, 13),
+                T($"{count} emplacement · le site officiel ne dit pas quelle pierre y est posée", 12, Tok.Muted, wrap: true)));
+        if (plan.SacredSlots.Count == 0) sacred.Children.Add(T("Aucune de tes armes n'a d'emplacement de pierre sacrée.", 13, Tok.Muted));
+        else sacred.Children.Add(Callout(stones.SacredFor(r.Profile.Class.Code, r.Mode), Accent.Main));
+        sacred.Children.Add(Expander("Comment marchent les pierres sacrées", IsOpen("stones:sacred"), () => Toggle("stones:sacred"), () =>
+            T(stones.Sacred + " " + (r.Mode == GameMode.PvP ? "" : stones.SacredPvP), 12, Tok.Text2, wrap: true).WithLineHeight(1.45).WithMargin(22, 0, 0, 0)));
+
+        return Page($"Équipement · pierres et gravures · {Mode}", badges,
+            Card(sacred, "Pierre sacrée (armes)"),
+            Card(T(stones.Mana, 12, Tok.Text2, wrap: true).WithLineHeight(1.45), "Pierres de mana et d'âme"),
+            EngravingsBlock());
+    }
+
+    /// <summary>Tableau des gravures (pièces à revoir en tête) et l'ordre conseillé, replié ; null sans gravures lues.</summary>
+    Control? EngravingsBlock()
+    {
         var items = r.Engravings.Items;
-        if (items.Count == 0) return Page($"Équipement · {Mode}", badges, Doll());
+        if (items.Count == 0) return null;
         var todo = items.Count(e => e.NeedsWork);
         const string cols = "120,90,110,60,*";
         var rows = new List<Control>();
@@ -570,14 +887,14 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var options = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
             foreach (var l in e.SoulLines) options.Children.Add(T(VerdictIcon(l.Verdict), 12, VerdictBrush(l.Verdict), FontWeight.SemiBold, mono: true));
             var rate = e.HasSoulBinding ? $"{Fmt.Num(e.SoulBindRate ?? 0)} %" : e.SoulLines.Count > 0 ? "fixes" : "—";
-            var stones = e.StoneSlots > 0 ? $"{e.Stones.Count}/{e.StoneSlots}" : "—";
+            var stoneCount = e.StoneSlots > 0 ? $"{e.Stones.Count}/{e.StoneSlots}" : "—";
             var stoneColor = e.Stones.Count < e.StoneSlots ? Tok.Bad : e.Stones.Any(x => x.Verdict == LineVerdict.Poor) ? Tok.Warn : Tok.Text2;
             rows.Add(Tip(TableRow(Columns(cols,
                     T(e.SlotName, 13), T(rate, 13, !e.HasSoulBinding ? Tok.Muted : (e.SoulBindRate ?? 0) >= 100 ? Tok.Good : Tok.Text, mono: true), options,
-                    T(stones, 13, stoneColor, mono: true), T(ActionShort(e), 12, TodoBrush(e))),
+                    T(stoneCount, 13, stoneColor, mono: true), T(ActionShort(e), 12, TodoBrush(e))),
                 e.Slot == selected, () => update(st => st.Slot = e.Slot)), $"{e.Item.Name}{EngravingTip(e)}"));
         }
-        var engravings = new StackPanel
+        return new StackPanel
         {
             Spacing = 6,
             Children =
@@ -589,7 +906,6 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                       "aux bonnes options, puis les pierres. Rien sur les pièces à remplacer.", 12, Tok.Text2, wrap: true).WithLineHeight(1.45).WithMargin(22, 0, 0, 0)),
             },
         };
-        return Page($"Équipement · {Mode}", badges, Doll(), TodoCards(Area.Gear, Area.Enchant), engravings);
     }
 
     Control HomeInspector()

@@ -28,6 +28,7 @@ try
         "progress" or "progression" => Progress(cli),
         "rotation" => Rotation(cli),
         "combat" => CombatCommand(cli),
+        "route" or "feuille" => RouteCommand(cli),
         _ => Help(),
     };
 }
@@ -60,6 +61,7 @@ static int Help()
           rotation <classe|nom> [--targets 4] [--duration 120] [--mode pvp]
                                                               Rotations simulées : joueurs contre conçue
           combat <nom> [mots-ocr.tsv…]                        Combat NotMeter lu sur des captures (l'appli les lit seule)
+          route <nom> [--mode pvp]                            Feuille de route d'équipement : palier de score suivant, pièces, enchantement
           list                                                Personnages enregistrés
           data [export]                                       Fichiers de données (poids, paliers…) modifiables
           pets [--key <clé>] [--refresh] [--forget]            Familiers du Pet Meter, lus sur Aion 2 Todo (clé : onglet
@@ -349,6 +351,38 @@ static async Task<int> Pets(Args cli)
         Console.WriteLine($"  {g.Name,-8} {g.Owned,3}/{g.Total,-4} niv. 1/2/3 : {g.Counts[1],2}/{g.Counts[2],2}/{g.Counts[3],2}   " +
                           string.Join(", ", g.Stats.Where(s => s.Now > 0).Select(s => $"{s.Name} +{Fmt.Num(s.Now)}")));
     Console.WriteLine("Les conseils (espèce à farmer, familiers les plus proches) sont dans « advise ».");
+    return 0;
+}
+
+static int RouteCommand(Args cli)
+{
+    var (store, snapshot) = Saved(cli, "Précise un personnage : route <nom> [--mode pvp]");
+    var db = GameDataStore.Load();
+    var mode = (cli.Get("mode") ?? "pve").ToLowerInvariant() is "pvp" or "jcj" ? GameMode.PvP : GameMode.PvE;
+    var report = new Advisor(db).Analyze(snapshot, mode, store.LoadInputs(snapshot), new PetStore().Load().Collection);
+    var plan = GearRoadmap.Build(db, report);
+    Console.WriteLine($"{snapshot.Name} : niveau {plan.Level}, score d'équipement {plan.Score}" +
+                      (plan.Reached is { } reached ? $" (atteint : {reached.Score} · {reached.Unlocks})" : ""));
+    if (plan.Next is { } next) Console.WriteLine($"Prochain palier : {next.Score} (+{next.Score - plan.Score}) · {next.Unlocks}");
+    Console.WriteLine();
+    var total = plan.Score;
+    var gates = db.Progression.Roadmap.Gates.Where(g => g.Score > plan.Score).ToList();
+    foreach (var step in plan.Steps)
+    {
+        total += step.Gain;
+        Console.WriteLine($"  {(step.Gain > 0 ? $"+{step.Gain}" : ""),4}  {step.Title}  (= {total})");
+        Console.WriteLine($"        {step.Detail}");
+        while (gates.Count > 0 && gates[0].Score <= total)
+        {
+            Console.WriteLine($"  ── {gates[0].Score} atteint : {gates[0].Unlocks}");
+            gates.RemoveAt(0);
+        }
+    }
+    Console.WriteLine();
+    Console.WriteLine("Enchantement :");
+    foreach (var e in plan.Enchants) Console.WriteLine($"  {e.SlotName,-20} +{e.Item.EnchantLevel}/{e.Max}  {e.Verdict,-9} {e.Text}");
+    if (plan.SacredSlots.Count > 0)
+        Console.WriteLine($"\nPierre sacrée : {string.Join(", ", plan.SacredSlots.Select(x => $"{x.SlotName} ({x.Count})"))} · {db.Progression.Roadmap.Stones.SacredFor(snapshot.ClassCode, mode)}");
     return 0;
 }
 

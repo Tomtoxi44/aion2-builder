@@ -335,6 +335,56 @@ static class Ui
         }
     }
 
+    /// <summary>
+    /// Piste de paliers : barre de <c>min</c> à <c>max</c> remplie jusqu'à la valeur, un trait et un libellé par palier,
+    /// libellés alternés au-dessus et au-dessous pour que deux paliers proches ne se chevauchent pas.
+    /// </summary>
+    public sealed class MilestoneTrack : Panel
+    {
+        readonly double value, min, max;
+        readonly List<double> marks = [];
+
+        public MilestoneTrack(double value, double min, double max, IBrush fill)
+        {
+            (this.value, this.min, this.max) = (value, min, max);
+            Children.Add(new Border { Background = Tok.HoverStrong, CornerRadius = new CornerRadius(2) });
+            Children.Add(new Border { Background = fill, CornerRadius = new CornerRadius(2) });
+        }
+
+        public MilestoneTrack Mark(double at, string label, IBrush color)
+        {
+            marks.Add(at);
+            Children.Add(new Border { Background = color });
+            Children.Add(new TextBlock { Text = label, FontFamily = Fonts.Mono, FontSize = 11, Foreground = color });
+            return this;
+        }
+
+        double X(double v, double width) => Math.Clamp((v - min) / Math.Max(1, max - min), 0, 1) * width;
+
+        protected override Size MeasureOverride(Size available)
+        {
+            foreach (var c in Children) c.Measure(Size.Infinity);
+            return new Size(double.IsInfinity(available.Width) ? 300 : available.Width, 48);
+        }
+
+        protected override Size ArrangeOverride(Size final)
+        {
+            var w = final.Width;
+            Children[0].Arrange(new Rect(0, 19, w, 8));
+            Children[1].Arrange(new Rect(0, 19, X(value, w), 8));
+            for (var i = 0; i < marks.Count; i++)
+            {
+                var x = X(marks[i], w);
+                var above = i % 2 == 0;
+                Children[2 + i * 2].Arrange(new Rect(Math.Clamp(x - 1, 0, Math.Max(0, w - 2)), above ? 14 : 19, 2, 13));
+                var label = Children[3 + i * 2];
+                var lw = label.DesiredSize.Width;
+                label.Arrange(new Rect(Math.Clamp(x - lw / 2, 0, Math.Max(0, w - lw)), above ? 0 : 33, lw, label.DesiredSize.Height));
+            }
+            return final;
+        }
+    }
+
     /// <summary>Section repliable « ▸ Titre » : son contenu n'est construit qu'une fois ouverte.</summary>
     public static StackPanel Expander(string title, bool open, Action toggle, Func<Control> content, Thickness? margin = null)
     {

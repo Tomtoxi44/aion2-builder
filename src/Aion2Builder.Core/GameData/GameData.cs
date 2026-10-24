@@ -173,7 +173,60 @@ public sealed record ProgressionFile
     public List<string> OptionalSlots { get; init; } = [];
     public Dictionary<string, SlotRule> SlotRules { get; init; } = [];
     public required EnchantRules Enchant { get; init; }
+    public RoadmapRules Roadmap { get; init; } = new();
     public List<ProgressionStage> Stages { get; init; } = [];
+}
+
+/// <summary>Feuille de route au niveau maximum : seuils de score d'équipement, paliers de pièces et où les trouver.</summary>
+public sealed record RoadmapRules
+{
+    public int MaxLevel { get; init; } = 45;
+    public string LevelUp { get; init; } = "";
+    public List<GearScoreGate> Gates { get; init; } = [];
+    public List<GearTier> Tiers { get; init; } = [];
+    public string CraftNote { get; init; } = "";
+    public RoadmapEnchant Enchant { get; init; } = new();
+    public RoadmapStones Stones { get; init; } = new();
+}
+
+/// <summary>Score d'équipement (niveau d'objet du personnage) qui ouvre du contenu, et comment l'atteindre.</summary>
+public sealed record GearScoreGate
+{
+    public int Score { get; init; }
+    public string Unlocks { get; init; } = "";
+    public bool Optional { get; init; }
+    public List<string> How { get; init; } = [];
+}
+
+/// <summary>Niveau d'objet d'une pièce et où la trouver par groupe (Weapon, Guard, Armor, Accessory) ; Gate null = artisanat.</summary>
+public sealed record GearTier
+{
+    public int ItemLevel { get; init; }
+    public int? Gate { get; init; }
+    public Dictionary<string, string> Where { get; init; } = [];
+
+    public string WhereFor(string group) => Where.GetValueOrDefault(group) ?? Where.GetValueOrDefault("Armor") ?? "";
+}
+
+public sealed record RoadmapEnchant
+{
+    public int Guaranteed { get; init; } = 10;
+    public List<int> Rates { get; init; } = [];
+    public string Transfer { get; init; } = "";
+    public string KeepTen { get; init; } = "";
+    public string Transmute { get; init; } = "";
+}
+
+public sealed record RoadmapStones
+{
+    public string Mana { get; init; } = "";
+    public string Sacred { get; init; } = "";
+    public string SacredPvP { get; init; } = "";
+    /// <summary>Conseil JcE par code de classe ; « default » pour les autres.</summary>
+    public Dictionary<string, string> SacredPvE { get; init; } = [];
+
+    public string SacredFor(string classCode, GameMode mode) =>
+        mode == GameMode.PvP ? SacredPvP : SacredPvE.GetValueOrDefault(classCode) ?? SacredPvE.GetValueOrDefault("default") ?? "";
 }
 
 /// <summary>Effets de possession des familiers : chaque familier obtenu donne des stats selon son espèce et son niveau (1 à 3).</summary>

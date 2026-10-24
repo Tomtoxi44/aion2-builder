@@ -28,7 +28,7 @@ namespace Aion2Builder.App;
 sealed record UiPrefs(string Region = "eu", string Server = "", string Name = "", GameMode Mode = GameMode.PvE, string? LastFile = null,
     int Tab = 0, string Screen = "Home", string Accent = "Orange", bool AutoUpdate = true,
     List<string>? Tabs = null, double InspectorWidth = 340, bool InspectorHidden = false, int AutoRefreshHours = 0,
-    List<string>? Mine = null, bool BottomHidden = false, double BottomHeight = 190, string BottomTab = "advice", List<string>? RailOrder = null)
+    List<string>? Mine = null, bool BottomHidden = false, double BottomHeight = 190, string BottomTab = "advice", List<string>? RailOrder = null, string GearPage = "Overview")
 {
     static string PathOf => System.IO.Path.Combine(AppPaths.Root, "ui.json");
 
@@ -195,6 +195,7 @@ public sealed class MainWindow : Window
         if (last is not null)
         {
             state.Screen = Enum.TryParse<Screen>(prefs.Screen, out var screen) ? screen : Screen.Home;
+            state.GearPage = Enum.TryParse<GearPage>(prefs.GearPage, out var gearPage) ? gearPage : GearPage.Overview;
             Open(opened[last], last, keepScreen: true);
         }
         else
@@ -304,7 +305,7 @@ public sealed class MainWindow : Window
     void Update(Action<UiState> change)
     {
         change(state);
-        prefs = prefs with { Screen = state.Screen.ToString() };
+        prefs = prefs with { Screen = state.Screen.ToString(), GearPage = state.GearPage.ToString() };
         prefs.Save();
         Render();
     }
@@ -669,11 +670,39 @@ public sealed class MainWindow : Window
                 Child = new StackPanel { Spacing = 2, HorizontalAlignment = HorizontalAlignment.Center, Children = { top, T(shortName, 10, on ? Tok.Text : Tok.Muted).Centered() } },
             };
             ToolTip.SetTip(entry, $"{title} · glisse (ou clic droit) pour changer l'ordre");
-            RailDrag(entry, index, entries, panel, () => { if (report is not null) Navigate(screen); });
+            RailDrag(entry, index, entries, panel, () =>
+            {
+                if (report is null) return;
+                // Un clic sur l'écran déjà ouvert revient à sa première sous-page.
+                if (on && screen == Screen.Gear) Update(st => st.GearPage = GearPage.Overview);
+                else Navigate(screen);
+            });
             entries.Add(entry);
             panel.Children.Add(entry);
+            if (on && screen == Screen.Gear && report is not null) panel.Children.Add(GearSubMenu());
         }
         return new Border { Background = Tok.Chrome, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 1, 0), Child = panel };
+    }
+
+    /// <summary>
+    /// Sous-menu de l'écran Équipement, déplié sous son entrée du rail quand il est ouvert : une ligne par sous-page,
+    /// la page ouverte en couleur secondaire avec un trait à gauche (comme un nœud d'arbre dans un éditeur).
+    /// </summary>
+    Control GearSubMenu()
+    {
+        var list = new StackPanel { Spacing = 1, Margin = new Thickness(0, 0, 0, 6) };
+        foreach (var (page, title, shortName) in ScreenViews.GearPages)
+        {
+            var on = state.GearPage == page;
+            var item = Clickable(T(shortName, 10, on ? Accent.Main : Tok.Muted, on ? FontWeight.SemiBold : FontWeight.Normal).Centered(),
+                () => Update(st => st.GearPage = page), on ? Tok.Hover : null, Tok.Hover, new Thickness(0, 4));
+            item.Width = 52;
+            item.BorderBrush = on ? Accent.Main : Tok.Border;
+            item.BorderThickness = new Thickness(on ? 2 : 1, 0, 0, 0);
+            ToolTip.SetTip(item, $"Équipement › {title}");
+            list.Children.Add(item);
+        }
+        return list;
     }
 
     /// <summary>Ordre par défaut du rail : les écrans notés d'abord (leurs notes se suivent), puis les autres.</summary>
@@ -884,7 +913,7 @@ public sealed class MainWindow : Window
     /// </summary>
     ScrollViewer KeepScroll(ScrollViewer scroll)
     {
-        var key = $"{currentPath}|{state.Screen}";
+        var key = $"{currentPath}|{state.Screen}|{state.GearPage}";
         if (contentScroll is { } previous && contentScrollKey == key && previous.Offset != default)
         {
             var offset = previous.Offset;
@@ -1139,6 +1168,11 @@ public sealed class MainWindow : Window
             Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center,
             Children = { T(c.Name.ToLowerInvariant(), 12, Tok.Muted, mono: true), T("›", 12, Tok.Muted, mono: true), T(ScreenViews.Title(state.Screen), 12, Tok.Text, mono: true) },
         };
+        if (state.Screen == Screen.Gear)
+        {
+            left.Children.Add(T("›", 12, Tok.Muted, mono: true));
+            left.Children.Add(T(ScreenViews.GearPages.First(p => p.Page == state.GearPage).Title, 12, Tok.Text, mono: true));
+        }
         return new Border
         {
             Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(14, 0),
