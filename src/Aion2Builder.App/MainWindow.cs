@@ -852,7 +852,7 @@ public sealed class MainWindow : Window
         grid.Children.Add(Breadcrumb(r, inspector is not null));
         var body = new Grid();
         body.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star) { MinWidth = 420 });
-        body.Children.Add(Scroll(content));
+        body.Children.Add(KeepScroll(Scroll(content)));
         if (inspector is not null && !prefs.InspectorHidden)
         {
             body.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
@@ -873,6 +873,50 @@ public sealed class MainWindow : Window
         Grid.SetRow(body, 1);
         grid.Children.Add(body);
         return grid;
+    }
+
+    ScrollViewer? contentScroll;
+    string? contentScrollKey;
+
+    /// <summary>
+    /// Chaque rendu reconstruit la page : sur le même écran du même personnage (une section dépliée, une ligne choisie),
+    /// le défilement reprend où il était au lieu de remonter en haut.
+    /// </summary>
+    ScrollViewer KeepScroll(ScrollViewer scroll)
+    {
+        var key = $"{currentPath}|{state.Screen}";
+        if (contentScroll is { } previous && contentScrollKey == key && previous.Offset != default)
+        {
+            var offset = previous.Offset;
+            void Apply(object? sender, EventArgs e)
+            {
+                scroll.LayoutUpdated -= Apply;
+                scroll.Offset = offset;
+            }
+            scroll.LayoutUpdated += Apply;
+        }
+        contentScroll = scroll;
+        contentScrollKey = key;
+        return scroll;
+    }
+
+    DispatcherTimer? shrinkTimer;
+
+    /// <summary>
+    /// Quand la fenêtre rétrécit, Avalonia garde dans les colonnes « * » la largeur d'avant si un texte à la ligne la
+    /// remplissait : la page déborde à droite. Une fois le redimensionnement fini, tout est reconstruit à la bonne largeur.
+    /// </summary>
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property != ClientSizeProperty || change.GetNewValue<Size>().Width >= change.GetOldValue<Size>().Width) return;
+        shrinkTimer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, (_, _) =>
+        {
+            shrinkTimer!.Stop();
+            Render();
+        });
+        shrinkTimer.Stop();
+        shrinkTimer.Start();
     }
 
     // Panneau du bas : conseils (filtres par gravité) et journal (messages de l'application).
