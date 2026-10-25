@@ -73,7 +73,7 @@ sealed class UiState
 sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, UiState s,
     Action<Action<UiState>> update, Action<PlayerInputs> onInputs, string? petKeyHint, Action<string?> onPets,
     IReadOnlyList<ProgressPoint> progress, Func<SimulationOptions, AdviceReport> simulate,
-    IReadOnlyList<(string Path, CombatLog Log)> combats, Action importCombat, Action<string> deleteCombat)
+    IReadOnlyList<(string Path, CombatLog Log)> combats, Action importCombat, Action<string> deleteCombat, Action reloadCombats)
 {
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
@@ -771,7 +771,16 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         import.BorderBrush = Tok.Border;
         import.BorderThickness = new Thickness(1);
         import.CornerRadius = new CornerRadius(3);
-        return new SidePanel($"Combats · {combats.Count}", Tip(import, "Importer des captures NotMeter « Détails du combat »"), body);
+        var reload = Clickable(T("↻", 13, Accent.Main, FontWeight.SemiBold, mono: true).Centered(), reloadCombats, hover: Tok.HoverStrong, padding: new Thickness(7, 1));
+        reload.BorderBrush = Tok.Border;
+        reload.BorderThickness = new Thickness(1);
+        reload.CornerRadius = new CornerRadius(3);
+        var actions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 6,
+            Children = { Tip(reload, "Reprendre les derniers combats du Pet Meter"), Tip(import, "Importer des captures NotMeter « Détails du combat »") },
+        };
+        return new SidePanel($"Combats · {combats.Count}", actions, body);
     }
 
     SidePanel DaevaSide()
@@ -2146,7 +2155,16 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     Control CombatScreen()
     {
         var panel = new StackPanel();
-        var import = Clickable(T("+ importer des captures…", 12, Accent.Main, FontWeight.SemiBold, mono: true), importCombat, hover: Tok.HoverStrong, padding: new Thickness(8, 2));
+        var import = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 4,
+            Children =
+            {
+                Tip(Clickable(T("↻ derniers combats", 12, Accent.Main, FontWeight.SemiBold, mono: true), reloadCombats, hover: Tok.HoverStrong, padding: new Thickness(8, 2)),
+                    "Reprendre les derniers combats du Pet Meter"),
+                Clickable(T("+ captures…", 12, Accent.Main, FontWeight.SemiBold, mono: true), importCombat, hover: Tok.HoverStrong, padding: new Thickness(8, 2)),
+            },
+        };
         panel.Children.Add(SectionHeader("Combat · Pet Meter ou captures NotMeter", import, 20));
         if (Combat is null && combats.Count > 0)
         {

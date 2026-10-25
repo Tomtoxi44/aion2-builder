@@ -286,15 +286,16 @@ public sealed class MainWindow : Window
         Render();
     }
 
-    void Recompute()
+    int Recompute()
     {
-        if (current is null) { Render(); return; }
+        if (current is null) { Render(); return 0; }
         combats = CurrentKey is { } key ? combatStore.List(key) : [];
         // Nouveaux combats du Pet Meter pour ce perso (même nom) : repris tout seuls.
         // (et ceux convertis par une version plus ancienne du Builder, reconvertis).
+        var fresh = 0;
         if (CurrentKey is { } k)
         {
-            var fresh = PetMeterFights.Sync(combatStore, k, current.Name, db);
+            fresh = PetMeterFights.Sync(combatStore, k, current.Name, db);
             combats = combatStore.List(k);
             if (fresh > 0) Toast($"{fresh} combat{(fresh > 1 ? "s" : "")} du Pet Meter", "Écran Combat : lancers, combos, temps morts, dégâts subis.");
         }
@@ -303,6 +304,25 @@ public sealed class MainWindow : Window
         if (report is not null) store.RecordScores(current, prefs.Mode, report.Scores);
         progress = store.Progress(current);
         Render();
+        return fresh;
+    }
+
+    /// <summary>
+    /// Bouton ↻ de l'écran Combat : reprend les derniers combats écrits par le Pet Meter (un combat est écrit 15 s après
+    /// ton dernier coup), ouvre le plus récent, et dit s'il n'y avait rien de nouveau.
+    /// </summary>
+    void ReloadCombats()
+    {
+        if (current is null) return;
+        state.CombatIndex = null;
+        state.CombatGroup = null;
+        state.CombatList = false;
+        state.CombatSkill = null;
+        if (Recompute() > 0) return;
+        var written = PetMeterFights.For(current.Name).Count;
+        Toast("Aucun nouveau combat", written == 0
+            ? $"Le Pet Meter n'a écrit aucun combat pour {current.Name} : lance-le pendant tes combats (boss, mannequin, JcJ)."
+            : "Le Pet Meter écrit un combat 15 s après ton dernier coup : réessaie dans un instant.");
     }
 
     void Update(Action<UiState> change)
@@ -899,7 +919,7 @@ public sealed class MainWindow : Window
     {
         var views = new ScreenViews(db, r, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key), progress,
             o => Simulator.Run(db, r, inputs, pets.Collection, o),
-            combats, () => _ = ImportCombatAsync(), DeleteCombat);
+            combats, () => _ = ImportCombatAsync(), DeleteCombat, ReloadCombats);
         var (content, inspector) = views.Build();
         side = views.Side();
         var grid = new Grid { RowDefinitions = new RowDefinitions("36,*") };
