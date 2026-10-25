@@ -2181,12 +2181,12 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                      {
                          ("1", "Dans NotMeter, ouvre « Détails du combat » sur ton combat."),
                          ("2", "Capture la fenêtre (Win + Maj + S, ou l'appareil photo de NotMeter). La liste des compétences défile : une capture par écran, jusqu'en bas."),
-                         ("3", "« + importer des captures… » et sélectionne-les toutes ensemble."),
+                         ("3", "« + captures… » et sélectionne-les toutes ensemble."),
                      })
                 steps.Children.Add(ColumnsSpaced("24,*", 8, T(n, 13, Accent.Main, FontWeight.Bold, mono: true), T(text, 13, wrap: true)));
             steps.Children.Add(T("Le texte est lu sur ton PC par la reconnaissance de texte de Windows : rien n'est envoyé. NotMeter doit être en français. " +
                 "Plus simple : laisse tourner le Pet Meter (v0.7.0 ou plus) pendant tes combats, ils arrivent ici tout seuls, avec tes lancers chronométrés, " +
-                "tes combos ratés, tes temps morts et les dégâts subis.",
+                "tes combos ratés, tes temps morts et les dégâts subis ; « ↻ derniers combats » reprend ceux écrits depuis.",
                 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
             panel.Children.Add(steps);
             return panel;
