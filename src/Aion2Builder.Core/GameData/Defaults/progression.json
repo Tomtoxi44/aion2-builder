@@ -98,6 +98,8 @@
         "how": ["Cartes uniques d'arcanes", "Pièces 86 au-delà de +10 seulement si tu les gardes (très cher)", "Relance des gravures d'âme vers le jaune"] },
       { "score": 2600, "unlocks": "Grotte de Krao et Draupnir en difficile (fragments d'Ariel, pas d'équipement)", "optional": true,
         "how": ["Pour les fragments d'Ariel (cristaux Daevanion) et les kinahs, pas pour l'équipement"] },
+      { "score": 2700, "unlocks": "Île céleste de Vakron et Canyon Urugugu en difficile (depuis le 28/10 : 3 résurrections, frénésie à 4 min)", "optional": true,
+        "how": ["Pierre philosophale : Révélation (liée) en récompense au choix garantie", "Fragments d'Ariel garantis : 100 fragments = 1 cristal Daevanion : Ariel (30 fois par perso), ou 1 fragment = 5 pierres d'enchantement", "Tous les matériaux d'artisanat uniques s'y obtiennent"] },
       { "score": 2800, "unlocks": "Raid Forge abyssale : Ludra (pièces 102, quand il revient sur les serveurs Global)",
         "how": ["Au-delà, les armures et accessoires 102 viennent de l'artisanat Seigneur dragon"] }
     ],
@@ -110,7 +112,7 @@
       { "itemLevel": 94, "where": { "Weapon": "Artisanat : Seigneur dragon sage", "Guard": "Artisanat : Seigneur dragon sage", "Armor": "Artisanat : Seigneur dragon sage", "Accessory": "Artisanat : Seigneur dragon sage" } },
       { "itemLevel": 102, "gate": 2800, "where": { "Weapon": "Raid Forge abyssale : Ludra", "Guard": "Raid Forge abyssale : Ludra", "Armor": "Artisanat : Seigneur dragon sage ou d'ébène éclatant", "Accessory": "Artisanat : Seigneur dragon sage ou d'ébène éclatant" } }
     ],
-    "craftNote": "L'artisanat Seigneur dragon (véritable 62, blanc 78, sage 94 ; éclatant 70, 86, 102) remplace une pièce qui ne tombe pas ; ses recettes d'amélioration gardent l'enchantement, l'amplification et le lien d'âme.",
+    "craftNote": "L'artisanat Seigneur dragon (véritable 62, blanc 78, sage 94 ; éclatant 70, 86, 102) remplace une pièce qui ne tombe pas ; ses recettes d'amélioration gardent l'enchantement, l'amplification et le lien d'âme. Depuis le 28/10 : amplification maximale de l'artisanat relevée (dragon véritable et dragon étoilé 1 → 3, dragon blanc et dragon noir 3 → 5, éclatants compris), et transfert possible d'une pièce d'expédition de palier 3 vers l'artisanat de palier 2, de palier 2 vers le palier 1.",
     "enchant": {
       "guaranteed": 10,
       "rates": [65, 50, 35, 25, 20],
