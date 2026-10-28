@@ -55,6 +55,11 @@ public sealed record ClassProfile
     public Dictionary<GameMode, PlayGuide> Play { get; init; } = [];
     /// <summary>Build « conçu » à partir des seules données des sorts ; null tant qu'il n'est pas rédigé.</summary>
     public DesignedBuild? Designed { get; init; }
+    /// <summary>
+    /// Valeurs conseillées par les guides de la classe (Précision, CRIT, VIT de combat…), par mode : elles remplacent, stat
+    /// par stat, les valeurs communes de <see cref="StatSettings.Targets"/>.
+    /// </summary>
+    public Dictionary<GameMode, List<StatTarget>> StatTargets { get; init; } = [];
     /// <summary>Repères mesurés sur des joueurs niveau 45 de la classe (niveau d'objet, puissance, cases Daevanion).</summary>
     public ClassBenchmark? Benchmark { get; init; }
 }
@@ -331,11 +336,20 @@ public sealed record StigmaSettings
     }
 }
 
+/// <summary>
+/// Une valeur conseillée pour une stat (clé de stats.json), en valeur totale comme <c>StatTotal.BenchValue</c> : le % pour
+/// une stat en %, la valeur plate sinon. <see cref="Label"/> dit pour quoi (« Sanctuaire », « 50 % de critiques »),
+/// <see cref="Source"/> d'où vient le chiffre ; <see cref="Cap"/> : au-delà, la stat ne sert plus.
+/// </summary>
+public sealed record StatTarget(string Stat, double Value, string Label, string Source, bool Cap = false);
+
 public sealed record StatSettings
 {
     public double CategoryTolerance { get; init; } = 0.06;
     public double WastedShare { get; init; } = 0.05;
     public double LowWeight { get; init; } = 0.15;
+    /// <summary>Valeurs conseillées communes à toutes les classes (elles dépendent du contenu visé), par mode.</summary>
+    public Dictionary<GameMode, List<StatTarget>> Targets { get; init; } = [];
 }
 
 public sealed record GearSettings

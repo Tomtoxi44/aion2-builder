@@ -53,23 +53,42 @@ public sealed record StatVsPlayers(StatTotal Stat, List<double> Values)
     public int Verdict => Math.Abs(Mine - Average) <= Math.Max(1e-6, 0.03 * Math.Abs(Average)) ? 0 : Mine > Average ? 1 : -1;
 }
 
-/// <summary>Une stat à monter et où la trouver encore (cases Daevanion fermées, stat secondaire possible, titres).</summary>
-public sealed record StatToRaise(StatTotal Stat, string Where);
+/// <summary>
+/// Une stat à monter : pourquoi (« il manque 694 pour 900 (Conquête) », « en dessous de la moyenne ») et où la trouver encore
+/// (cases Daevanion fermées, stat secondaire possible, titres).
+/// </summary>
+public sealed record StatToRaise(StatTotal Stat, string Why, string Where);
+
+/// <summary>Une stat où reprendre de la place, et pourquoi (au-delà de son plafond, au-dessus de la moyenne, peu utile).</summary>
+public sealed record StatToFree(StatTotal Stat, string Why);
 
 /// <summary>
 /// Une famille de stats : ta part des stats ajustables face à la part conseillée pour la classe, ses stats (face aux joueurs
-/// quand l'échantillon existe), celles à monter et, si la famille dépasse la part conseillée, celles où reprendre de la place.
+/// quand l'échantillon existe), celles à monter et celles où reprendre de la place (plafond dépassé, ou famille au-delà
+/// de sa part conseillée).
 /// </summary>
-public sealed record FamilyReview(CategoryShare Share, List<StatTotal> Stats, List<StatVsPlayers> Players, List<StatToRaise> Raise, List<StatTotal> Free)
+public sealed record FamilyReview(CategoryShare Share, List<StatTotal> Stats, List<StatVsPlayers> Players, List<StatToRaise> Raise, List<StatToFree> Free)
 {
     public StatVsPlayers? Vs(StatTotal x) => Players.FirstOrDefault(v => v.Stat.Def.Key == x.Def.Key);
 }
 
 /// <summary>
 /// Les stats famille par famille. <see cref="Peers"/> : joueurs de comparaison (ta classe, niveau 45, niveau d'objet le plus
-/// proche du tien), null sans échantillon ou en JcJ (l'échantillon est relevé en JcE).
+/// proche du tien), null sans échantillon ou en JcJ (l'échantillon est relevé en JcE). <see cref="Targets"/> : valeurs
+/// conseillées par les guides (de la classe, sinon communes), par stat, de la plus basse à la plus haute.
 /// </summary>
-public sealed record StatComparison(List<BenchPlayer>? Peers, string? PeersText, List<FamilyReview> Families);
+public sealed record StatComparison(List<BenchPlayer>? Peers, string? PeersText, List<FamilyReview> Families)
+{
+    public Dictionary<string, List<StatTarget>> Targets { get; init; } = [];
+
+    public List<StatTarget> TargetsFor(StatTotal x) => Targets.GetValueOrDefault(x.Def.Key) ?? [];
+
+    /// <summary>Prochaine valeur conseillée pas encore atteinte ; null si toutes le sont (ou s'il n'y en a pas).</summary>
+    public StatTarget? NextTarget(StatTotal x) => TargetsFor(x).FirstOrDefault(t => t.Value > x.BenchValue + 1e-9);
+
+    /// <summary>Plafond dépassé : la stat ne sert plus au-delà (2 % de marge).</summary>
+    public StatTarget? CapExceeded(StatTotal x) => TargetsFor(x).FirstOrDefault(t => t.Cap && x.BenchValue > t.Value * 1.02);
+}
 
 /// <param name="OtherModeBudget">Budget des stats réservées à l'autre mode (ex. "ATQ JcJ" vu en JcE), non compté ici.</param>
 public sealed record StatProfile(GameMode Mode, List<StatTotal> Stats, List<CategoryShare> Categories, double TotalBudget,

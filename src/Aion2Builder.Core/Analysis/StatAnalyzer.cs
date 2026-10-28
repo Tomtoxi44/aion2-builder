@@ -90,31 +90,51 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
     }
 
     /// <summary>
-    /// Famille par famille : ta part face à la part conseillée ; chaque stat qui compte face à la moyenne des joueurs de ta
-    /// classe au niveau d'objet le plus proche (JcE seulement : l'échantillon est en JcE) ; à monter : les stats utiles sous
-    /// la moyenne (sous la part visée, sans joueurs) encore trouvables ; si la famille dépasse la part conseillée, où reprendre
-    /// de la place : ses stats au-dessus de la moyenne ou peu utiles à la classe.
+    /// Famille par famille : ta part face à la part conseillée ; chaque stat qui compte face aux valeurs conseillées par les
+    /// guides (de la classe, sinon communes) et à la moyenne des joueurs de ta classe au niveau d'objet le plus proche (JcE
+    /// seulement : l'échantillon est en JcE). À monter : les stats utiles sous une valeur conseillée ou sous la moyenne (sous
+    /// la part visée, sans joueurs), encore trouvables, celles des guides d'abord. Où reprendre de la place : les stats
+    /// au-delà de leur plafond, et, si la famille dépasse la part conseillée, ses stats au-dessus de la moyenne ou peu utiles.
     /// </summary>
     StatComparison Compare(List<StatTotal> stats, List<CategoryShare> categories, CharacterSnapshot c, ResolvedProfile p)
     {
         var tolerance = db.Settings.Stats.CategoryTolerance;
         var peers = p.Mode == GameMode.PvE ? Peers(p, c) : null;
         var obtainable = Obtainable(c, p);
+        var comparison = new StatComparison(peers, peers is null ? null : PeersText(p, c, peers), []) { Targets = Targets(p) };
+        static string Value(StatTotal x, double v) => x.Def.Kind == StatKind.Percent ? $"{Fmt.Num(v)} %" : Fmt.Num(Math.Round(v));
         var families = categories.Select(cat =>
         {
             var own = stats.Where(x => x.Def.Category == cat.Category && (x.Weight >= 0.5 || x.Share >= 0.02 || x.ExpectedShare >= 0.03))
                 .OrderByDescending(x => x.Weight).ThenByDescending(x => x.Share).ToList();
             var vs = peers is null ? [] : own.Select(x => new StatVsPlayers(x, ClassBenchmark.Sample(peers, x.Def.Key))).ToList();
             int Verdict(StatTotal x) => vs.FirstOrDefault(v => v.Stat == x)?.Verdict ?? (x.Deficit > 0.01 ? -1 : 0);
-            var raise = own.Where(x => x.Weight >= 0.6 && obtainable.ContainsKey(x.Def.Key) && Verdict(x) < 0)
-                .Take(3).Select(x => new StatToRaise(x, WhereToFind(x, obtainable))).ToList();
-            var free = cat.Gap > tolerance
-                ? own.Where(x => x.Share >= 0.01 && (Verdict(x) > 0 || x.Weight < 0.6) && !(x.Weight >= 0.6 && Verdict(x) < 0))
-                    .OrderByDescending(x => Verdict(x) > 0).ThenBy(x => x.Weight).ThenByDescending(x => x.Share).Take(3).ToList()
+            var raise = own.Where(x => x.Weight >= 0.6 && obtainable.ContainsKey(x.Def.Key) && (comparison.NextTarget(x) is not null || Verdict(x) < 0))
+                .OrderByDescending(x => comparison.NextTarget(x) is not null).ThenByDescending(x => x.Weight).Take(3)
+                .Select(x => new StatToRaise(x,
+                    comparison.NextTarget(x) is { } t ? $"il manque {Value(x, t.Value - x.BenchValue)} pour {Value(x, t.Value)}, {t.Label}"
+                    : peers is null ? "sous la part visée" : "en dessous de la moyenne",
+                    WhereToFind(x, obtainable)))
+                .ToList();
+            var capped = own.Select(x => (Stat: x, Cap: comparison.CapExceeded(x))).Where(z => z.Cap is not null)
+                .Select(z => new StatToFree(z.Stat, $"au-delà du plafond de {Value(z.Stat, z.Cap!.Value)} ({z.Cap.Label}) : le surplus ne sert plus"));
+            var over = cat.Gap > tolerance
+                ? own.Where(x => x.Share >= 0.01 && (Verdict(x) > 0 || x.Weight < 0.6) && !(x.Weight >= 0.6 && Verdict(x) < 0) && comparison.CapExceeded(x) is null)
+                    .OrderByDescending(x => Verdict(x) > 0).ThenBy(x => x.Weight).ThenByDescending(x => x.Share).Take(3)
+                    .Select(x => new StatToFree(x, Verdict(x) > 0 ? "au-dessus de la moyenne" : "peu utile pour ta classe"))
                 : [];
-            return new FamilyReview(cat, own, vs, raise, free);
+            return new FamilyReview(cat, own, vs, raise, capped.Concat(over).ToList());
         }).ToList();
-        return new StatComparison(peers, peers is null ? null : PeersText(p, c, peers), families);
+        return comparison with { Families = families };
+    }
+
+    /// <summary>Valeurs conseillées pour le mode : celles de la classe remplacent, stat par stat, les valeurs communes.</summary>
+    Dictionary<string, List<StatTarget>> Targets(ResolvedProfile p)
+    {
+        var own = p.Class.StatTargets.GetValueOrDefault(p.Mode) ?? [];
+        var replaced = own.Select(t => t.Stat).ToHashSet();
+        return (db.Settings.Stats.Targets.GetValueOrDefault(p.Mode) ?? []).Where(t => !replaced.Contains(t.Stat)).Concat(own)
+            .GroupBy(t => t.Stat).ToDictionary(g => g.Key, g => g.OrderBy(t => t.Value).ToList());
     }
 
     /// <summary>Où ce personnage peut encore trouver la stat ; à défaut, où elle se trouve en général.</summary>

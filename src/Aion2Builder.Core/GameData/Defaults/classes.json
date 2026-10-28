@@ -260,7 +260,7 @@
       ]
     },
     {
-      "code": "TEMPLAR", "name": "Templier", "aliases": ["Templar"], "role": "tank",
+      "code": "TEMPLAR", "name": "Templier", "aliases": ["Templar"], "role": "tank", "statTargets": { "PvE": [{ "stat": "Accuracy", "value": 900, "label": "Conquête", "source": "guide Templier (games.gg)" }, { "stat": "Accuracy", "value": 1300, "label": "Sanctuaire", "source": "guide Templier (games.gg)" }] },
       "targetOverrides": {
         "PvE": { "Offense": 0.45, "Defense": 0.30, "Sustain": 0.20, "Utility": 0.05 },
         "PvP": { "Offense": 0.40, "Defense": 0.32, "Sustain": 0.23, "Utility": 0.05 }
@@ -407,7 +407,7 @@
       ]
     },
     {
-      "code": "ASSASSIN", "name": "Assassin", "aliases": ["Assassin"], "role": "dps",
+      "code": "ASSASSIN", "name": "Assassin", "aliases": ["Assassin"], "role": "dps", "statTargets": { "PvE": [{ "stat": "Critical", "value": 1300, "label": "50 % de critiques", "source": "guide Assassin : Coup au cœur ne part que sur un critique" }, { "stat": "Critical", "value": 1900, "label": "95 % de critiques", "source": "guide Assassin" }] },
       "weightOverrides": {
         "PvE": { "Critical": 1.0, "CriticalDamage": 0.9, "BackAttack": 0.85, "MultiHit": 0.85, "CombatSpeed": 0.8, "PowerfulHit": 0.7 },
         "PvP": { "Critical": 0.85, "BackAttack": 0.7, "Evasion": 0.7, "MultiHit": 0.65, "StatusResist": 0.8 }
@@ -547,7 +547,7 @@
       ]
     },
     {
-      "code": "RANGER", "name": "Rôdeur", "aliases": ["Ranger"], "role": "dps",
+      "code": "RANGER", "name": "Rôdeur", "aliases": ["Ranger"], "role": "dps", "statTargets": { "PvE": [{ "stat": "Accuracy", "value": 1150, "label": "1 100 à 1 200", "source": "guide Rôdeur : si tu rates des tirs, rien d'autre ne compte" }, { "stat": "Critical", "value": 1300, "label": "50 % de critiques, plafond", "source": "guide Rôdeur : le CRIT plafonne à 50 % sur les serveurs occidentaux", "cap": true }] },
       "weightOverrides": {
         "PvE": { "Accuracy": 1.0, "CombatSpeed": 0.9, "WeaponDamageBoost": 0.9, "PowerfulHit": 0.85, "CriticalDamage": 0.85, "Critical": 0.65, "MoveSpeed": 0.4 },
         "PvP": { "Accuracy": 0.95, "MoveSpeed": 0.55, "Evasion": 0.6, "StatusResist": 0.75 }
@@ -832,7 +832,7 @@
       ]
     },
     {
-      "code": "ELEMENTALIST", "name": "Spiritualiste", "aliases": ["Spiritmaster", "Elementalist"], "role": "dps",
+      "code": "ELEMENTALIST", "name": "Spiritualiste", "aliases": ["Spiritmaster", "Elementalist"], "role": "dps", "statTargets": { "PvE": [{ "stat": "Accuracy", "value": 1500, "label": "≈ 1 500", "source": "guide Spiritualiste" }, { "stat": "CooldownReduction", "value": 20, "label": "≈ 20 %", "source": "guide Spiritualiste" }, { "stat": "CombatSpeed", "value": 65, "label": "entrelacer les attaques de base", "source": "guide Spiritualiste" }] },
       "weightOverrides": {
         "PvE": { "PowerfulHit": 0.95, "CooldownReduction": 0.85, "Accuracy": 0.85, "DamageBoost": 0.85, "Critical": 0.7, "CriticalDamage": 0.7, "MP": 0.25, "MPRegen": 0.25, "HP": 0.3 },
         "PvP": { "Accuracy": 0.9, "StatusResist": 0.85, "HP": 0.85, "StatusHit": 0.7, "MP": 0.2 }
@@ -984,7 +984,7 @@
       ]
     },
     {
-      "code": "CLERIC", "name": "Clerc", "aliases": ["Cleric"], "role": "healer",
+      "code": "CLERIC", "name": "Clerc", "aliases": ["Cleric"], "role": "healer", "statTargets": { "PvE": [{ "stat": "Accuracy", "value": 1000, "label": "repère de raid", "source": "guide Clerc" }, { "stat": "Critical", "value": 1000, "label": "repère de raid", "source": "guide Clerc" }] },
       "weightOverrides": {
         "PvE": { "Attack": 0.95, "CombatSpeed": 0.85, "CooldownReduction": 0.85, "PowerfulHit": 0.8, "Critical": 0.8, "CriticalDamage": 0.8, "Accuracy": 0.8, "DamageBoost": 0.8, "WeaponDamageBoost": 0.75, "HealBoost": 0.7, "MP": 0.25, "Defense": 0.2, "StatusResist": 0.15, "Evasion": 0.1 },
         "PvP": { "HealBoost": 0.8, "StatusResist": 0.85, "Accuracy": 0.85, "HP": 0.85, "Attack": 0.85, "Critical": 0.7, "CriticalDamage": 0.65, "DamageBoost": 0.7 }

@@ -1389,19 +1389,63 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         _ => ("dans la moyenne", Tok.Text2),
     };
 
-    /// <summary>Les joueurs comparés sur une ligne : un trait gris par joueur, un trait clair à leur moyenne, un losange pour toi.</summary>
-    static Control Strip(StatVsPlayers v, double width = 200)
+    /// <summary>
+    /// Valeur conseillée d'une stat, en mots : la prochaine à atteindre (« ↑ 900 · Conquête »), ✓ si toutes le sont, un
+    /// plafond dépassé, ou, sans chiffre dans les guides, « le plus possible » pour une stat prioritaire (pas de plafond).
+    /// </summary>
+    (string Text, IBrush Color, string Tip) Advised(StatTotal x, StatComparison cmp)
     {
-        var lo = Math.Min(v.Mine, v.Values.DefaultIfEmpty(0).Min());
-        var hi = Math.Max(v.Mine, v.Values.DefaultIfEmpty(0).Max());
-        double X(double value) => hi - lo < 1e-9 ? width / 2 : 5 + (value - lo) / (hi - lo) * (width - 10);
-        static Control At(Control c, double x, double y) { Canvas.SetLeft(c, x); Canvas.SetTop(c, y); return c; }
-        var canvas = new Canvas { Width = width, Height = 18, VerticalAlignment = VerticalAlignment.Center };
-        canvas.Children.Add(At(new Border { Width = width, Height = 2, Background = Tok.Border }, 0, 8));
-        foreach (var value in v.Values) canvas.Children.Add(At(new Border { Width = 2, Height = 10, Background = Tok.Faint }, X(value) - 1, 4));
-        canvas.Children.Add(At(new Border { Width = 2, Height = 16, Background = Tok.Text }, X(v.Average) - 1, 1));
-        canvas.Children.Add(At(new Border { Width = 9, Height = 9, Background = Accent.Main, RenderTransform = new RotateTransform(45) }, X(v.Mine) - 4.5, 4.5));
-        return canvas;
+        var targets = cmp.TargetsFor(x);
+        if (targets.Count == 0)
+            return x.Weight >= 0.8
+                ? ("le plus possible", Tok.Text2, $"Stat prioritaire pour un {r.Profile.Class.Name} en {Mode}, sans plafond connu : chaque point compte.")
+                : ("—", Tok.Faint, "Pas de valeur conseillée par les guides pour cette stat.");
+        var tip = "Conseillé par les guides (pas d'après les joueurs) :\n" + string.Join("\n", targets.Select(t =>
+            $"{StatValue(x, t.Value)} · {t.Label}{(t.Cap ? " (au-delà, ne sert plus)" : "")} — {t.Source}"));
+        if (cmp.CapExceeded(x) is { } cap) return ($"plafond {StatValue(x, cap.Value)} dépassé", Tok.Warn, tip);
+        if (cmp.NextTarget(x) is { } next)
+            return ($"↑ {StatValue(x, next.Value)} · {next.Label}", x.Weight >= 0.6 ? Tok.Bad : Tok.Warn,
+                $"Il te manque {StatValue(x, next.Value - x.BenchValue)}.\n{tip}");
+        return ($"✓ {StatValue(x, targets[^1].Value)} atteint", Tok.Good, tip);
+    }
+
+    /// <summary>
+    /// Une stat sur une ligne, à toute la largeur disponible : un trait gris par joueur comparé, un trait clair à leur
+    /// moyenne, un triangle vert par valeur conseillée, un losange pour toi.
+    /// </summary>
+    sealed class StatStrip(double mine, IReadOnlyList<double> players, double? average, IReadOnlyList<double> targets) : Control
+    {
+        protected override Size MeasureOverride(Size availableSize) => new(0, 22);
+
+        static Geometry Shape(params Point[] points)
+        {
+            var geometry = new StreamGeometry();
+            using (var c = geometry.Open())
+            {
+                c.BeginFigure(points[0], true);
+                foreach (var p in points.Skip(1)) c.LineTo(p);
+                c.EndFigure(true);
+            }
+            return geometry;
+        }
+
+        public override void Render(DrawingContext ctx)
+        {
+            var width = Bounds.Width;
+            var all = players.Concat(targets).Append(mine).ToList();
+            var lo = all.Min();
+            var hi = all.Max();
+            double X(double v) => hi - lo < 1e-9 ? width / 2 : 7 + (v - lo) / (hi - lo) * (width - 14);
+            ctx.FillRectangle(Tok.Border, new Rect(0, 12, width, 2));
+            foreach (var v in players) ctx.FillRectangle(Tok.Faint, new Rect(X(v) - 1, 7, 2, 12));
+            if (average is { } avg) ctx.FillRectangle(Tok.Text, new Rect(X(avg) - 1, 4, 2, 18));
+            foreach (var t in targets)
+            {
+                ctx.FillRectangle(Tok.Good, new Rect(X(t) - 0.5, 4, 1, 18));
+                ctx.DrawGeometry(Tok.Good, null, Shape(new Point(X(t) - 5, 0), new Point(X(t) + 5, 0), new Point(X(t), 7)));
+            }
+            ctx.DrawGeometry(Accent.Main, null, Shape(new Point(X(mine), 7), new Point(X(mine) + 6, 13), new Point(X(mine), 19), new Point(X(mine) - 6, 13)));
+        }
     }
 
     /// <summary>
@@ -1424,50 +1468,58 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         body.Children.Add(T(sentence, 13, color, wrap: true));
         body.Children.Add(Tip(Bar(c.Share, color, 6, c.Target), "Barre = ta part · trait clair = part conseillée"));
 
+        // Colonnes proportionnelles : la carte occupe toute la largeur, la ligne des joueurs s'étire avec elle.
         var players = cmp.Peers is not null;
-        var cols = players ? "134,88,64,72,150,*" : "134,88,*";
+        var cols = players ? "1.4*,0.8*,0.7*,1.3*,0.7*,3*,1*" : "1.4*,0.8*,0.7*,1.3*,3*";
         var rows = new StackPanel();
         rows.Children.Add(new Border
         {
             Padding = new Thickness(20, 6), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1),
             Child = Columns(cols, (players
-                ? new[] { "Stat", "Importance", "Toi", "Moyenne", "Joueurs · ◆ toi", "Face à eux" }
-                : new[] { "Stat", "Importance", "Toi" }).Select(t => (Control)Label(t)).ToArray()),
+                ? new[] { "Stat", "Importance", "Toi", "Conseillé ▾", "Moyenne", "Joueurs ▏ · conseillé ▾ · toi ◆", "Face aux joueurs" }
+                : new[] { "Stat", "Importance", "Toi", "Conseillé ▾", "Conseillé ▾ · toi ◆" }).Select(t => (Control)Label(t)).ToArray()),
         });
         var selected = SelectedStat?.Def.Key;
         foreach (var x in f.Stats)
         {
             var (importance, importanceColor) = StatImportance(x);
-            var cells = new List<Control> { T(x.Def.Name, 13), T(importance, 12, importanceColor), Tip(T(CompactTotal(x), 13, mono: true), x.Display) };
+            var (advised, advisedColor, advisedTip) = Advised(x, cmp);
+            var targets = cmp.TargetsFor(x).Select(t => t.Value).ToList();
+            var cells = new List<Control>
+            {
+                T(x.Def.Name, 13), T(importance, 12, importanceColor), Tip(T(CompactTotal(x), 13, mono: true), x.Display),
+                Tip(T(advised, 12, advisedColor), advisedTip),
+            };
             if (players)
             {
                 if (f.Vs(x) is { } v)
                 {
                     var (words, wordsColor) = VsWords(v);
                     var detail = $"Toi {StatValue(x, v.Mine)}, moyenne des {v.Values.Count} joueurs {StatValue(x, v.Average)} (de {StatValue(x, v.Values.Min())} à {StatValue(x, v.Values.Max())}). " +
-                                 $"Tu en as plus que {v.Below} d'entre eux sur {v.Values.Count}.";
+                                 $"Tu en as plus que {v.Below} d'entre eux sur {v.Values.Count}." + (targets.Count > 0 ? $"\n{advisedTip}" : "");
                     cells.Add(T(StatValue(x, v.Average), 13, Tok.Text2, mono: true));
-                    cells.Add(Tip(Strip(v, 150), detail));
+                    cells.Add(Tip(new StatStrip(v.Mine, v.Values, v.Average, targets), detail));
                     cells.Add(Tip(T(words, 12, wordsColor), detail));
                 }
                 else cells.AddRange([T("—", 13, Tok.Faint), new Border(), new Border()]);
             }
+            else cells.Add(targets.Count > 0 ? Tip(new StatStrip(x.BenchValue, [], null, targets), advisedTip) : new Border());
             rows.Children.Add(TableRow(Columns(cols, cells.ToArray()), x.Def.Key == selected, () => update(st => st.Stat = x.Def.Key)));
         }
         body.Children.Add(new Border { Margin = new Thickness(-14, 0), Child = rows });
 
-        // Quoi faire : monter les stats utiles sous la moyenne (où les trouver), et, si la famille dépasse, où reprendre de la place.
+        // Quoi faire : monter les stats sous une valeur conseillée ou sous la moyenne (où les trouver), puis où reprendre de la place.
         if (f.Raise.Count > 0)
-            body.Children.Add(T("↑ À monter : " + string.Join(" · ", f.Raise.Select(x =>
-                $"{x.Stat.Def.Name} ({(players ? "en dessous de la moyenne" : "sous la part visée")}) : {x.Where}")) + ".", 12, Tok.Text, wrap: true).WithLineHeight(1.5));
+            body.Children.Add(T("↑ À monter : " + string.Join(" · ", f.Raise.Select(x => $"{x.Stat.Def.Name} ({x.Why}) : {x.Where}")) + ".",
+                12, Tok.Text, wrap: true).WithLineHeight(1.5));
         // Les stats utiles en dessous qu'on ne peut plus aller chercher : le dire, plutôt que de les taire.
         var stuck = f.Players.Where(v => v.Verdict < 0 && v.Stat.Weight >= 0.6 && f.Raise.All(x => x.Stat != v.Stat)).Select(v => v.Stat.Def.Name).ToList();
         if (stuck.Count > 0)
             body.Children.Add(T($"{string.Join(", ", stuck)} : en dessous aussi, mais plus rien à prendre sur tes pièces actuelles ni tes cases Daevanion ; " +
                 "elles monteront avec tes prochaines pièces (écran Équipement).", 12, Tok.Muted, wrap: true).WithLineHeight(1.5));
         if (f.Free.Count > 0)
-            body.Children.Add(T("↓ Où reprendre de la place, aux relances de stats secondaires et aux choix Daevanion : " + string.Join(", ", f.Free.Select(x =>
-                $"{x.Def.Name} ({(f.Vs(x)?.Verdict > 0 ? "au-dessus de la moyenne" : "peu utile pour ta classe")})")) + ".", 12, Tok.Text2, wrap: true).WithLineHeight(1.5));
+            body.Children.Add(T("↓ Où reprendre de la place, aux relances de stats secondaires et aux choix Daevanion : " +
+                string.Join(", ", f.Free.Select(x => $"{x.Stat.Def.Name} ({x.Why})")) + ".", 12, Tok.Text2, wrap: true).WithLineHeight(1.5));
         if (f.Raise.Count == 0 && f.Free.Count == 0 && Math.Abs(c.Gap) <= tolerance)
             body.Children.Add(T("Rien à faire dans cette famille.", 12, Tok.Muted));
 
@@ -1491,7 +1543,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         void Define(string term, string text) => how.Children.Add(ColumnsSpaced("150,*", 12, T(term, 12, Tok.Text, FontWeight.SemiBold), T(text, 12, Tok.Text2, wrap: true)));
         Define("Part", "ce que tu as mis dans une famille, sur tes stats ajustables : stats secondaires des pièces, cases Daevanion, titres, stats divines. " +
                        "Les stats fixes des pièces (la DÉF d'une armure, l'ATQ d'une arme) n'y sont pas.");
-        Define("Conseillé", $"la part visée pour un {cls} ({r.Profile.Role.Name.ToLowerInvariant()}) en {Mode}, tirée des poids de stats de la classe : une base de réglage, pas une moyenne de joueurs.");
+        Define("Part conseillée", $"la part visée par famille pour un {cls} ({r.Profile.Role.Name.ToLowerInvariant()}) en {Mode}, tirée des poids de stats de la classe : une base de réglage, pas une moyenne de joueurs.");
+        Define("Conseillé ▾", $"la valeur que visent les guides du {cls} pour chaque stat (Précision, CRIT…), triangle vert sur la ligne ; sans chiffre dans " +
+                              "les guides, « le plus possible » pour une stat prioritaire, qui n'a pas de plafond. Ce que lisent les guides, pas ce que font les joueurs.");
         Define("Moyenne joueurs", cmp.PeersText is { } who
             ? $"{who[0].ToString().ToUpperInvariant()}{who[1..]}, stats totales calculées comme les tiennes. « Dans la moyenne » : à 3 % près."
             : r.Mode == GameMode.PvE ? "pas d'échantillon de joueurs pour ta classe à ton niveau." : "relevée en JcE seulement : passe en vue JcE pour la voir.");
