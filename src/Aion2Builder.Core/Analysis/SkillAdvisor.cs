@@ -112,6 +112,12 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         var fights = Measured(combats, p.Mode);
         var chains = fights.Count > 0 ? Combat.CombatAnalyzer.Chains(fights, c.Skills.Select(s => Norm(s.Name)).ToHashSet()) : [];
         var measured = fights.Count > 0 ? Combat.CombatAnalyzer.Shares(fights, chains) : null;
+        if (measured is not null)
+        {
+            // Part de chaque suite à elle seule, pour montrer ce que contient la part de son sort.
+            var alone = Combat.CombatAnalyzer.Shares(fights, []);
+            chains = chains.Select(l => l with { Share = alone.GetValueOrDefault(Norm(l.Skill)) }).ToList();
+        }
         var shares = measured ?? DamageShares(p);
         var mode = p.Mode == GameMode.PvP ? "JcJ" : "JcE";
 

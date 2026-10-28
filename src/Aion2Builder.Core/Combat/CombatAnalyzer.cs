@@ -304,6 +304,9 @@ public sealed class CombatAnalyzer(GameDatabase db)
 /// </summary>
 public sealed record ChainLink(string Skill, string Parent, string? Via, double Lag, double Regular, int Uses)
 {
+    /// <summary>Part des dégâts de la suite elle-même (déjà comptée dans la part de <see cref="Parent"/>).</summary>
+    public double Share { get; init; }
+
     /// <summary>« Coup désespéré (après Coup opportun) → Frappe féroce : 92 % de ses lancers, 0,7 s après ».</summary>
     public string Text => $"{Skill}{(Via is null ? "" : $" (après {Via})")} → {Parent} : {Fmt.Pct(Regular)} de ses lancers, {Fmt.Num(Math.Round(Lag, 1))} s après";
 }

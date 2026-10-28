@@ -40,11 +40,45 @@ public sealed record CategoryShare(StatCategory Category, double Budget, double 
     public double Gap => Share - Target;
 }
 
+/// <summary>
+/// Une stat face aux joueurs de comparaison : leurs valeurs (le % pour une stat en %, la valeur plate sinon, comme
+/// <see cref="StatTotal.BenchValue"/>), leur moyenne, et combien en ont moins que toi.
+/// </summary>
+public sealed record StatVsPlayers(StatTotal Stat, List<double> Values)
+{
+    public double Mine => Stat.BenchValue;
+    public double Average => Values.Count == 0 ? 0 : Values.Average();
+    public int Below => Values.Count(v => v < Mine - 1e-9);
+    /// <summary>1 au-dessus de la moyenne des joueurs, -1 en dessous, 0 dans la moyenne (à 3 % près).</summary>
+    public int Verdict => Math.Abs(Mine - Average) <= Math.Max(1e-6, 0.03 * Math.Abs(Average)) ? 0 : Mine > Average ? 1 : -1;
+}
+
+/// <summary>Une stat à monter et où la trouver encore (cases Daevanion fermées, stat secondaire possible, titres).</summary>
+public sealed record StatToRaise(StatTotal Stat, string Where);
+
+/// <summary>
+/// Une famille de stats : ta part des stats ajustables face à la part conseillée pour la classe, ses stats (face aux joueurs
+/// quand l'échantillon existe), celles à monter et, si la famille dépasse la part conseillée, celles où reprendre de la place.
+/// </summary>
+public sealed record FamilyReview(CategoryShare Share, List<StatTotal> Stats, List<StatVsPlayers> Players, List<StatToRaise> Raise, List<StatTotal> Free)
+{
+    public StatVsPlayers? Vs(StatTotal x) => Players.FirstOrDefault(v => v.Stat.Def.Key == x.Def.Key);
+}
+
+/// <summary>
+/// Les stats famille par famille. <see cref="Peers"/> : joueurs de comparaison (ta classe, niveau 45, niveau d'objet le plus
+/// proche du tien), null sans échantillon ou en JcJ (l'échantillon est relevé en JcE).
+/// </summary>
+public sealed record StatComparison(List<BenchPlayer>? Peers, string? PeersText, List<FamilyReview> Families);
+
 /// <param name="OtherModeBudget">Budget des stats réservées à l'autre mode (ex. "ATQ JcJ" vu en JcE), non compté ici.</param>
 public sealed record StatProfile(GameMode Mode, List<StatTotal> Stats, List<CategoryShare> Categories, double TotalBudget,
     double ChoiceBudget, double Efficiency, double OtherModeBudget, List<string> Unrecognized)
 {
     public StatTotal? Get(string key) => Stats.FirstOrDefault(s => s.Def.Key == key);
+
+    /// <summary>Les mêmes stats rangées par famille, face aux joueurs de ton niveau d'objet.</summary>
+    public StatComparison Comparison { get; init; } = new(null, null, []);
 }
 
 // ----- Équipement -----

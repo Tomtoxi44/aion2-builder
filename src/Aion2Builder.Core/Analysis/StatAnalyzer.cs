@@ -83,7 +83,50 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
         var otherMode = all.Where(s => s.Effect.IsStat && !Applies(s.Effect, profile.Mode))
             .Sum(s => db.Stat(s.Effect.StatKey!) is { } d ? Budget(d, s.Effect.IsPercent ? 0 : s.Effect.Value, s.Effect.IsPercent ? s.Effect.Value : 0) : 0);
 
-        return new StatProfile(profile.Mode, stats, categories, total, choiceTotal, efficiency, otherMode, unrecognized);
+        return new StatProfile(profile.Mode, stats, categories, total, choiceTotal, efficiency, otherMode, unrecognized)
+        {
+            Comparison = Compare(stats, categories, c, profile),
+        };
+    }
+
+    /// <summary>
+    /// Famille par famille : ta part face à la part conseillée ; chaque stat qui compte face à la moyenne des joueurs de ta
+    /// classe au niveau d'objet le plus proche (JcE seulement : l'échantillon est en JcE) ; à monter : les stats utiles sous
+    /// la moyenne (sous la part visée, sans joueurs) encore trouvables ; si la famille dépasse la part conseillée, où reprendre
+    /// de la place : ses stats au-dessus de la moyenne ou peu utiles à la classe.
+    /// </summary>
+    StatComparison Compare(List<StatTotal> stats, List<CategoryShare> categories, CharacterSnapshot c, ResolvedProfile p)
+    {
+        var tolerance = db.Settings.Stats.CategoryTolerance;
+        var peers = p.Mode == GameMode.PvE ? Peers(p, c) : null;
+        var obtainable = Obtainable(c, p);
+        var families = categories.Select(cat =>
+        {
+            var own = stats.Where(x => x.Def.Category == cat.Category && (x.Weight >= 0.5 || x.Share >= 0.02 || x.ExpectedShare >= 0.03))
+                .OrderByDescending(x => x.Weight).ThenByDescending(x => x.Share).ToList();
+            var vs = peers is null ? [] : own.Select(x => new StatVsPlayers(x, ClassBenchmark.Sample(peers, x.Def.Key))).ToList();
+            int Verdict(StatTotal x) => vs.FirstOrDefault(v => v.Stat == x)?.Verdict ?? (x.Deficit > 0.01 ? -1 : 0);
+            var raise = own.Where(x => x.Weight >= 0.6 && obtainable.ContainsKey(x.Def.Key) && Verdict(x) < 0)
+                .Take(3).Select(x => new StatToRaise(x, WhereToFind(x, obtainable))).ToList();
+            var free = cat.Gap > tolerance
+                ? own.Where(x => x.Share >= 0.01 && (Verdict(x) > 0 || x.Weight < 0.6) && !(x.Weight >= 0.6 && Verdict(x) < 0))
+                    .OrderByDescending(x => Verdict(x) > 0).ThenBy(x => x.Weight).ThenByDescending(x => x.Share).Take(3).ToList()
+                : [];
+            return new FamilyReview(cat, own, vs, raise, free);
+        }).ToList();
+        return new StatComparison(peers, peers is null ? null : PeersText(p, c, peers), families);
+    }
+
+    /// <summary>Où ce personnage peut encore trouver la stat ; à défaut, où elle se trouve en général.</summary>
+    static string WhereToFind(StatTotal t, Dictionary<string, Availability> obtainable)
+    {
+        if (!obtainable.TryGetValue(t.Def.Key, out var a))
+            return t.Def.Where.Count > 0 ? string.Join(", ", t.Def.Where.Take(2)) : "stats secondaires";
+        var parts = new List<string>();
+        if (a.Nodes > 0) parts.Add($"{a.Nodes} case(s) Daevanion encore fermée(s)");
+        if (a.Slots.Count > 0) parts.Add($"stat secondaire possible sur : {string.Join(", ", a.Slots.Take(4))}");
+        if (a.Title) parts.Add("titres");
+        return string.Join(" ; ", parts);
     }
 
     /// <summary>Points de budget d'une stat : un % d'une stat plate s'applique au total plat déjà acquis.</summary>
@@ -163,16 +206,7 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
         // On ne conseille que des stats que ce personnage peut réellement aller chercher.
         var obtainable = Obtainable(c, p);
         bool Can(StatTotal t) => obtainable.ContainsKey(t.Def.Key);
-        string Where(StatTotal t)
-        {
-            if (!obtainable.TryGetValue(t.Def.Key, out var a))
-                return t.Def.Where.Count > 0 ? string.Join(", ", t.Def.Where.Take(2)) : "stats secondaires";
-            var parts = new List<string>();
-            if (a.Nodes > 0) parts.Add($"{a.Nodes} case(s) Daevanion encore fermée(s)");
-            if (a.Slots.Count > 0) parts.Add($"stat secondaire possible sur : {string.Join(", ", a.Slots.Take(4))}");
-            if (a.Title) parts.Add("titres");
-            return string.Join(" ; ", parts);
-        }
+        string Where(StatTotal t) => WhereToFind(t, obtainable);
         StatTotal? Wanted(StatCategory? category) =>
             sp.Stats.Where(x => (category is null || x.Def.Category == category) && x.Weight > s.LowWeight && Can(x))
                 .OrderByDescending(x => x.Deficit * x.Weight).FirstOrDefault();
@@ -192,8 +226,8 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
             var take = Wanted(u.Category);
             var big = Math.Max(o.Gap, -u.Gap) > 2 * s.CategoryTolerance;
             findings.Add(new Finding(Area.Stats, big ? Severity.Important : Severity.Advice,
-                $"Répartition : plus {GameDatabase.Of(o.Category)} que la cible, moins {GameDatabase.Of(u.Category)}",
-                $"{Line(o)}. {Line(u)}. (Cible : la répartition conseillée pour {who}, tirée des poids de stats de la classe ; c'est une base théorique, pas une moyenne de joueurs. « Stats ajustables » = stats secondaires, Daevanion, titres et stats divines, hors stats fixes des pièces.)",
+                $"Répartition : plus {GameDatabase.Of(o.Category)} que conseillé, moins {GameDatabase.Of(u.Category)}",
+                $"{Line(o)}. {Line(u)}. (Conseillé : la répartition visée pour {who}, tirée des poids de stats de la classe ; une base de réglage, pas une moyenne de joueurs. « Stats ajustables » = stats secondaires, Daevanion, titres et stats divines, hors stats fixes des pièces.)",
                 take is null
                     ? $"Lors des relances de stats secondaires et au prochain changement de pièce, abandonne « {give.Def.Name} »."
                     : $"Lors des relances de stats secondaires, des choix Daevanion et des changements de pièce, remplace « {give.Def.Name} » par « {take.Def.Name} » ({Where(take)}).",
@@ -202,11 +236,11 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
         else
         {
             foreach (var o in over)
-                findings.Add(new Finding(Area.Stats, Severity.Advice, $"Plus {GameDatabase.Of(o.Category)} que la cible", $"{Line(o)}.",
+                findings.Add(new Finding(Area.Stats, Severity.Advice, $"Plus {GameDatabase.Of(o.Category)} que conseillé", $"{Line(o)}.",
                     Wanted(null) is { } best ? $"Réoriente une partie vers « {best.Def.Name} » ({Where(best)})." : null, 35));
             foreach (var u in under)
                 if (Wanted(u.Category) is { } take)
-                    findings.Add(new Finding(Area.Stats, Severity.Advice, $"Moins {GameDatabase.Of(u.Category)} que la cible",
+                    findings.Add(new Finding(Area.Stats, Severity.Advice, $"Moins {GameDatabase.Of(u.Category)} que conseillé",
                         $"{Line(u)}.", $"Cherche « {take.Def.Name} » ({Where(take)}).", 40));
         }
 
@@ -220,21 +254,19 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
                 25 + 100 * w.Share));
         }
 
-        // 2 bis. Stats importantes où la plupart des joueurs de la classe à ton niveau d'objet font mieux (même calcul, JcE
-        // seulement : l'échantillon est en JcE). Pas tout l'échantillon : les stats montent avec le niveau d'objet.
-        if (p.Mode == GameMode.PvE && Peers(p, c) is { } peers)
+        // 2 bis. Stats importantes sous la moyenne des joueurs de la classe à ton niveau d'objet (même calcul, JcE seulement :
+        // l'échantillon est en JcE). Pas tout l'échantillon : les stats montent avec le niveau d'objet.
+        if (sp.Comparison is { Peers: not null, PeersText: { } peersText })
         {
-            var behind = sp.Stats
-                .Where(x => x.Weight >= 0.6 && Rank(peers, x) < 0.25)
-                .OrderByDescending(x => x.Weight).Take(3).ToList();
+            var behind = sp.Comparison.Families.SelectMany(f => f.Players).Where(v => v.Verdict < 0 && v.Stat.Weight >= 0.6)
+                .OrderByDescending(v => v.Stat.Weight).Take(3).ToList();
             string Value(StatTotal x, double v) => x.Def.Kind == StatKind.Percent ? $"{Fmt.Num(v)} %" : Fmt.Num(v);
             if (behind.Count > 0)
                 findings.Add(new Finding(Area.Stats, Severity.Advice,
-                    $"{string.Join(", ", behind.Select(x => x.Def.Name))} : en retard sur les joueurs de ton niveau d'objet",
-                    string.Join(" · ", behind.Select(x =>
-                        $"{x.Def.Name} : {Value(x, x.BenchValue)}, médiane {Value(x, ClassBenchmark.Quantile(ClassBenchmark.Sample(peers, x.Def.Key), 0.5))} " +
-                        $"(devant {Ahead(peers, x)} sur {peers.Count}{(Rank(peers, x) * peers.Count - Ahead(peers, x) is > 0 and var t ? $", autant que {t * 2:0}" : "")})")) + $". Joueurs comparés : {PeersText(p, c, peers)}, stats totales calculées comme les tiennes.",
-                    $"Vise au moins la médiane : {string.Join(" ; ", behind.Select(x => $"{x.Def.Name} ({Where(x)})"))}.",
+                    $"{string.Join(", ", behind.Select(v => v.Stat.Def.Name))} : sous la moyenne des joueurs de ton niveau d'objet",
+                    string.Join(" · ", behind.Select(v => $"{v.Stat.Def.Name} : {Value(v.Stat, v.Mine)}, moyenne {Value(v.Stat, v.Average)}")) +
+                    $". Joueurs comparés : {peersText}, stats totales calculées comme les tiennes.",
+                    $"Vise au moins la moyenne : {string.Join(" ; ", behind.Select(v => $"{v.Stat.Def.Name} ({Where(v.Stat)})"))}.",
                     45 + 10 * behind.Count));
         }
 
