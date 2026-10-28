@@ -61,7 +61,7 @@ jobs:
         shell: pwsh
         run: |
           gh release create "v$env:VERSION" publish\Aion2Builder.exe --target "$env:GITHUB_SHA" --title "Aion 2 Builder v$env:VERSION" `
-            --notes "Exe Windows autonome (sans installation), compilé par GitHub Actions depuis $env:GITHUB_SHA."
+            --notes "Exe Windows autonome (sans installation), compilé par GitHub Actions depuis $env:GITHUB_SHA. Code signing policy (SignPath Foundation) : https://github.com/Tomtoxi44/aion2-builder#code-signing-policy"
 
       - name: Dépôt sur Aion 2 Todo
         if: env.BUILDER_UPLOAD_KEY != ''

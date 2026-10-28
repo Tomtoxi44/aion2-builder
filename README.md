@@ -2,7 +2,7 @@
 
 # Aion 2 Builder
 
-[Télécharger](https://aion2-todo-7275.azurewebsites.net/api/downloads/builder/file) · [Confidentialité](#confidentialité-privacy-policy) · [Licence MIT](LICENSE) · outil non officiel, non affilié à NCSOFT
+[Télécharger](https://aion2-todo-7275.azurewebsites.net/api/downloads/builder/file) · [Versions](https://github.com/Tomtoxi44/aion2-builder/releases) · [Confidentialité](#confidentialité-privacy-policy) · [Signature du code](#code-signing-policy) · [Licence MIT](LICENSE) · outil non officiel, non affilié à NCSOFT
 
 Application locale (.NET 10) qui importe ton personnage AION 2 depuis le site officiel et te dit, **pour ta classe et
 en vue JcE (PvE) ou JcJ (PvP)** :
@@ -261,6 +261,24 @@ Aion 2 Builder n'envoie rien sans que tu le demandes, sauf la vérification des 
   statistique d'usage, rien n'est envoyé ailleurs.
 - Ce que l'application garde (personnages importés, préférences, clé des familiers) reste sur ton PC, dans
   `%APPDATA%\Aion2Builder` ; supprimer ce dossier efface tout.
+
+## Code signing policy
+
+Windows releases of Aion 2 Builder are signed through the free open source program of the
+[SignPath Foundation](https://signpath.org/) (application pending: until it is accepted, releases are not signed).
+Once accepted: free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
+[SignPath Foundation](https://signpath.org/).
+
+- Committers and reviewers: [Tomtoxi44](https://github.com/Tomtoxi44) (sole maintainer)
+- Approvers: [Tomtoxi44](https://github.com/Tomtoxi44)
+
+Every release is built by GitHub Actions from this repository (workflow `Build`) and signed only after manual approval.
+Only binaries built from this repository's source are signed. Privacy policy: see
+[Confidentialité](#confidentialité-privacy-policy) (the app sends nothing without the user's action, except the update
+check, which can be turned off).
+
+En français : chaque version est compilée par GitHub Actions depuis ce dépôt, puis signée par SignPath Foundation après
+approbation manuelle du mainteneur. Une version signée passe Smart App Control de Windows.
 
 ## Licence
 
