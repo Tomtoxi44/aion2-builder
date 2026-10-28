@@ -181,6 +181,7 @@ public sealed class MainWindow : Window
         Opened += async (_, _) => await LoadServersAsync(force: false);
         Updater.CleanOld();
         Opened += async (_, _) => await CheckUpdateAsync(manual: false);
+        Opened += (_, _) => Updater.ConfirmStarted(); // après une mise à jour : l'ancienne version attend ce signal pour se fermer
         var updateTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(6) };
         updateTimer.Tick += async (_, _) => await CheckUpdateAsync(manual: false);
         updateTimer.Start();

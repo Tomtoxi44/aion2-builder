@@ -20,6 +20,12 @@ sealed class Program
             File.WriteAllLines(output, words.Select(w => $"{N(w.X)}\t{N(w.Y)}\t{N(w.Width)}\t{N(w.Height)}\t{w.Text}"));
             return;
         }
+        // Essai sans fenêtre, lancé par la mise à jour avant de remplacer l'exe : 0 si cette version démarre sur ce PC.
+        if (args is ["--selftest"])
+        {
+            Environment.ExitCode = Updater.SelfTest();
+            return;
+        }
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 
