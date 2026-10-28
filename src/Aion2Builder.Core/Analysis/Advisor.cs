@@ -7,8 +7,8 @@ namespace Aion2Builder.Analysis;
 public sealed class Advisor(GameDatabase db)
 {
     /// <param name="pets">Collection de familiers (Pet Meter via Aion 2 Todo), liée au compte et non au personnage ; null si non reliée.</param>
-    /// <param name="combat">Dernier combat mesuré (NotMeter) : parts de dégâts réelles et conseils de combat.</param>
-    public AdviceReport Analyze(CharacterSnapshot c, GameMode mode, PlayerInputs? inputs = null, PetCollection? pets = null, Combat.CombatLog? combat = null)
+    /// <param name="combats">Combats gardés, les plus récents d'abord : parts de dégâts réelles, et conseils du dernier en JcE.</param>
+    public AdviceReport Analyze(CharacterSnapshot c, GameMode mode, PlayerInputs? inputs = null, PetCollection? pets = null, IReadOnlyList<Combat.CombatLog>? combats = null)
     {
         inputs ??= new PlayerInputs();
         var profile = db.Resolve(c.ClassCode, mode, inputs.UsesDesigned);
@@ -19,7 +19,7 @@ public sealed class Advisor(GameDatabase db)
         var gearAdvisor = new GearAdvisor(db, stats);
         var gear = gearAdvisor.Plan(c, profile, sp);
         var skillAdvisor = new SkillAdvisor(db);
-        var skills = skillAdvisor.Plan(c, profile, inputs, combat);
+        var skills = skillAdvisor.Plan(c, profile, inputs, combats);
         var planner = new DaevanionPlanner(db, stats);
         var daevanion = planner.Plan(c, profile, sp, inputs);
         var engravingAdvisor = new EngravingAdvisor(db);
@@ -33,7 +33,7 @@ public sealed class Advisor(GameDatabase db)
         findings.AddRange(planner.Findings(daevanion, c, profile));
         findings.AddRange(engravingAdvisor.Findings(engravings, profile));
         findings.AddRange(petAdvisor.Findings(petPlan, profile));
-        if (combat is { Skills.Count: > 0 } && mode == GameMode.PvE)
+        if (combats?.FirstOrDefault(l => l.Kind is null or "boss" or "dummy") is { Skills.Count: > 0 } combat && mode == GameMode.PvE)
             findings.AddRange(new Combat.CombatAnalyzer(db).Analyze(combat, profile).Findings.Where(f => f.Severity <= Severity.Advice)
                 .Select(f => f with { Title = $"Combat : {f.Title}" }));
         if (profile.Class.Notes.Count > 0)

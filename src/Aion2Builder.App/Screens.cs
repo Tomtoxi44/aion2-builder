@@ -1371,8 +1371,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         if (x.Share - x.ExpectedShare > 0.08)
             return x.Weight < 0.6
                 ? ($"Tu y mets {Pts(x.Share - x.ExpectedShare)} points de part de trop : à réduire au profit des stats manquantes.", Tok.Warn)
-                : ("Au-dessus du repère, mais c'est une stat prioritaire pour ta classe : rien à réduire.", Tok.Good);
-        return ("Proche du repère de ta classe.", Tok.Good);
+                : ("Au-dessus de la cible, mais c'est une stat prioritaire pour ta classe : rien à réduire.", Tok.Good);
+        return ("Proche de la cible de ta classe.", Tok.Good);
     }
 
     Control Stats()
@@ -1401,12 +1401,14 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             families.Children.Add(Tip(ColumnsSpaced("80,*,220", 16, T(GameDatabase.CategoryName(c.Category), 13),
                 Bar(c.Share * 1.6, color, 8, c.Target * 1.6), numbers), GameDatabase.CategoryDescription(c.Category)));
         }
-        families.Children.Add(Collapsible("Qu'est-ce qu'une stat ajustable ? (trait blanc = repère)",
+        families.Children.Add(Collapsible("Qu'est-ce qu'une stat ajustable ? (trait blanc = cible)",
             "Ce que tu peux changer : stats secondaires des pièces, cases Daevanion, titres, stats divines. Les stats fixes d'une pièce " +
-            "(la DÉF d'une armure, l'ATQ d'une arme) viennent avec elle et restent hors répartition.",
+            "(la DÉF d'une armure, l'ATQ d'une arme) viennent avec elle et restent hors répartition. La cible (trait blanc) est la part " +
+            "conseillée pour ta classe et son rôle, tirée des poids de stats : une base théorique, pas une moyenne de joueurs. La colonne " +
+            "« Joueurs ≈ toi » compare tes totaux aux joueurs de ta classe au niveau d'objet le plus proche du tien.",
             s.StatsHow, () => update(st => st.StatsHow = !st.StatsHow), default));
 
-        const string cols = "150,100,90,70,70,90,*";
+        const string cols = "150,100,90,70,70,110,*";
         var rows = new List<Control>();
         var selected = SelectedStat?.Def.Key;
         foreach (var x in VisibleStats)
@@ -1428,27 +1430,35 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             rows.Add(Clickable(T(s.AllStats ? "▴ seulement les stats qui comptent" : $"▾ voir les {hidden} autres stats (peu utiles à ta classe et presque absentes)", 12, Accent.Main),
                 () => update(st => st.AllStats = !st.AllStats), hover: Tok.Hover, padding: new Thickness(20, 8)));
         return Page($"Stats · {Mode}", badges,
-            Card(families, "Répartition des stats ajustables", T("barre = ta part · trait blanc = repère", 11, Tok.Muted, mono: true)),
+            Card(families, "Répartition des stats ajustables", T("barre = ta part · trait blanc = cible théorique de ta classe", 11, Tok.Muted, mono: true)),
             TodoCards(Area.Stats),
             TableCard(s.AllStats ? "Toutes les stats" : "Stats qui comptent pour ta classe", T("clic = détail dans l'inspecteur", 11, Tok.Muted, mono: true),
-                TableHeader(cols, "Stat", "Famille", "Total", "Part", "Repère", "vs joueurs", "Poids"), rows));
+                TableHeader(cols, "Stat", "Famille", "Total", "Part", "Cible", "Joueurs ≈ toi", "Poids"), rows));
     }
 
-    /// <summary>Échantillon des joueurs de la classe pour une stat (repères calculés en JcE : rien en JcJ).</summary>
-    List<double>? PlayersSample(StatTotal x) =>
-        r.Mode == GameMode.PvE && r.Profile.Class.Benchmark?.Stats.TryGetValue(x.Def.Key, out var sample) == true && sample.Count >= 10 ? sample : null;
+    /// <summary>
+    /// Joueurs de comparaison : ceux de ta classe au niveau d'objet le plus proche du tien (les stats montent avec lui) ;
+    /// échantillon relevé en JcE, rien en JcJ.
+    /// </summary>
+    List<BenchPlayer>? Peers => r.Mode == GameMode.PvE ? StatAnalyzer.Peers(r.Profile, r.Character) : null;
+
+    /// <summary>Valeurs de la stat chez ces joueurs.</summary>
+    List<double>? PlayersSample(StatTotal x) => Peers is { } peers ? ClassBenchmark.Sample(peers, x.Def.Key) : null;
 
     string StatValue(StatTotal x, double v) => x.Def.Kind == StatKind.Percent ? $"{Fmt.Num(v)} %" : Fmt.Num(v);
 
-    /// <summary>Part des joueurs de la classe sous ta valeur ; en couleur seulement pour les stats qui comptent.</summary>
+    /// <summary>Combien de ces joueurs ont moins que toi (« 5/8 ») ; en couleur seulement pour les stats qui comptent.</summary>
     (string Text, IBrush Color, string Tip) PlayersRank(StatTotal x)
     {
-        if (PlayersSample(x) is not { } sample)
-            return ("—", Tok.Faint, r.Mode == GameMode.PvE ? "Pas de repère pour cette stat." : "Repères des joueurs calculés en JcE : passe en vue JcE.");
-        var pct = ClassBenchmark.Percentile(sample, x.BenchValue);
-        var color = x.Weight < 0.5 ? Tok.Muted : pct < 0.25 ? Tok.Bad : pct < 0.5 ? Tok.Warn : pct >= 0.75 ? Tok.Good : Tok.Text2;
-        return ($"> {Fmt.Pct(pct)}", color,
-            $"Tu dépasses {Fmt.Pct(pct)} des {sample.Count} joueurs niveau 45 de ta classe (médiane {StatValue(x, ClassBenchmark.Quantile(sample, 0.5))}, totaux calculés comme les tiens, en JcE).");
+        if (Peers is not { } peers || PlayersSample(x) is not { } sample)
+            return ("—", Tok.Faint, r.Mode == GameMode.PvE ? "Pas d'échantillon de joueurs pour ta classe à ton niveau." : "Joueurs relevés en JcE : passe en vue JcE.");
+        var ahead = StatAnalyzer.Ahead(peers, x);
+        var share = StatAnalyzer.Rank(peers, x);
+        var tied = peers.Count(o => Math.Abs(o.Stats.GetValueOrDefault(x.Def.Key) - x.BenchValue) <= 1e-9);
+        var color = x.Weight < 0.5 ? Tok.Muted : share < 0.25 ? Tok.Bad : share < 0.5 ? Tok.Warn : share >= 0.75 ? Tok.Good : Tok.Text2;
+        return ($"{ahead}/{peers.Count}", color,
+            $"Tu as plus que {ahead} d'entre eux sur {peers.Count}{(tied > 0 ? $", autant que {tied}" : "")} : {StatAnalyzer.PeersText(r.Profile, r.Character, peers)}. " +
+            $"Médiane {StatValue(x, ClassBenchmark.Quantile(sample, 0.5))}, toi {StatValue(x, x.BenchValue)} (stats totales calculées comme les tiennes, en JcE).");
     }
 
     static Border TableHeader(string cols, params string[] titles) => new()
@@ -1478,7 +1488,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             ("famille", GameDatabase.CategoryName(x.Def.Category), null),
             ("total", x.Display, null),
             ("part", Fmt.Pct(x.Share), ShareColor(x)),
-            ("repère", Fmt.Pct(x.ExpectedShare), null),
+            ("cible", Fmt.Pct(x.ExpectedShare), null),
             ("poids", x.Weight.ToString("0.00"), null),
         ]));
         body.Children.Add(new Border
@@ -1487,10 +1497,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             Child = T(verdict, 13, wrap: true).WithLineHeight(1.5),
         });
         if (PlayersSample(x) is { } sample)
-            body.Children.Add(Field("Comparé aux joueurs de ta classe",
+            body.Children.Add(Field("Comparé aux joueurs de ton niveau d'objet",
                 $"Toi : {StatValue(x, x.BenchValue)} · médiane : {StatValue(x, ClassBenchmark.Quantile(sample, 0.5))} · " +
-                $"quart inférieur ≤ {StatValue(x, ClassBenchmark.Quantile(sample, 0.25))}, quart supérieur ≥ {StatValue(x, ClassBenchmark.Quantile(sample, 0.75))}. " +
-                $"Tu dépasses {Fmt.Pct(ClassBenchmark.Percentile(sample, x.BenchValue))} des {sample.Count} joueurs niveau 45 observés (même calcul, JcE).",
+                $"de {StatValue(x, sample.Min())} à {StatValue(x, sample.Max())}. Tu as plus que {StatAnalyzer.Ahead(Peers!, x)} d'entre eux sur {sample.Count} : " +
+                $"{StatAnalyzer.PeersText(r.Profile, r.Character, Peers!)} (même calcul, JcE).",
                 PlayersRank(x).Color));
         body.Children.Add(Field("Où la trouver", x.Def.Where.Count > 0 ? string.Join(", ", x.Def.Where) : "—", Tok.Text2));
         var sources = x.Sources.GroupBy(z => z.Source)
@@ -1749,6 +1759,11 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             list.Children.Add(T("Pas de rotation à simuler pour cette classe : importe un combat (écran Combat) pour voir tes vraies parts de dégâts.", 13, Tok.Muted, wrap: true));
             return list;
         }
+        // D'où viennent les parts, écrit en clair : tes combats mesurés, ou la rotation simulée faute de combat.
+        list.Children.Add(sk.MeasuredFights > 0
+            ? T(char.ToUpperInvariant(sk.DamageSource![0]) + sk.DamageSource[1..] + ".", 12, Tok.Good, wrap: true)
+            : T($"Simulé ({sk.DamageSource}) : aucun combat de boss ou de mannequin pour ce perso. Le Pet Meter les enregistre, ↻ sur l'écran Combat les reprend.",
+                12, Tok.Warn, wrap: true));
         var max = sk.Focus.Max(a => a.DamageShare);
         foreach (var a in sk.Focus.Take(6))
         {
@@ -1765,6 +1780,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         }
         if (sk.Focus.Count > 6)
             list.Children.Add(T($"et {sk.Focus.Count - 6} autres sorts : {Fmt.Pct(sk.Focus.Skip(6).Sum(a => a.DamageShare))} des dégâts.", 12, Tok.Muted));
+        // Suites d'enchaînement (le meter les montre à part) : comptées avec le sort lancé, celui qu'on monte.
+        foreach (var c in sk.Chains)
+            list.Children.Add(Tip(T($"↳ suite comptée avec son sort : {c.Text}", 12, Tok.Muted, wrap: true),
+                "Le meter affiche cette suite à part ; elle part du sort lancé, et c'est lui qu'on monte. Rattachée d'après l'ordre de tes lancers."));
         var maxed = sk.Focus.Take(6).All(a => a.RecommendedBase >= db.Settings.Skills.BaseMax);
         list.Children.Add(T(maxed ? $"Points déjà au maximum ({db.Settings.Skills.BaseMax}) : la suite passe par les cases Daevanion, les arcanes et l'équipement."
             : $"Les points montent un sort jusqu'à {db.Settings.Skills.BaseMax} ; au-delà, cases Daevanion, arcanes et équipement.", 12, Tok.Muted, wrap: true));

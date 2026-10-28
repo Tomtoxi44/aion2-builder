@@ -110,6 +110,21 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
         return Budget(d, flatTotal, e.Value) - Budget(d, flatTotal, 0);
     }
 
+    /// <summary>Joueurs de comparaison : ceux de la classe au niveau d'objet le plus proche (niveau 45) ; null sans échantillon.</summary>
+    public static List<BenchPlayer>? Peers(ResolvedProfile p, CharacterSnapshot c) =>
+        c.Level >= 45 && p.Class.Benchmark is { Players.Count: >= 6 } bench ? bench.Peers(c.ItemLevel) : null;
+
+    /// <summary>Nombre de ces joueurs sous ta valeur de la stat.</summary>
+    public static int Ahead(List<BenchPlayer> peers, StatTotal x) => peers.Count(o => o.Stats.GetValueOrDefault(x.Def.Key) < x.BenchValue - 1e-9);
+
+    /// <summary>Position parmi ces joueurs, de 0 à 1 : ceux sous ta valeur, plus la moitié de ceux à égalité (10 % comme la plupart n'est pas un retard).</summary>
+    public static double Rank(List<BenchPlayer> peers, StatTotal x) =>
+        (Ahead(peers, x) + 0.5 * peers.Count(o => Math.Abs(o.Stats.GetValueOrDefault(x.Def.Key) - x.BenchValue) <= 1e-9)) / Math.Max(1, peers.Count);
+
+    /// <summary>« les 8 Templiers niveau 45 au niveau d'objet le plus proche du tien (1860 à 2631 ; toi 2182) ».</summary>
+    public static string PeersText(ResolvedProfile p, CharacterSnapshot c, List<BenchPlayer> peers) =>
+        $"les {peers.Count} {p.Class.Name}s niveau 45 au niveau d'objet le plus proche du tien ({peers.Min(o => o.ItemLevel)} à {peers.Max(o => o.ItemLevel)} ; toi {c.ItemLevel})";
+
     /// <summary>Où ce personnage peut encore trouver chaque stat : cases Daevanion fermées, stats secondaires de ses pièces, titres.</summary>
     sealed class Availability
     {
@@ -177,8 +192,8 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
             var take = Wanted(u.Category);
             var big = Math.Max(o.Gap, -u.Gap) > 2 * s.CategoryTolerance;
             findings.Add(new Finding(Area.Stats, big ? Severity.Important : Severity.Advice,
-                $"Trop {GameDatabase.Of(o.Category)}, pas assez {GameDatabase.Of(u.Category)}",
-                $"{Line(o)}. {Line(u)}. (Repères pour {who} ; « stats ajustables » = stats secondaires, Daevanion, titres et stats divines, hors stats fixes des pièces.)",
+                $"Répartition : plus {GameDatabase.Of(o.Category)} que la cible, moins {GameDatabase.Of(u.Category)}",
+                $"{Line(o)}. {Line(u)}. (Cible : la répartition conseillée pour {who}, tirée des poids de stats de la classe ; c'est une base théorique, pas une moyenne de joueurs. « Stats ajustables » = stats secondaires, Daevanion, titres et stats divines, hors stats fixes des pièces.)",
                 take is null
                     ? $"Lors des relances de stats secondaires et au prochain changement de pièce, abandonne « {give.Def.Name} »."
                     : $"Lors des relances de stats secondaires, des choix Daevanion et des changements de pièce, remplace « {give.Def.Name} » par « {take.Def.Name} » ({Where(take)}).",
@@ -187,11 +202,11 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
         else
         {
             foreach (var o in over)
-                findings.Add(new Finding(Area.Stats, Severity.Advice, $"Beaucoup {GameDatabase.Of(o.Category)}", $"{Line(o)}.",
+                findings.Add(new Finding(Area.Stats, Severity.Advice, $"Plus {GameDatabase.Of(o.Category)} que la cible", $"{Line(o)}.",
                     Wanted(null) is { } best ? $"Réoriente une partie vers « {best.Def.Name} » ({Where(best)})." : null, 35));
             foreach (var u in under)
                 if (Wanted(u.Category) is { } take)
-                    findings.Add(new Finding(Area.Stats, Severity.Advice, $"Pas assez {GameDatabase.Of(u.Category)}",
+                    findings.Add(new Finding(Area.Stats, Severity.Advice, $"Moins {GameDatabase.Of(u.Category)} que la cible",
                         $"{Line(u)}.", $"Cherche « {take.Def.Name} » ({Where(take)}).", 40));
         }
 
@@ -205,21 +220,20 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
                 25 + 100 * w.Share));
         }
 
-        // 2 bis. Stats importantes sous le quart inférieur des joueurs de la classe (même calcul, JcE seulement : l'échantillon est en JcE).
-        if (p.Mode == GameMode.PvE && p.Class.Benchmark is { Stats.Count: > 0 } bench)
+        // 2 bis. Stats importantes où la plupart des joueurs de la classe à ton niveau d'objet font mieux (même calcul, JcE
+        // seulement : l'échantillon est en JcE). Pas tout l'échantillon : les stats montent avec le niveau d'objet.
+        if (p.Mode == GameMode.PvE && Peers(p, c) is { } peers)
         {
             var behind = sp.Stats
-                .Where(x => x.Weight >= 0.6 && bench.Stats.TryGetValue(x.Def.Key, out var sample) && sample.Count >= 10 && ClassBenchmark.Percentile(sample, x.BenchValue) < 0.25)
+                .Where(x => x.Weight >= 0.6 && Rank(peers, x) < 0.25)
                 .OrderByDescending(x => x.Weight).Take(3).ToList();
             string Value(StatTotal x, double v) => x.Def.Kind == StatKind.Percent ? $"{Fmt.Num(v)} %" : Fmt.Num(v);
             if (behind.Count > 0)
                 findings.Add(new Finding(Area.Stats, Severity.Advice,
-                    $"{string.Join(", ", behind.Select(x => x.Def.Name))} : sous 75 % des joueurs de ta classe",
+                    $"{string.Join(", ", behind.Select(x => x.Def.Name))} : en retard sur les joueurs de ton niveau d'objet",
                     string.Join(" · ", behind.Select(x =>
-                    {
-                        var sample = bench.Stats[x.Def.Key];
-                        return $"{x.Def.Name} : {Value(x, x.BenchValue)}, médiane {Value(x, ClassBenchmark.Quantile(sample, 0.5))} (tu dépasses {Fmt.Pct(ClassBenchmark.Percentile(sample, x.BenchValue))} d'entre eux)";
-                    })) + $". Repères : {bench.Stats.Values.First().Count} joueurs niveau 45 de la classe, totaux calculés comme les tiens.",
+                        $"{x.Def.Name} : {Value(x, x.BenchValue)}, médiane {Value(x, ClassBenchmark.Quantile(ClassBenchmark.Sample(peers, x.Def.Key), 0.5))} " +
+                        $"(devant {Ahead(peers, x)} sur {peers.Count}{(Rank(peers, x) * peers.Count - Ahead(peers, x) is > 0 and var t ? $", autant que {t * 2:0}" : "")})")) + $". Joueurs comparés : {PeersText(p, c, peers)}, stats totales calculées comme les tiennes.",
                     $"Vise au moins la médiane : {string.Join(" ; ", behind.Select(x => $"{x.Def.Name} ({Where(x)})"))}.",
                     45 + 10 * behind.Count));
         }

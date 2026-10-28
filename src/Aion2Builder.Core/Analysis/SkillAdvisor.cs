@@ -99,8 +99,9 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         public int? Rank { get; set; }
     }
 
-    /// <param name="combat">Combat mesuré (NotMeter) : ses parts de dégâts remplacent la simulation en JcE.</param>
-    public SkillPlan Plan(CharacterSnapshot c, ResolvedProfile p, PlayerInputs inputs, Combat.CombatLog? combat = null)
+    /// <param name="combats">Combats gardés, les plus récents d'abord : en JcE ceux de boss et de mannequin, en JcJ ceux contre des
+    /// joueurs ; leurs parts de dégâts (additionnées, suites d'enchaînement comptées avec leur sort) remplacent la simulation.</param>
+    public SkillPlan Plan(CharacterSnapshot c, ResolvedProfile p, PlayerInputs inputs, IReadOnlyList<Combat.CombatLog>? combats = null)
     {
         var set = db.Settings.Skills;
         var bonus = BonusLevels(c);
@@ -108,7 +109,9 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         var openable = c.Boards.SelectMany(b => b.Nodes).Where(n => !n.Open && n.IsSkill)
             .SelectMany(n => n.Effects.Where(e => e.IsSkill)).GroupBy(e => Norm(e.SkillName!))
             .ToDictionary(g => g.Key, g => g.Count());
-        var measured = combat is { Skills.Count: > 0 } && p.Mode == GameMode.PvE ? Combat.CombatAnalyzer.Shares(combat) : null;
+        var fights = Measured(combats, p.Mode);
+        var chains = fights.Count > 0 ? Combat.CombatAnalyzer.Chains(fights, c.Skills.Select(s => Norm(s.Name)).ToHashSet()) : [];
+        var measured = fights.Count > 0 ? Combat.CombatAnalyzer.Shares(fights, chains) : null;
         var shares = measured ?? DamageShares(p);
         var mode = p.Mode == GameMode.PvP ? "JcJ" : "JcE";
 
@@ -168,7 +171,7 @@ public sealed partial class SkillAdvisor(GameDatabase db)
                 Move(donor, r);
             }
 
-        var decisions = rows.ToDictionary(r => r, r => Decide(r, moved, mode));
+        var decisions = rows.ToDictionary(r => r, r => Decide(r, moved, mode, measured is not null ? "mesurés" : "simulés"));
         var advice = rows.ToDictionary(r => r, r => new SkillAdvice(r.Skill, KindOf(r.Skill), r.Known?.Role ?? DefaultRole(r.Skill),
             r.Known?.Why ?? DefaultWhy(r.Skill, p), r.Known is not null, r.Known?.Unverified ?? false, r.Priority,
             r.Base, r.Bonus, r.Target, r.Rec, openable.GetValueOrDefault(Norm(r.Skill.Name)), InBar(r.Skill))
@@ -266,22 +269,41 @@ public sealed partial class SkillAdvisor(GameDatabase db)
             moves, nextPoints, nextShards)
         {
             Focus = focus,
-            DamageSource = measured is not null ? $"mesuré : combat NotMeter du {combat!.ImportedAtUtc.ToLocalTime():dd/MM} ({combat.Duration:0} s)"
+            DamageSource = measured is not null ? Source(fights)
                 : shares.Count == 0 ? null
                 : $"rotation {(p.UsesDesigned && p.Class.Designed?.Play.ContainsKey(p.Mode) == true ? "conçue" : "des joueurs")} simulée, {mode}, 1 cible, 2 min",
             GearBonuses = gear,
             BonusWanted = wanted,
+            Chains = chains,
+            MeasuredFights = fights.Count,
         };
+    }
+
+    /// <summary>Combats dont on prend les parts de dégâts : les 10 plus récents du mode (boss et mannequin en JcE, joueurs en JcJ).</summary>
+    static List<Combat.CombatLog> Measured(IReadOnlyList<Combat.CombatLog>? combats, GameMode mode) =>
+        (combats ?? []).Where(l => l.Skills.Count > 0 && (mode == GameMode.PvP ? l.Kind == "pvp" : l.Kind is null or "boss" or "dummy"))
+            .Take(10).ToList();
+
+    /// <summary>« mesuré : 6 combats (boss, mannequin) du 24/10 au 27/10, 9 min de combat ».</summary>
+    static string Source(List<Combat.CombatLog> fights)
+    {
+        var kinds = fights.Select(l => Combat.PetMeterFights.KindName(l) ?? l.Source).Distinct();
+        var first = fights.Min(l => l.ImportedAtUtc).ToLocalTime();
+        var last = fights.Max(l => l.ImportedAtUtc).ToLocalTime();
+        var seconds = fights.Sum(l => l.Duration);
+        return $"mesuré : {(fights.Count == 1 ? "1 combat" : $"{fights.Count} combats")} ({string.Join(", ", kinds)}) " +
+               (first.Date == last.Date ? $"du {first:dd/MM}" : $"du {first:dd/MM} au {last:dd/MM}") +
+               $", {(seconds >= 120 ? $"{seconds / 60:0} min" : $"{seconds:0} s")} de combat";
     }
 
     /// <summary>
     /// Pourquoi la répartition conseillée monte, baisse ou garde une compétence : son importance dans ce mode, sa part
     /// des dégâts simulés, et qui donne ou reçoit ses points.
     /// </summary>
-    (string Full, string Short) Decide(Row r, Dictionary<(Row? From, Row To), int> moved, string mode)
+    (string Full, string Short) Decide(Row r, Dictionary<(Row? From, Row To), int> moved, string mode, string damage)
     {
         var set = db.Settings.Skills;
-        string What(Row x) => $"{Importance(x.Priority)} en {mode}" + (x.Share > 0 ? $", {Fmt.Pct(x.Share)} des dégâts simulés (n° {x.Rank})"
+        string What(Row x) => $"{Importance(x.Priority)} en {mode}" + (x.Share > 0 ? $", {Fmt.Pct(x.Share)} des dégâts {damage} (n° {x.Rank})"
             : KindOf(x.Skill) == SkillKind.Active ? ", pas de dégâts directs" : "");
         // Même mot d'importance des deux côtés : le nombre de la fiche départage.
         string Donor(Row x) => $"{x.Skill.Name} ({Importance(x.Priority)}" + (Importance(x.Priority) == Importance(r.Priority) ? $" {x.Priority:0.00} contre {r.Priority:0.00}" : "") +

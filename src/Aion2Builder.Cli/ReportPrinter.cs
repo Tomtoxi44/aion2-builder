@@ -78,6 +78,7 @@ sealed class ReportPrinter(GameDatabase db)
             foreach (var a in r.Skills.Focus.Take(6))
                 Console.WriteLine($"   {a.DamageRank,2}. {a.Skill.Name,-32} {Fmt.Pct(a.DamageShare),6}  niv. {a.TotalAfter,2} (acheté {a.RecommendedBase}, Daevanion +{a.BonusDaevanion}, arcanes +{a.BonusArcana}, équipement +{a.BonusGear})" +
                                   (a.OpenableNodes > 0 ? $"  · {a.OpenableNodes} case(s) Daevanion fermée(s)" : ""));
+            foreach (var link in r.Skills.Chains) Console.WriteLine($"   suite comptée avec son sort : {link.Text}");
             Console.WriteLine();
         }
         Console.WriteLine($"  {"Compétence",-36} {"Importance",-14} {"Dégâts",6} {"Acheté",6} {"Bonus",6} {"Conseil",8}");

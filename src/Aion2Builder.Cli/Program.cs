@@ -160,9 +160,15 @@ static async Task<int> Advise(Args cli)
     };
     if (updated != inputs) store.SaveInputs(snapshot, inputs = updated);
 
+    // Comme l'appli : combats gardés du perso (ceux du Pet Meter repris d'abord), pour les parts de dégâts mesurées.
+    var combatStore = new CombatStore();
+    var key = Path.GetFileNameWithoutExtension(store.Find(snapshot.Name, snapshot.ServerName)?.Path ?? snapshot.Name);
+    PetMeterFights.Sync(combatStore, key, snapshot.Name, db);
+    var combats = combatStore.List(key).Select(x => x.Log).ToList();
+
     var advisor = new Advisor(db);
     var pets = new PetStore().Load().Collection;
-    var reports = modes.Select(m => advisor.Analyze(snapshot, m, inputs, pets)).ToList();
+    var reports = modes.Select(m => advisor.Analyze(snapshot, m, inputs, pets, combats)).ToList();
     foreach (var r in reports) store.RecordScores(snapshot, r.Mode, r.Scores);
     if (cli.Has("json"))
     {

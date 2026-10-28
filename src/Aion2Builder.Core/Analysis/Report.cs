@@ -127,8 +127,15 @@ public sealed record SkillPlan(List<SkillAdvice> Skills, List<StigmaAdvice> Stig
 
     /// <summary>Ce qui fait les dégâts : compétences triées par part des dégâts simulés.</summary>
     public List<SkillAdvice> Focus { get; init; } = [];
-    /// <summary>Rotation simulée qui donne les parts de dégâts (« rotation conçue, JcE, 1 cible, 2 min »), null sans simulation.</summary>
+    /// <summary>
+    /// D'où viennent les parts de dégâts : « mesuré : 6 combats (boss, mannequin)… » (combats du Pet Meter ou de NotMeter)
+    /// ou la rotation simulée (« rotation conçue simulée, JcE, 1 cible, 2 min ») ; null sans l'un ni l'autre.
+    /// </summary>
     public string? DamageSource { get; init; }
+    /// <summary>Combats mesurés dont viennent les parts (0 : simulation).</summary>
+    public int MeasuredFights { get; init; }
+    /// <summary>Suites d'enchaînement comptées avec le sort lancé (parts mesurées seulement).</summary>
+    public List<Combat.ChainLink> Chains { get; init; } = [];
     /// <summary>Compétences bonus de l'équipement et des arcanes, et celles à chercher en priorité sur les prochaines.</summary>
     public List<GearSkillBonus> GearBonuses { get; init; } = [];
     public List<SkillAdvice> BonusWanted { get; init; } = [];

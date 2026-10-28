@@ -219,7 +219,91 @@ public sealed class CombatAnalyzer(GameDatabase db)
         return new CombatReport(log, skills, buffs, findings.OrderBy(f => f.Severity).ThenByDescending(f => f.Priority).ToList(), crit, back, unseen);
     }
 
-    /// <summary>Parts de dégâts mesurées, par nom de sort normalisé : remplacent la simulation dans le focus dégâts.</summary>
-    public static Dictionary<string, double> Shares(CombatLog log) =>
-        log.Skills.GroupBy(s => GameDatabase.NormalizeLabel(s.Name)).ToDictionary(g => g.Key, g => g.Sum(s => s.Share));
+    /// <summary>
+    /// Parts de dégâts mesurées sur un ou plusieurs combats (dégâts additionnés), par nom de sort normalisé : elles remplacent
+    /// la simulation dans le focus dégâts. Une suite d'enchaînement compte avec le sort lancé (<see cref="Chains"/>).
+    /// </summary>
+    public static Dictionary<string, double> Shares(IReadOnlyList<CombatLog> logs, IReadOnlyList<ChainLink> chains)
+    {
+        var parent = chains.ToDictionary(c => Norm(c.Skill), c => Norm(c.Parent));
+        var damage = logs.SelectMany(l => l.Skills.Select(s => (Name: Norm(s.Name), Damage: s.Damage > 0 ? s.Damage : s.Share * l.TotalDamage)))
+            .GroupBy(s => parent.GetValueOrDefault(s.Name) ?? s.Name).ToDictionary(g => g.Key, g => g.Sum(s => s.Damage));
+        var total = damage.Values.Sum();
+        return total <= 0 ? [] : damage.ToDictionary(kv => kv.Key, kv => kv.Value / total);
+    }
+
+    static string Norm(string s) => GameDatabase.NormalizeLabel(s);
+
+    /// <summary>
+    /// Suites d'enchaînement : un sort mesuré qui n'est pas une compétence du perso (Coup punitif, qui suit Frappes successives)
+    /// est rattaché au sort qui le précède avec un délai régulier. Pour chaque sort candidat : délai médian entre lui et la
+    /// suite, part des utilisations de la suite qu'il précède à ce délai (± 0,35 s), moins la même part prise à n'importe
+    /// quel lancer (un sort lancé sans arrêt précède tout, par hasard). Le meilleur doit dépasser ce hasard de 0,3 et le
+    /// suivant de 0,15, et être lancé au moins aussi souvent que sa suite ; une suite de suite remonte au sort lancé
+    /// (Coup désespéré → Coup opportun → Frappe féroce). Même calcul pour toutes les classes : il ne lit que l'ordre des lancers.
+    /// </summary>
+    public static List<ChainLink> Chains(IReadOnlyList<CombatLog> logs, ISet<string> learnable)
+    {
+        const double Window = 3, Tolerance = 0.35;
+        // Utilisations par combat et par sort (le Pet Meter les a déjà regroupées : une par appui).
+        var fights = logs.Where(l => l.Casts is { Count: > 0 }).Select(l => (
+            All: l.Casts!.Select(c => c.T).OrderBy(t => t).ToList(),
+            By: l.Casts!.GroupBy(c => Norm(c.Name)).ToDictionary(g => g.Key, g => g.Select(c => c.T).OrderBy(t => t).ToList()))).ToList();
+        if (fights.Count == 0) return [];
+        int Uses(string name) => fights.Sum(f => f.By.GetValueOrDefault(name)?.Count ?? 0);
+        static bool Hit(List<double> times, double from, double to)
+        {
+            var i = times.BinarySearch(from);
+            if (i < 0) i = ~i;
+            return i < times.Count && times[i] <= to;
+        }
+
+        var damaging = logs.SelectMany(l => l.Skills).Where(s => s.Damage > 0 || s.Share > 0).Select(s => Norm(s.Name)).ToHashSet();
+        var display = logs.SelectMany(l => l.Casts ?? []).GroupBy(c => Norm(c.Name)).ToDictionary(g => g.Key, g => g.First().Name);
+        var names = fights.SelectMany(f => f.By.Keys).Distinct().ToList();
+        var direct = new Dictionary<string, (string Parent, double Lag, double Regular)>();
+        foreach (var x in names.Where(n => !learnable.Contains(n) && damaging.Contains(n) && Uses(n) >= 5))
+        {
+            var uses = Uses(x);
+            var scored = new List<(string Parent, double Lag, double Regular, double Score)>();
+            foreach (var y in names.Where(n => n != x && Uses(n) >= uses * 0.75))
+            {
+                var lags = new List<double>();
+                foreach (var f in fights)
+                    if (f.By.TryGetValue(y, out var ys) && f.By.TryGetValue(x, out var xs))
+                        foreach (var t in xs)
+                            if (ys.LastOrDefault(u => u < t - 0.05, double.NaN) is var v && !double.IsNaN(v) && t - v <= Window) lags.Add(t - v);
+                if (lags.Count < 3) continue;
+                lags.Sort();
+                var lag = lags[lags.Count / 2];
+                int Near(List<double> times, List<double> ys) => times.Count(t => Hit(ys, t - lag - Tolerance, t - lag + Tolerance));
+                var regular = (double)fights.Sum(f => f.By.TryGetValue(y, out var ys) && f.By.TryGetValue(x, out var xs) ? Near(xs, ys) : 0) / uses;
+                var chance = (double)fights.Sum(f => f.By.TryGetValue(y, out var ys) ? Near(f.All, ys) : 0) / fights.Sum(f => f.All.Count);
+                scored.Add((y, lag, regular, regular - chance));
+            }
+            var ranked = scored.OrderByDescending(s => s.Score).ToList();
+            if (ranked.Count > 0 && ranked[0].Score >= 0.3 && (ranked.Count == 1 || ranked[0].Score - ranked[1].Score >= 0.15))
+                direct[x] = (ranked[0].Parent, ranked[0].Lag, ranked[0].Regular);
+        }
+
+        var links = new List<ChainLink>();
+        foreach (var (x, d) in direct)
+        {
+            var parent = d.Parent;
+            for (var hops = 0; !learnable.Contains(parent) && direct.TryGetValue(parent, out var up) && hops < 4; hops++) parent = up.Parent;
+            if (learnable.Contains(parent))
+                links.Add(new ChainLink(display[x], display[parent], d.Parent == parent ? null : display[d.Parent], d.Lag, d.Regular, Uses(x)));
+        }
+        return links;
+    }
+}
+
+/// <summary>
+/// Une suite d'enchaînement rattachée au sort lancé (noms tels que relevés) : <paramref name="Via"/> est la suite qui la précède
+/// quand elle en suit une autre ; délai typique en secondes et part de ses utilisations qui suivent ce délai.
+/// </summary>
+public sealed record ChainLink(string Skill, string Parent, string? Via, double Lag, double Regular, int Uses)
+{
+    /// <summary>« Coup désespéré (après Coup opportun) → Frappe féroce : 92 % de ses lancers, 0,7 s après ».</summary>
+    public string Text => $"{Skill}{(Via is null ? "" : $" (après {Via})")} → {Parent} : {Fmt.Pct(Regular)} de ses lancers, {Fmt.Num(Math.Round(Lag, 1))} s après";
 }

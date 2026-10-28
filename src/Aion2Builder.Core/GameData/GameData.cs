@@ -107,7 +107,23 @@ public sealed record ClassBenchmark
     /// <summary>Valeur au rang q (0 à 1) de l'échantillon trié.</summary>
     public static double Quantile(List<double> sample, double q) =>
         sample.Count == 0 ? 0 : sample.OrderBy(x => x).ElementAt(Math.Clamp((int)Math.Round(q * (sample.Count - 1)), 0, sample.Count - 1));
+
+    /// <summary>
+    /// Les mêmes joueurs un par un, sans nom : niveau d'objet et stats totales (même calcul que <see cref="Stats"/>, une stat
+    /// absente vaut 0). Les stats montent avec le niveau d'objet : on se compare à ceux qui ont le niveau d'objet du sien.
+    /// </summary>
+    public List<BenchPlayer> Players { get; init; } = [];
+
+    /// <summary>Joueurs de comparaison : les <paramref name="count"/> au niveau d'objet le plus proche.</summary>
+    public List<BenchPlayer> Peers(int itemLevel, int count = 8) =>
+        Players.OrderBy(p => Math.Abs(p.ItemLevel - itemLevel)).Take(count).OrderBy(p => p.ItemLevel).ToList();
+
+    /// <summary>Valeurs d'une stat chez ces joueurs.</summary>
+    public static List<double> Sample(IEnumerable<BenchPlayer> players, string key) => players.Select(p => p.Stats.GetValueOrDefault(key)).ToList();
 }
+
+/// <summary>Un joueur de l'échantillon : niveau d'objet et stats totales par clé (le % pour une stat en %, la valeur plate sinon).</summary>
+public sealed record BenchPlayer(int ItemLevel, Dictionary<string, double> Stats);
 
 public sealed record DesignedBuild
 {

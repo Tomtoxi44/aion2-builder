@@ -63,6 +63,11 @@ public static class ReportMarkdown
             foreach (var a in r.Skills.Focus.Take(6))
                 Line($"- {a.Skill.Name} : {Fmt.Pct(a.DamageShare)} des dégâts, niveau {a.TotalAfter} (acheté {a.RecommendedBase}, Daevanion +{a.BonusDaevanion}, arcanes +{a.BonusArcana}, équipement +{a.BonusGear})");
             Line();
+            if (r.Skills.Chains.Count > 0)
+            {
+                Line($"Suites d'enchaînement comptées avec le sort lancé : {string.Join(" ; ", r.Skills.Chains.Select(c => c.Text))}.");
+                Line();
+            }
         }
         if (r.Skills.Moves.Count == 0) Line("Points bien placés : rien à déplacer.");
         else

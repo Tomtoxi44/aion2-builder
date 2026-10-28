@@ -299,7 +299,7 @@ public sealed class MainWindow : Window
             combats = combatStore.List(k);
             if (fresh > 0) Toast($"{fresh} combat{(fresh > 1 ? "s" : "")} du Pet Meter", "Écran Combat : lancers, combos, temps morts, dégâts subis.");
         }
-        try { report = new Advisor(db).Analyze(current, prefs.Mode, inputs, pets.Collection, combats.Select(x => x.Log).FirstOrDefault()); }
+        try { report = new Advisor(db).Analyze(current, prefs.Mode, inputs, pets.Collection, combats.Select(x => x.Log).ToList()); }
         catch (InvalidOperationException ex) { report = null; SetStatus(ex.Message, error: true); state.Screen = Screen.Import; }
         if (report is not null) store.RecordScores(current, prefs.Mode, report.Scores);
         progress = store.Progress(current);
