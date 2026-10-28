@@ -70,6 +70,16 @@ public sealed record StatToFree(StatTotal Stat, string Why);
 public sealed record FamilyReview(CategoryShare Share, List<StatTotal> Stats, List<StatVsPlayers> Players, List<StatToRaise> Raise, List<StatToFree> Free)
 {
     public StatVsPlayers? Vs(StatTotal x) => Players.FirstOrDefault(v => v.Stat.Def.Key == x.Def.Key);
+
+    /// <summary>Stats utiles de la famille (poids ≥ 0,6) face aux joueurs comparés.</summary>
+    public List<StatVsPlayers> Useful => Players.Where(v => v.Stat.Weight >= 0.6).ToList();
+
+    /// <summary>
+    /// True si aucune stat utile n'est sous la moyenne des joueurs, false si l'une l'est, null sans joueurs. Avec des joueurs,
+    /// c'est ce qui décide du verdict de la famille : la part ne compte que les stats ajustables, alors que des PV, par
+    /// exemple, viennent surtout des stats fixes des pièces.
+    /// </summary>
+    public bool? AtPlayers => Useful is { Count: > 0 } useful ? useful.All(v => v.Verdict >= 0) : null;
 }
 
 /// <summary>

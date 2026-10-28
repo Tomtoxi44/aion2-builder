@@ -236,7 +236,10 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
 
         // 1. Répartition Attaque / Défense / Survie / Utilité.
         var over = sp.Categories.Where(x => x.Gap > s.CategoryTolerance).OrderByDescending(x => x.Gap).ToList();
-        var under = sp.Categories.Where(x => x.Gap < -s.CategoryTolerance).OrderBy(x => x.Gap).ToList();
+        // Une famille sous sa part visée mais dont les stats utiles sont au niveau des joueurs comparés ne manque de rien :
+        // ce qu'elle a vient des stats fixes des pièces, hors part.
+        bool FineVsPlayers(StatCategory cat) => sp.Comparison.Families.FirstOrDefault(f => f.Share.Category == cat)?.AtPlayers == true;
+        var under = sp.Categories.Where(x => x.Gap < -s.CategoryTolerance && !FineVsPlayers(x.Category)).OrderBy(x => x.Gap).ToList();
         string Line(CategoryShare x) => $"{GameDatabase.CategoryWithExamples(x.Category)} : {Fmt.Pct(x.Share)} de tes stats ajustables, pour environ {Fmt.Pct(x.Target)} conseillé";
         if (over.Count > 0 && under.Count > 0)
         {

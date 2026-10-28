@@ -1449,24 +1449,55 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     }
 
     /// <summary>
-    /// Une famille : ta part et la part conseillée en une phrase, ses stats face à la moyenne des joueurs (ou sans joueurs en
-    /// JcJ), puis quoi monter et où reprendre de la place.
+    /// Verdict d'une famille, en une phrase. Avec des joueurs comparés, ses stats utiles face à eux décident : la part ne
+    /// compte que les stats ajustables, alors que des PV, par exemple, viennent surtout des stats fixes des pièces ; une part
+    /// sous la part visée n'est donc pas un manque si les stats sont au niveau des joueurs. Sans joueurs (JcJ), la part face
+    /// à la part visée. Off : famille à revoir (compte dans le badge de la page).
+    /// </summary>
+    (string Text, IBrush Color, bool Off) FamilyVerdict(FamilyReview f, IReadOnlyList<FamilyReview> all)
+    {
+        var c = f.Share;
+        var tolerance = db.Settings.Stats.CategoryTolerance;
+        var name = GameDatabase.CategoryName(c.Category).ToLowerInvariant();
+        var part = $"{Fmt.Pct(c.Share)} de tes stats ajustables (part visée {Fmt.Pct(c.Target)})";
+        var lacking = all.Where(o => o != f && o.Share.Gap < -tolerance && o.AtPlayers != true)
+            .Select(o => GameDatabase.CategoryName(o.Share.Category).ToLowerInvariant()).ToList();
+        var elsewhere = lacking.Count > 0 ? $"pour {string.Join(" et ", lacking)}" : "ailleurs";
+        static string Names(IEnumerable<StatVsPlayers> v) => string.Join(", ", v.Select(x => x.Stat.Def.Name));
+
+        if (f.AtPlayers is not { } atPlayers)
+            return Math.Abs(c.Gap) <= tolerance ? ($"Tu as mis en {name} {part} : c'est équilibré.", Tok.Good, false)
+                : c.Gap < 0 ? ($"Tu as mis en {name} {part} : {Pts(-c.Gap)} points de moins que visé, à monter.", Tok.Bad, true)
+                : ($"Tu as mis en {name} {part} : {Pts(c.Gap)} points de plus que visé, de la place à reprendre {elsewhere}.", Tok.Warn, true);
+
+        if (atPlayers)
+        {
+            var above = f.Useful.Where(v => v.Verdict > 0).ToList();
+            var level = above.Count > 0 ? $"{Names(above)} au-dessus de la moyenne des joueurs comparés" : "Au niveau de la moyenne des joueurs comparés";
+            return c.Gap < -tolerance
+                ? ($"{level} : rien d'urgent. Tu n'y as mis que {part} : ce niveau vient surtout des stats fixes de tes pièces et de ta base, que la part ne compte pas.", Tok.Good, false)
+                : c.Gap > tolerance
+                    ? ($"{level}, avec {part} : tu pourrais reprendre de la place {elsewhere}.", Tok.Warn, lacking.Count > 0)
+                    : ($"{level}, avec {part} : c'est équilibré.", Tok.Good, false);
+        }
+        var low = $"{Names(f.Useful.Where(v => v.Verdict < 0))} en dessous de la moyenne des joueurs comparés";
+        return c.Gap < -tolerance
+            ? ($"{low}, et tu n'y as mis que {part} : à monter (ci-dessous).", Tok.Bad, true)
+            : ($"{low}, alors que tu y as mis {part} : vois ci-dessous quelle stat monter.", Tok.Warn, true);
+    }
+
+    /// <summary>
+    /// Une famille : son verdict en une phrase, ses stats face à la moyenne des joueurs (ou sans joueurs en JcJ), puis quoi
+    /// monter et où reprendre de la place.
     /// </summary>
     Control FamilyCard(FamilyReview f, StatComparison cmp, IReadOnlyList<FamilyReview> all)
     {
         var c = f.Share;
-        var tolerance = db.Settings.Stats.CategoryTolerance;
         var name = GameDatabase.CategoryName(c.Category);
-        var under = all.Where(o => o.Share.Gap < -tolerance && o != f).Select(o => GameDatabase.CategoryName(o.Share.Category).ToLowerInvariant()).ToList();
-        var (sentence, color) = Math.Abs(c.Gap) <= tolerance
-            ? ($"Tu as mis {Fmt.Pct(c.Share)} de tes stats ajustables en {name.ToLowerInvariant()}, pour {Fmt.Pct(c.Target)} conseillés : c'est équilibré.", Tok.Good)
-            : c.Gap < 0
-                ? ($"Tu as mis {Fmt.Pct(c.Share)} de tes stats ajustables en {name.ToLowerInvariant()}, pour {Fmt.Pct(c.Target)} conseillés : il en manque {Pts(-c.Gap)} %.", Tok.Bad)
-                : ($"Tu as mis {Fmt.Pct(c.Share)} de tes stats ajustables en {name.ToLowerInvariant()}, pour {Fmt.Pct(c.Target)} conseillés : {Pts(c.Gap)} % de plus, " +
-                   (under.Count > 0 ? $"de la place à reprendre pour {string.Join(" et ", under)}." : "de la place à reprendre ailleurs."), Tok.Warn);
+        var (sentence, color, off) = FamilyVerdict(f, all);
         var body = new StackPanel { Spacing = 10 };
         body.Children.Add(T(sentence, 13, color, wrap: true));
-        body.Children.Add(Tip(Bar(c.Share, color, 6, c.Target), "Barre = ta part · trait clair = part conseillée"));
+        body.Children.Add(Tip(Bar(c.Share, color, 6, c.Target), "Barre = ta part des stats ajustables · trait clair = part visée"));
 
         // Colonnes proportionnelles : la carte occupe toute la largeur, la ligne des joueurs s'étire avec elle.
         var players = cmp.Peers is not null;
@@ -1520,10 +1551,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         if (f.Free.Count > 0)
             body.Children.Add(T("↓ Où reprendre de la place, aux relances de stats secondaires et aux choix Daevanion : " +
                 string.Join(", ", f.Free.Select(x => $"{x.Stat.Def.Name} ({x.Why})")) + ".", 12, Tok.Text2, wrap: true).WithLineHeight(1.5));
-        if (f.Raise.Count == 0 && f.Free.Count == 0 && Math.Abs(c.Gap) <= tolerance)
+        if (f.Raise.Count == 0 && f.Free.Count == 0 && !off)
             body.Children.Add(T("Rien à faire dans cette famille.", 12, Tok.Muted));
 
-        return Card(body, name, T($"{Fmt.Pct(c.Share)} · conseillé {Fmt.Pct(c.Target)}", 12, color, mono: true));
+        return Card(body, name, T($"part {Fmt.Pct(c.Share)} · visée {Fmt.Pct(c.Target)}", 12, color, mono: true));
     }
 
     Control Stats()
@@ -1531,10 +1562,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var sp = r.Stats;
         var cmp = sp.Comparison;
         var tolerance = db.Settings.Stats.CategoryTolerance;
-        var off = sp.Categories.Count(c => Math.Abs(c.Gap) > tolerance);
+        var off = cmp.Families.Count(f => FamilyVerdict(f, cmp.Families).Off);
         var below = cmp.Families.SelectMany(f => f.Players).Count(v => v.Verdict < 0 && v.Stat.Weight >= 0.6);
         var badges = Badges(
-            Badge(off == 0 ? "✓ familles équilibrées" : $"{off} famille{(off > 1 ? "s" : "")} hors de la part conseillée", off == 0 ? Tok.Good : Tok.Warn),
+            Badge(off == 0 ? "✓ familles équilibrées" : $"{off} famille{(off > 1 ? "s" : "")} à revoir", off == 0 ? Tok.Good : Tok.Warn),
             cmp.Peers is null ? null : Badge(below == 0 ? "✓ rien sous la moyenne" : $"{below} stat{(below > 1 ? "s" : "")} utile{(below > 1 ? "s" : "")} sous la moyenne", below == 0 ? Tok.Good : Tok.Bad));
 
         // Comment lire : chaque mot de la page défini une fois.
@@ -1543,7 +1574,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         void Define(string term, string text) => how.Children.Add(ColumnsSpaced("150,*", 12, T(term, 12, Tok.Text, FontWeight.SemiBold), T(text, 12, Tok.Text2, wrap: true)));
         Define("Part", "ce que tu as mis dans une famille, sur tes stats ajustables : stats secondaires des pièces, cases Daevanion, titres, stats divines. " +
                        "Les stats fixes des pièces (la DÉF d'une armure, l'ATQ d'une arme) n'y sont pas.");
-        Define("Part conseillée", $"la part visée par famille pour un {cls} ({r.Profile.Role.Name.ToLowerInvariant()}) en {Mode}, tirée des poids de stats de la classe : une base de réglage, pas une moyenne de joueurs.");
+        Define("Part visée", $"la part visée par famille pour un {cls} ({r.Profile.Role.Name.ToLowerInvariant()}) en {Mode}, tirée des poids de stats de la classe : une base de réglage, pas une moyenne de joueurs. " +
+                             "Quand des joueurs sont comparés, ce sont eux qui décident : une famille sous sa part visée mais au niveau des joueurs ne manque de rien (ses stats viennent des stats fixes des pièces).");
         Define("Conseillé ▾", $"la valeur que visent les guides du {cls} pour chaque stat (Précision, CRIT…), triangle vert sur la ligne ; sans chiffre dans " +
                               "les guides, « le plus possible » pour une stat prioritaire, qui n'a pas de plafond. Ce que lisent les guides, pas ce que font les joueurs.");
         Define("Moyenne joueurs", cmp.PeersText is { } who
