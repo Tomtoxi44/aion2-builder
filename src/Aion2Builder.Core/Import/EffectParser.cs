@@ -35,6 +35,22 @@ public sealed partial class EffectParser(GameDatabase data)
         return new Effect(raw, null, StatScope.All, value, percent, skill);
     }
 
+    /// <summary>
+    /// Un effet resté sans stat à l'import (libellé inconnu de la version qui l'a importé), relu avec le catalogue actuel :
+    /// « ATQ +3 » comme une stat d'objet sans signe (« ATQ frontale 82 »). Rendu tel quel s'il reste inconnu.
+    /// </summary>
+    public Effect Recognize(Effect e)
+    {
+        if (e.IsStat || e.IsSkill || e.Raw.Length == 0) return e;
+        if (Parse(e.Raw) is { IsStat: true } signed) return signed;
+        var m = UnsignedRegex().Match(e.Raw.Trim());
+        if (!m.Success || ResolveLabel(m.Groups["label"].Value) is not { Key: { } key } found) return e;
+        return new Effect(e.Raw, key, found.Scope, ParseNumber(m.Groups["num"].Value), m.Groups["pct"].Success);
+    }
+
+    [GeneratedRegex(@"^(?<label>.+?)\s+(?<num>\d+(?:[.,]\d+)?)\s*(?<pct>%)?$")]
+    private static partial Regex UnsignedRegex();
+
     public (string? Key, StatScope Scope) ResolveLabel(string label)
     {
         var (baseLabel, scope) = SplitScope(label);

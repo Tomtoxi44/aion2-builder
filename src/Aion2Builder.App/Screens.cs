@@ -1518,8 +1518,67 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     }
 
     /// <summary>Ce que vaut la stat pour la classe, en mots (le poids chiffré reste dans l'inspecteur).</summary>
-    static (string Text, IBrush Color) StatImportance(StatTotal x) =>
-        x.Weight >= 0.8 ? ("prioritaire", Tok.Text) : x.Weight >= 0.5 ? ("utile", Tok.Text2) : ("peu utile", Tok.Muted);
+    static (string Text, IBrush Color) StatImportance(StatTotal x) => Importance(x.Weight);
+
+    /// <summary>Ce que vaut une stat pour la classe, d'après son poids : prioritaire (0,8 et plus), utile (0,5 et plus), peu utile.</summary>
+    static (string Text, IBrush Color) Importance(double weight) =>
+        weight >= 0.8 ? ("prioritaire", Tok.Text) : weight >= 0.5 ? ("utile", Tok.Text2) : ("peu utile", Tok.Muted);
+
+    /// <summary>
+    /// Stats divines (Temps [Siel], Justice [Nezekan]…) : le total par divinité que donne le site officiel, toutes sources
+    /// comprises (cartes d'arcanes, Panthéon…), ses effets (1 point = +0,1 % de chacun, déjà comptés dans les familles
+    /// ci-dessus) jugés pour la classe, et lesquelles monter d'abord. null si le site n'en donne aucune.
+    /// </summary>
+    Control? DivineCard()
+    {
+        var divine = r.Character.PrimaryStats.Where(p => p.Name.Contains('[')).ToList();
+        if (divine.Count == 0) return null;
+        double Best(PrimaryStat p) => p.Effects.Where(e => e.IsStat).Select(e => r.Profile.Weight(e.StatKey!)).DefaultIfEmpty(0).Max();
+        double Worth(PrimaryStat p) => p.Effects.Where(e => e.IsStat).Sum(e => r.Profile.Weight(e.StatKey!));
+        var cards = r.Character.Equipment.Where(i => i.Slot.StartsWith("Arcana", StringComparison.OrdinalIgnoreCase)).ToList();
+        int FromCards(PrimaryStat p) => cards.SelectMany(i => i.MainStats.Concat(i.SubStats)).Where(e => e.Raw.StartsWith(p.Name, StringComparison.Ordinal))
+            .Sum(e => int.TryParse(System.Text.RegularExpressions.Regex.Match(e.Raw, @"(\d+)\s*$").Groups[1].Value, out var n) ? n : 0);
+        var ordered = divine.OrderByDescending(Best).ThenByDescending(Worth).ThenByDescending(p => p.Value).ToList();
+
+        const string cols = "170,52,*,140";
+        var rows = new List<Control>();
+        foreach (var p in ordered)
+        {
+            var effects = new WrapPanel();
+            foreach (var e in p.Effects)
+            {
+                var def = e.IsStat ? db.Stat(e.StatKey!) : null;
+                var (label, color) = def is null ? ("non reconnu", Tok.Muted) : Importance(r.Profile.Weight(e.StatKey!));
+                effects.Children.Add(Tip(T(e.Raw, 12, color), def is null ? e.Raw : $"{def.Name} : {label} pour un {r.Profile.Class.Name} en {Mode}.").WithMargin(0, 0, 12, 2));
+            }
+            var arcana = FromCards(p);
+            rows.Add(TableRow(Columns(cols, T(p.Name, 13), T(p.Value.ToString(), 13, mono: true), effects,
+                Tip(T(arcana > 0 ? $"cartes {arcana} · autres {p.Value - arcana}" : "Panthéon, autres", 12, Tok.Muted),
+                    arcana > 0 ? $"{arcana} points viennent de tes cartes d'arcanes ; les {p.Value - arcana} autres du Panthéon ou d'ailleurs (le site officiel ne détaille pas)."
+                               : "Aucune de tes cartes d'arcanes n'en donne : ces points viennent du Panthéon ou d'ailleurs (le site officiel ne détaille pas).")),
+                false, () => { }));
+        }
+
+        var first = ordered.Where(p => Best(p) >= 0.8).Take(3).ToList();
+        var useless = ordered.Where(p => Best(p) < 0.5).ToList();
+        string Main(PrimaryStat p) => p.Effects.Where(e => e.IsStat).OrderByDescending(e => r.Profile.Weight(e.StatKey!)).Select(e => db.StatName(e.StatKey!)).FirstOrDefault() ?? "";
+        var advice = new StackPanel { Spacing = 4, Margin = new Thickness(16, 10, 16, 12) };
+        if (first.Count > 0)
+            advice.Children.Add(T($"À monter d'abord pour un {r.Profile.Class.Name} en {Mode} : {string.Join(", ", first.Select(p => $"{p.Name} ({Main(p)})"))}.", 13, wrap: true).WithLineHeight(1.4));
+        if (useless.Count > 0)
+            advice.Children.Add(T($"Peu utiles pour toi : {string.Join(", ", useless.Select(p => p.Name))}. Au Panthéon et sur tes cartes, préfère les décorations et les cartes des divinités à monter.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        advice.Children.Add(T("1 point = +0,1 % de chaque effet, déjà compté dans les familles ci-dessus. Sources : cartes d'arcanes (écran Équipement → Arcanes) et décorations du Panthéon.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        return new StackPanel
+        {
+            Spacing = 0,
+            Children =
+            {
+                TableCard($"Stats divines · {divine.Sum(p => p.Value)} points", T("tri : les plus utiles à ta classe d'abord", 11, Tok.Muted, mono: true),
+                    TableHeader(cols, "Divinité", "Points", "Effets", "Sources"), rows),
+                advice,
+            },
+        };
+    }
 
     /// <summary>Ta valeur face à la moyenne des joueurs comparés, en un mot (au-dessus, dans la moyenne, en dessous) ; rouge seulement pour une stat qui compte.</summary>
     static (string Text, IBrush Color) VsWords(StatVsPlayers v) => v.Verdict switch
@@ -1724,6 +1783,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
         var blocks = new List<Control?> { Expander("Comment lire cette page", IsOpen("stats:how"), () => Toggle("stats:how"), () => Card(how, null)) };
         blocks.AddRange(cmp.Families.Where(f => f.Stats.Count > 0 || Math.Abs(f.Share.Gap) > tolerance).Select(f => FamilyCard(f, cmp, cmp.Families)));
+        blocks.Add(DivineCard());
         blocks.Add(Clickable(T(s.AllStats ? "▴ masquer le tableau de toutes les stats" : "▾ toutes les stats en tableau (part, part visée, poids)", 12, Accent.Main),
             () => update(st => st.AllStats = !st.AllStats), hover: Tok.Hover, padding: new Thickness(4, 6)));
         if (s.AllStats) blocks.Add(AllStatsTable());

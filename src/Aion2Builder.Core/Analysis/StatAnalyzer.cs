@@ -1,4 +1,5 @@
 using Aion2Builder.GameData;
+using Aion2Builder.Import;
 using Aion2Builder.Model;
 
 namespace Aion2Builder.Analysis;
@@ -16,14 +17,18 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
 
     public static IEnumerable<StatSource> Sources(CharacterSnapshot c, GameDatabase db)
     {
+        // Un libellé que la version qui a importé le perso ne connaissait pas est relu avec le catalogue actuel : une stat
+        // ajoutée depuis (« ATQ frontale ») compte sans attendre le prochain import.
+        var parser = new EffectParser(db);
+        Effect Fresh(Effect e) => parser.Recognize(e);
         foreach (var item in c.Equipment)
         {
             foreach (var e in item.MainStats)
-                yield return new StatSource($"{db.SlotName(item.Slot)} · {item.Name}", e, Fixed: true);
+                yield return new StatSource($"{db.SlotName(item.Slot)} · {item.Name}", Fresh(e), Fixed: true);
             foreach (var e in item.SubStats)
-                yield return new StatSource($"{db.SlotName(item.Slot)} · {item.Name}", e);
+                yield return new StatSource($"{db.SlotName(item.Slot)} · {item.Name}", Fresh(e));
             foreach (var stone in item.Stones)
-                yield return new StatSource($"{db.SlotName(item.Slot)} · pierre {stone.Effect.Raw}", stone.Effect);
+                yield return new StatSource($"{db.SlotName(item.Slot)} · pierre {stone.Effect.Raw}", Fresh(stone.Effect));
         }
         foreach (var board in c.Boards)
             foreach (var node in board.Nodes.Where(n => n.Open))
@@ -31,10 +36,10 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
                     yield return new StatSource($"Daevanion {board.Name}", e);
         foreach (var t in c.Titles)
             foreach (var e in t.Effects)
-                yield return new StatSource($"Titre {t.Name}", e);
+                yield return new StatSource($"Titre {t.Name}", Fresh(e));
         foreach (var p in c.PrimaryStats)
             foreach (var e in p.Effects)
-                yield return new StatSource(p.Name, e);
+                yield return new StatSource(p.Name, Fresh(e));
     }
 
     public StatProfile Profile(CharacterSnapshot c, ResolvedProfile profile)
