@@ -40,7 +40,11 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
     public StatProfile Profile(CharacterSnapshot c, ResolvedProfile profile)
     {
         var all = Sources(c, db).Concat(extra ?? []).ToList();
-        var unrecognized = all.Where(s => !s.Effect.IsStat && !s.Effect.IsSkill && s.Effect.Raw.Length > 0)
+        // Les points de stat divine d'une carte (« Temps [Siel] 20 ») ne sont pas à reconnaître : le site donne le total par
+        // divinité, toutes sources comprises (cartes, Panthéon), avec ses effets, comptés avec les stats principales.
+        var divine = c.PrimaryStats.Select(p => p.Name).Where(n => n.Contains('[')).ToList();
+        var unrecognized = all.Where(s => !s.Effect.IsStat && !s.Effect.IsSkill && s.Effect.Raw.Length > 0
+                                          && !divine.Any(n => s.Effect.Raw.StartsWith(n, StringComparison.Ordinal)))
             .Select(s => s.Effect.Raw).Distinct().ToList();
         var byKey = all.Where(s => s.Effect.IsStat && Applies(s.Effect, profile.Mode))
             .GroupBy(s => s.Effect.StatKey!).ToDictionary(g => g.Key, g => g.ToList());

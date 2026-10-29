@@ -1138,15 +1138,19 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         : Arcana.OrderBy(a => a.Item is null ? -1 : db.Grade(a.Item.Grade).Rank).ThenBy(a => a.Item?.ItemLevel ?? 0).First();
 
     /// <summary>
-    /// Ce qu'une stat divine augmente, d'après stats.json (« Stat divine Temps [Siel] » dans « où la trouver ») : la valeur d'un
-    /// point n'est pas connue, elle n'est donc pas comptée dans l'analyse des stats.
+    /// Une stat divine d'une carte (« Temps [Siel] 20 ») : des points qui s'ajoutent à ceux du Panthéon et des autres cartes. Le
+    /// site officiel donne le total par divinité et ses effets (stats principales), comptés dans l'analyse des stats.
     /// </summary>
     string DivineTip(string raw)
     {
-        var name = System.Text.RegularExpressions.Regex.Replace(raw, @"\s*\+?\d+([.,]\d+)?\s*%?$", "");
-        var stats = db.Stats.Where(d => d.Where.Any(w => w.Equals($"Stat divine {name}", StringComparison.OrdinalIgnoreCase))).Select(d => d.Name).ToList();
-        return $"{raw} : points de stat divine{(stats.Count > 0 ? $" ({string.Join(", ", stats)}, d'après les guides)" : "")}. " +
-               "La valeur d'un point n'est pas connue : pas encore comptée dans l'analyse des stats.";
+        var lines = raw.Split(", ").Select(part =>
+        {
+            var name = System.Text.RegularExpressions.Regex.Replace(part, @"\s*\+?\d+([.,]\d+)?\s*%?$", "");
+            return r.Character.PrimaryStats.FirstOrDefault(p => p.Name == name) is { } total
+                ? $"{part} : {total.Value} au total (cartes, Panthéon…) → {string.Join(", ", total.Effects.Select(e => e.Raw))}"
+                : $"{part} : points de stat divine, total non lu sur le site officiel";
+        });
+        return string.Join("\n", lines) + "\nCes totaux et leurs effets sont comptés dans l'analyse des stats (écran Stats).";
     }
 
     /// <summary>
@@ -1214,9 +1218,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
               "Leur niveau compte dans ton score d'équipement.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4),
             TableCard("Tes cartes", T("vert = bon bonus · rouge = perdu", 11, Tok.Muted, mono: true), TableHeader(cols, "Carte", "Grade", "Niveau", "Stat divine", "Compétences bonus"), rows),
             Card(todo, "Quoi faire"),
-            Expander("Stats divines : pas encore comptées", IsOpen("arcana:divine"), () => Toggle("arcana:divine"), () =>
-                T("Les points de stat divine de tes cartes (Temps [Siel], Vie [Yustiel]…) ne sont pas dans l'analyse des stats : on sait quelles stats ils augmentent " +
-                  "(survole la colonne), pas de combien par point. Une capture de leur infobulle en jeu suffirait à les compter.", 12, Tok.Text2, wrap: true).WithLineHeight(1.45).WithMargin(22, 0, 0, 0)));
+            T("Stats divines : les points de tes cartes s'ajoutent à ceux du Panthéon ; le total par divinité et ses effets (1 point = 0,1 %) " +
+              "viennent du site officiel et comptent dans l'écran Stats. Survole la colonne pour ton total.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
     }
 
     /// <summary>Pierres : pierre sacrée des armes (conseil selon la classe et le mode), puis gravures et pierres de mana ou d'âme.</summary>
