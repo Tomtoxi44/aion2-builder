@@ -1187,11 +1187,11 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var gates = db.Progression.Roadmap.Gates.Where(g => g.Unlocks.Contains("cartes", StringComparison.OrdinalIgnoreCase)).ToList();
         var score = r.Character.ItemLevel;
         if (gates.LastOrDefault(g => g.Score <= score) is { } reached)
-            todo.Children.Add(T($"Ton score d'équipement ({Fmt.Num(score)}) ouvre la {reached.Unlocks}." +
-                                (gates.FirstOrDefault(g => g.Score > score) is { } next ? $" Ensuite, la {next.Unlocks}, à {Fmt.Num(next.Score)} (+{next.Score - score})." : ""),
+            todo.Children.Add(T($"Ton score d'équipement ({Fmt.Big(score)}) ouvre la {reached.Unlocks}." +
+                                (gates.FirstOrDefault(g => g.Score > score) is { } next ? $" Ensuite, la {next.Unlocks}, à {Fmt.Big(next.Score)} (+{next.Score - score})." : ""),
                 12, Tok.Text2, wrap: true).WithLineHeight(1.45));
         else if (gates.FirstOrDefault() is { } first)
-            todo.Children.Add(T($"Les arcanes s'ouvrent à {Fmt.Num(first.Score)} de score d'équipement : {first.Unlocks}.", 12, Tok.Text2, wrap: true));
+            todo.Children.Add(T($"Les arcanes s'ouvrent à {Fmt.Big(first.Score)} de score d'équipement : {first.Unlocks}.", 12, Tok.Text2, wrap: true));
 
         return Page($"Équipement · arcanes · {Mode}", badges,
             T("Cinq cartes de Transcendance : chacune donne des points de stat divine et +1 à des compétences de ta classe, tirées au hasard. " +
