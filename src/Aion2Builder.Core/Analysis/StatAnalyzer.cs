@@ -334,7 +334,7 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
 
         if (sp.Unrecognized.Count > 0)
             findings.Add(new Finding(Area.General, Severity.Info, Fmt.Plural(sp.Unrecognized.Count, "libellé non reconnu", "libellés non reconnus"),
-                "Ajoute-les dans stats.json pour qu'ils comptent : " + string.Join(" | ", sp.Unrecognized.Take(8))));
+                (sp.Unrecognized.Count > 1 ? "Ajoute-les dans stats.json pour qu'ils comptent : " : "Ajoute-le dans stats.json pour qu'il compte : ") + string.Join(" | ", sp.Unrecognized.Take(8))));
 
         return findings;
     }

@@ -1549,7 +1549,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             {
                 var def = e.IsStat ? db.Stat(e.StatKey!) : null;
                 var (label, color) = def is null ? ("non reconnu", Tok.Muted) : Importance(r.Profile.Weight(e.StatKey!));
-                effects.Children.Add(Tip(T(e.Raw, 12, color), def is null ? e.Raw : $"{def.Name} : {label} pour un {r.Profile.Class.Name} en {Mode}.").WithMargin(0, 0, 12, 2));
+                effects.Children.Add(Tip(T(e.Raw, 12, color), def is null ? e.Raw : $"{def.Name} : {label} pour un {r.Profile.Class.Name} en {GameDatabase.ModeName(r.Mode)}.").WithMargin(0, 0, 12, 2));
             }
             var arcana = FromCards(p);
             rows.Add(TableRow(Columns(cols, T(p.Name, 13), T(p.Value.ToString(), 13, mono: true), effects,
@@ -1564,7 +1564,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         string Main(PrimaryStat p) => p.Effects.Where(e => e.IsStat).OrderByDescending(e => r.Profile.Weight(e.StatKey!)).Select(e => db.StatName(e.StatKey!)).FirstOrDefault() ?? "";
         var advice = new StackPanel { Spacing = 4, Margin = new Thickness(16, 10, 16, 12) };
         if (first.Count > 0)
-            advice.Children.Add(T($"À monter d'abord pour un {r.Profile.Class.Name} en {Mode} : {string.Join(", ", first.Select(p => $"{p.Name} ({Main(p)})"))}.", 13, wrap: true).WithLineHeight(1.4));
+            advice.Children.Add(T($"À monter d'abord pour un {r.Profile.Class.Name} en {GameDatabase.ModeName(r.Mode)} : {string.Join(", ", first.Select(p => $"{p.Name} ({Main(p)})"))}.", 13, wrap: true).WithLineHeight(1.4));
         if (useless.Count > 0)
             advice.Children.Add(T($"Peu utiles pour toi : {string.Join(", ", useless.Select(p => p.Name))}. Au Panthéon et sur tes cartes, préfère les décorations et les cartes des divinités à monter.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
         advice.Children.Add(T("1 point = +0,1 % de chaque effet, déjà compté dans les familles ci-dessus. Sources : cartes d'arcanes (écran Équipement → Arcanes) et décorations du Panthéon.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
