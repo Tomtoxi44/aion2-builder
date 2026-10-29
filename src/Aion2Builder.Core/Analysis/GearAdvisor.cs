@@ -174,7 +174,7 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
         var keepRank = db.Grade((plan.NextStage ?? stage).TargetGrade).Rank;
         var enchants = plan.Slots.Where(s => s.Status == SlotStatus.Enchant).OrderByDescending(s => s.Priority).ToList();
         if (enchants.Count > 0)
-            findings.Add(new Finding(Area.Enchant, Severity.Advice, $"Enchantements rentables ({enchants.Count} pièce(s))",
+            findings.Add(new Finding(Area.Enchant, Severity.Advice, $"Enchantements rentables ({Fmt.Plural(enchants.Count, "pièce")})",
                 "Pièces sous leur niveau d'enchantement rentable (sûr pour celles à garder, plafonné pour celles de transition) : " +
                 string.Join(" · ", enchants.Take(6).Select(s => $"{s.SlotName} +{s.Item!.EnchantLevel} → +{EnchantGoal(s.Slot, s.Item, keepRank, stage)}")),
                 $"Enchante dans cet ordre (meilleur gain par ressource d'abord) : {string.Join(", ", enchants.Take(4).Select(s => s.SlotName))}.",

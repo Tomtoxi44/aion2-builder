@@ -96,7 +96,7 @@ public sealed class PetAdvisor(GameDatabase db)
         string.Join(", ", stats.Where(s => value(s) > 0).Select(s => $"{s.Name} +{Fmt.Num(value(s))}"));
 
     public static string Missing(PetProgress x) =>
-        x.Level == 0 ? $"{x.Pet.Name} (à obtenir : {x.Missing} âme(s))" : $"{x.Pet.Name} (niv. {x.Level} → {x.Level + 1} : {x.Missing} âme(s))";
+        x.Level == 0 ? $"{x.Pet.Name} (à obtenir : {Fmt.Plural(x.Missing, "âme")})" : $"{x.Pet.Name} (niv. {x.Level} → {x.Level + 1} : {Fmt.Plural(x.Missing, "âme")})";
 
     public List<Finding> Findings(PetPlan plan, ResolvedProfile p)
     {

@@ -28,7 +28,8 @@ namespace Aion2Builder.App;
 sealed record UiPrefs(string Region = "eu", string Server = "", string Name = "", GameMode Mode = GameMode.PvE, string? LastFile = null,
     int Tab = 0, string Screen = "Home", string Accent = "Orange", bool AutoUpdate = true,
     List<string>? Tabs = null, double InspectorWidth = 340, bool InspectorHidden = false, int AutoRefreshHours = 0,
-    List<string>? Mine = null, bool BottomHidden = false, double BottomHeight = 190, string BottomTab = "advice", List<string>? RailOrder = null, string GearPage = "Overview", string SkillPage = "Overview", string BuildPage = "Compare", bool SideHidden = false)
+    List<string>? Mine = null, bool BottomHidden = false, double BottomHeight = 190, string BottomTab = "advice", List<string>? RailOrder = null, string GearPage = "Overview", string SkillPage = "Overview", string BuildPage = "Compare", bool SideHidden = false,
+    bool TipsSeen = false, int UiVersion = 1)
 {
     static string PathOf => System.IO.Path.Combine(AppPaths.Root, "ui.json");
 
@@ -69,6 +70,7 @@ public sealed class MainWindow : Window
     bool statusError;
     string dataSource = "données par défaut";
     TextBlock? statusText;
+    TextBlock? tipHint;
 
     // Écran d'import (gardé d'un rendu à l'autre pour ne pas perdre la saisie).
     readonly TextBox search = new()
@@ -127,6 +129,21 @@ public sealed class MainWindow : Window
         FontFamily = Fonts.Sans;
         AddBareTextBoxStyles();
 
+        // Revue d'interface (v2) : le panneau des conseils du bas est fermé par défaut (il répétait « À faire » et Détails) ;
+        // un clic sur le compteur de la barre d'état ou Ctrl+J le rouvre.
+        if (prefs.UiVersion < 2)
+        {
+            prefs = prefs with { BottomHidden = true, UiVersion = 2 };
+            prefs.Save();
+        }
+        // Première infobulle ouverte : l'astuce de la barre d'état a servi, elle disparaît pour de bon.
+        Ui.TipShown = () =>
+        {
+            if (prefs.TipsSeen) return;
+            prefs = prefs with { TipsSeen = true };
+            prefs.Save();
+            if (tipHint is not null) tipHint.IsVisible = false;
+        };
         db = LoadData();
         pets = petStore.Load();
         region.SelectedItem = ArmoryClient.Regions.Contains(prefs.Region) ? prefs.Region : "eu";
@@ -1211,9 +1228,9 @@ public sealed class MainWindow : Window
             Orientation = Orientation.Horizontal, Spacing = 14, VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
-                T($"{r.Profile.Class.Name} · {r.Profile.Role.Name} · {c.Level}", 12, Tok.Muted, mono: true),
+                T($"{r.Profile.Class.Name} · {r.Profile.Role.Name} · niv. {c.Level}", 12, Tok.Muted, mono: true),
                 T($"{c.ServerName} ({c.Region})", 12, Tok.Muted, mono: true),
-                Value("obj", c.ItemLevel.ToString()), Value("pc", c.CombatPower.ToString()),
+                Value("niv. d'objet", Fmt.Big(c.ItemLevel)), Value("puissance", Fmt.Big(c.CombatPower)),
             },
         };
         if (hasInspector)
@@ -1255,14 +1272,17 @@ public sealed class MainWindow : Window
             left.Children.Add(T(ScreenViews.ModeLabel(prefs.Mode), 11, Tok.StatusText, mono: true));
             if (report is not null)
             {
-                left.Children.Add(T($"{ScreenViews.Todo(report)} pièces à traiter", 11, Tok.StatusText, mono: true));
-                // Compteurs de conseils, comme ceux d'erreurs de Visual Studio : un clic ouvre ou ferme le panneau du bas.
-                var counter = Clickable(T($"✕ {report.Findings.Count(f => f.Severity == Severity.Critical)}  ! {report.Findings.Count(f => f.Severity == Severity.Important)}  " +
-                                          $"i {report.Findings.Count(f => f.Severity == Severity.Advice)}", 11, Tok.StatusText, FontWeight.SemiBold, mono: true),
+                // Les conseils, comptés comme partout ailleurs : un clic ouvre ou ferme le panneau du bas.
+                var counter = Clickable(T(Fmt.CountsText(report.Findings), 11, Tok.StatusText, FontWeight.SemiBold, mono: true),
                     () => { if (prefs.BottomHidden) SetBottomTab("advice"); else ToggleBottom(); }, hover: Tok.Alpha(Brushes.White, 0.12), padding: new Thickness(6, 0));
-                ToolTip.SetTip(counter, "Conseils critiques, importants et à suivre : clic pour le panneau du bas (Ctrl+J)");
+                ToolTip.SetTip(counter, "Clic : la liste des conseils en bas de l'écran (Ctrl+J). Importants = critiques et importants ; les infos sont à part.");
                 left.Children.Add(counter);
             }
+        }
+        if (!prefs.TipsSeen)  // tant qu'aucune infobulle n'a été ouverte : dire qu'il y en a
+        {
+            tipHint = T("astuce : survole ce qui est souligné en pointillés (curseur ?) pour une explication", 11, Tok.StatusText, mono: true);
+            left.Children.Add(tipHint);
         }
         statusText = T(StatusMessage, 11, Tok.StatusText, mono: true);
         left.Children.Add(statusText);
@@ -1475,7 +1495,7 @@ public sealed class MainWindow : Window
         };
         if (isOpen) name.Children.Add(new Border { Padding = new Thickness(5, 0), CornerRadius = new CornerRadius(3), Background = Accent.Dim, Child = T("ouvert", 10, Accent.Main, mono: true) });
         var row = Clickable(ColumnsSpaced("26,*,150,70,40,110", 8,
-                star, name, T($"{s.ServerName} ({s.Region})", 12, Tok.Muted, mono: true), T($"obj {s.ItemLevel}", 12, Tok.Muted, mono: true), score,
+                star, name, T($"{s.ServerName} ({s.Region})", 12, Tok.Muted, mono: true), Tip(T($"obj {Fmt.Big(s.ItemLevel)}", 12, Tok.Muted, mono: true), "Niveau d'objet"), score,
                 T($"importé {s.FetchedAtUtc.ToLocalTime():dd/MM}", 12, Tok.Muted, mono: true)),
             () => OpenSaved(saved), hover: Tok.HoverStrong, padding: new Thickness(8, 6));
         ToolTip.SetTip(row, $"{(isOpen ? "Revenir à son onglet" : "Ouvrir dans un onglet")} · consulté le {viewedAt.ToLocalTime():dd/MM/yyyy à HH:mm} · importé le {s.FetchedAtUtc.ToLocalTime():dd/MM/yyyy à HH:mm}");
@@ -1596,7 +1616,7 @@ public sealed class MainWindow : Window
             {
                 var changes = ProgressPoint.Of(snapshot).ChangesSince(ProgressPoint.Of(previous), db.SlotName);
                 Toast($"{snapshot.Name} actualisé", changes.Count == 0 ? "Rien n'a changé depuis le dernier import."
-                    : string.Join(" · ", changes.Take(3)) + (changes.Count > 3 ? $" · et {changes.Count - 3} autre(s)" : ""));
+                    : string.Join(" · ", changes.Take(3)) + (changes.Count > 3 ? $" · et {Fmt.Plural(changes.Count - 3, "autre")}" : ""));
             }
         }
         catch (ArmoryException ex)
@@ -1630,7 +1650,7 @@ public sealed class MainWindow : Window
         });
         var paths = files.Where(f => f.Path.IsFile).Select(f => f.Path.LocalPath).ToList();
         if (paths.Count == 0) return;
-        SetStatus($"Lecture de {paths.Count} capture(s)…");
+        SetStatus($"Lecture de {Fmt.Plural(paths.Count, "capture")}…");
         try
         {
             var pages = new List<IReadOnlyList<OcrWord>>();

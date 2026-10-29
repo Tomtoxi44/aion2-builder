@@ -284,6 +284,31 @@ public static class Fmt
     /// <summary>Grand nombre avec séparateur de milliers : 537 198.</summary>
     public static string Big(double v) => Math.Round(v).ToString("#,0", Fr);
 
+    /// <summary>
+    /// Nombre et mot accordés, à la française (0 et 1 au singulier) : « 1 pièce », « 11 pièces » ; pluriel irrégulier en
+    /// troisième argument (« 2 emplacements de pierre », « 3 cases fermées »).
+    /// </summary>
+    public static string Plural(int n, string one, string? many = null) => $"{n} {(n <= 1 ? one : many ?? one + "s")}";
+    public static string Plural(double n, string one, string? many = null) => $"{Num(n)} {(n < 2 ? one : many ?? one + "s")}";
+
+    /// <summary>
+    /// Les conseils comptés d'une seule façon dans toute l'interface : « conseils » = critiques, importants et à suivre ;
+    /// « importants » = critiques et importants ; les infos à part.
+    /// </summary>
+    public static (int Advice, int Important, int Info) Counts(IEnumerable<Finding> findings)
+    {
+        var all = findings.ToList();
+        return (all.Count(f => f.Severity <= Analysis.Severity.Advice), all.Count(f => f.Severity <= Analysis.Severity.Important),
+                all.Count(f => f.Severity == Analysis.Severity.Info));
+    }
+
+    /// <summary>« 26 conseils · 10 importants » (ou « aucun conseil »), le même texte partout.</summary>
+    public static string CountsText(IEnumerable<Finding> findings)
+    {
+        var (advice, important, _) = Counts(findings);
+        return advice == 0 ? "aucun conseil" : $"{Plural(advice, "conseil")} · {Plural(important, "important")}";
+    }
+
     public static string Severity(Severity s) => s switch
     {
         Analysis.Severity.Critical => "Critique",

@@ -116,7 +116,7 @@ public static class ReportMarkdown
         foreach (var b in r.Daevanion.Budgets.Where(b => DaevanionPlanner.Relevant(b.Pool, r.Mode)))
             Line($"- {db.Settings.Daevanion.PoolNames.GetValueOrDefault(b.Pool, b.Pool)} : {b.Spent} dépensés + {b.Unspent} non dépensés (tout remplir : {b.FillCost})");
         foreach (var respec in r.Daevanion.Respecs.Where(x => x.Remove.Count > 0 && x.Gain >= db.Settings.Daevanion.RespecMinGain))
-            Line($"- Réorganisation conseillée : +{Fmt.Pct(respec.Gain)} de valeur, {respec.Remove.Count} case(s) à retirer");
+            Line($"- Réorganisation conseillée : +{Fmt.Pct(respec.Gain)} de valeur, {Fmt.Plural(respec.Remove.Count, "case")} à retirer");
         foreach (var route in r.Daevanion.Routes.Where(x => x.Nodes.Count > 0))
             Line($"- Route conçue depuis le centre : {route.InBudget.Count()} cases pour {route.Budget} points, {(route.Gain >= 0 ? "+" : "")}{Fmt.Pct(route.Gain)} par rapport au placement actuel");
         foreach (var pool in r.Daevanion.ByPool)

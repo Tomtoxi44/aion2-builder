@@ -60,7 +60,7 @@ public sealed record ProgressPoint(DateTime FetchedAtUtc, int Level, int ItemLev
             foreach (var (board, open) in Boards)
             {
                 var delta = open - previous.Boards.GetValueOrDefault(board);
-                if (delta != 0) changes.Add($"Daevanion {board} : {(delta > 0 ? "+" : "")}{delta} case(s)");
+                if (delta != 0) changes.Add($"Daevanion {board} : {(delta > 0 ? "+" : "")}{delta} {(Math.Abs(delta) <= 1 ? "case" : "cases")}");
             }
         return changes;
     }

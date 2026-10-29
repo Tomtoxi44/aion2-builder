@@ -419,7 +419,7 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         if (nextSpecialty.Count > 0)
             findings.Add(new Finding(Area.Skills, Severity.Advice, "Spécialisations au-delà du niveau 10",
                 $"Spécialisations aux niveaux {string.Join(", ", set.SpecialtyLevels)} (niveau total). Au-delà de {set.BaseMax}, seules les cases Daevanion et l'équipement montent une compétence : " +
-                string.Join(" · ", nextSpecialty.Select(x => $"{x.Advice.Skill.Name} niv. {x.Advice.TotalAfter} → {x.Next} ({x.Advice.OpenableNodes} case(s) Daevanion encore fermée(s))")),
+                string.Join(" · ", nextSpecialty.Select(x => $"{x.Advice.Skill.Name} niv. {x.Advice.TotalAfter} → {x.Next} ({Fmt.Plural(x.Advice.OpenableNodes, "case Daevanion encore fermée", "cases Daevanion encore fermées")})")),
                 "Privilégie ces cases de compétence dans ton Daevanion (le plan Daevanion en tient compte).", 35));
 
         // Stigmas.

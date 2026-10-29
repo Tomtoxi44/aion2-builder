@@ -161,7 +161,7 @@ public sealed class EngravingAdvisor(GameDatabase db)
             var commonStones = stones.Where(s => s.Verdict != LineVerdict.Poor && s.Grade == "Common").ToList();
             var bestStones = betterStones.Count > 0 ? Aim(stoneKeys.Take(2), " ou ") : "une stat utile à ta classe";
             var stoneParts = new List<string>();
-            if (!replaced && empty > 0) stoneParts.Add($"{empty} emplacement(s) libre(s) : grave des {stoneKind} de {bestStones}.");
+            if (!replaced && empty > 0) stoneParts.Add($"{Fmt.Plural(empty, "emplacement libre", "emplacements libres")} : grave des {stoneKind} de {bestStones}.");
             if (!replaced && poorStones.Count > 0) stoneParts.Add($"Remplace {string.Join(", ", poorStones.Select(s => s.Effect.Raw))} par {bestStones}.");
             // Grade commun : gain faible, à faire quand une meilleure pierre tombe (hors « à revoir »).
             var upgrade = replaced || commonStones.Count == 0 ? null
@@ -192,7 +192,7 @@ public sealed class EngravingAdvisor(GameDatabase db)
 
         var raise = plan.Items.Where(e => e.Action == SoulAction.RaiseRate).OrderBy(e => e.SoulBindRate).ToList();
         if (raise.Count > 0)
-            findings.Add(new Finding(Area.Gear, Severity.Advice, $"Lien d'âme à monter ({raise.Count} pièce(s) aux bonnes options)",
+            findings.Add(new Finding(Area.Gear, Severity.Advice, $"Lien d'âme à monter ({Fmt.Plural(raise.Count, "pièce")} aux bonnes options)",
                 string.Join(" · ", raise.Select(e => $"{e.SlotName} {Fmt.Num(e.SoulBindRate ?? 0)} %")),
                 $"Monte d'abord « {raise[0].SlotName} » ({Fmt.Num(raise[0].SoulBindRate ?? 0)} %) : options déjà bonnes, chaque livre de gravure y rapporte. " +
                 "Ne monte pas le lien d'âme d'une pièce dont les options sont mauvaises : une réinitialisation le remettrait à 0.", 28));
@@ -200,14 +200,14 @@ public sealed class EngravingAdvisor(GameDatabase db)
         var stones = plan.Items.Where(e => e.StoneAdvice is not null).ToList();
         if (stones.Count > 0)
             findings.Add(new Finding(Area.Gear, stones.Any(e => e.Stones.Count < e.StoneSlots) ? Severity.Important : Severity.Advice,
-                $"Pierres gravées à revoir ({stones.Count} pièce(s))",
+                $"Pierres gravées à revoir ({Fmt.Plural(stones.Count, "pièce")})",
                 string.Join("\n", stones.Take(6).Select(e => $"{e.SlotName} ({e.Stones.Count}/{e.StoneSlots} {e.StoneKind}) : {e.StoneAdvice}")),
                 $"Les pierres comptent dans tes stats : vise {string.Join(", ", stones[0].BetterStones)} pour un {p.Class.Name} en {GameDatabase.ModeName(p.Mode)}.",
                 25 + stones.Max(e => e.Priority) / 2));
 
         var skipped = plan.Items.Where(e => e.Action == SoulAction.Skip).ToList();
         if (skipped.Count > 0)
-            findings.Add(new Finding(Area.Gear, Severity.Info, $"Gravures : rien à dépenser sur {skipped.Count} pièce(s) à remplacer",
+            findings.Add(new Finding(Area.Gear, Severity.Info, $"Gravures : rien à dépenser sur {Fmt.Plural(skipped.Count, "pièce")} à remplacer",
                 string.Join(", ", skipped.Select(e => e.SlotName)),
                 "Garde tes livres de gravure et tes pierres pour les pièces qui les remplaceront."));
         return findings;

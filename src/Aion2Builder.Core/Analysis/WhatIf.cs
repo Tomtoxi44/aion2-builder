@@ -23,7 +23,7 @@ public static class WhatIf
         if (todo.Count > 0)
         {
             var overall = Score(r, gear: r.Gear with { Slots = r.Gear.Slots.Select(s => Todo(s) ? s with { Status = SlotStatus.Ok } : s).ToList() }).Overall;
-            gains.Add(new Gain($"{todo.Count} pièce(s) au niveau du palier", string.Join(", ", todo.OrderByDescending(s => s.Priority).Select(s => s.SlotName)),
+            gains.Add(new Gain($"{Fmt.Plural(todo.Count, "pièce")} au niveau du palier", string.Join(", ", todo.OrderByDescending(s => s.Priority).Select(s => s.SlotName)),
                 overall, overall - now, Area.Gear));
         }
 
@@ -31,7 +31,7 @@ public static class WhatIf
         if (moved > 0)
         {
             var overall = Score(r, skills: r.Skills with { Skills = r.Skills.Skills.Select(a => a with { Base = a.RecommendedBase }).ToList() }).Overall;
-            gains.Add(new Gain("la répartition des compétences conseillée", $"{moved} compétence(s) changent de niveau", overall, overall - now, Area.Skills));
+            gains.Add(new Gain("les compétences conseillées", $"{Fmt.Plural(moved, "compétence change", "compétences changent")} de niveau", overall, overall - now, Area.Skills));
         }
 
         var steps = r.Daevanion.Steps.Take(nextNodes).ToList();

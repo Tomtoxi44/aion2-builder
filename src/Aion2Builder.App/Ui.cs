@@ -439,11 +439,31 @@ static class Ui
         return block;
     }
 
+    static readonly Cursor Help = new(StandardCursorType.Help);
+
+    /// <summary>Appelé à la première infobulle ouverte (l'astuce de la barre d'état n'est plus utile).</summary>
+    public static Action? TipShown { get; set; }
+
+    /// <summary>
+    /// Une infobulle, et qu'on sache qu'elle existe : un texte est souligné de pointillés, et le curseur devient « ? » sur
+    /// tout ce qui n'est pas déjà cliquable (une ligne cliquable garde sa main).
+    /// </summary>
     public static T Tip<T>(T control, string text) where T : Control
     {
         ToolTip.SetTip(control, text);
+        ToolTip.SetShowDelay(control, 350);
+        if (control is TextBlock block) block.TextDecorations = Dotted;
+        if (control.Cursor is null) control.Cursor = Help;
+        control.AddHandler(ToolTip.ToolTipOpeningEvent, (_, _) => TipShown?.Invoke());
         return control;
     }
+
+    /// <summary>Soulignement en pointillés discrets : « survole-moi ».</summary>
+    static TextDecorationCollection Dotted => [new TextDecoration
+    {
+        Location = TextDecorationLocation.Underline, Stroke = Tok.Muted, StrokeThickness = 1,
+        StrokeDashArray = [1.5, 2.5], StrokeOffset = 2, StrokeOffsetUnit = TextDecorationUnit.Pixel,
+    }];
 
     public static TextBlock Centered(this TextBlock block)
     {

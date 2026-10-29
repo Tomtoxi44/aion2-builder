@@ -150,7 +150,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     Control SideItem(string? icon, string title, string? badge, IBrush? badgeColor, string? preview, bool selected, Action open, Control? extra = null, string? tip = null)
     {
         var text = new StackPanel { Spacing = 2, Children = { T(title, 13, selected ? Tok.Text : Tok.Text2, selected ? FontWeight.SemiBold : FontWeight.Normal) } };
-        if (preview is not null) text.Children.Add(T(preview, 11, Tok.Muted));
+        // Aperçu sur deux lignes au plus (coupé avec « … » au-delà) plutôt que tronqué à la largeur de la barre.
+        if (preview is not null) text.Children.Add(new TextBlock { Text = preview, FontSize = 11, Foreground = Tok.Muted, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis });
         if (extra is not null) text.Children.Add(extra);
         var dock = new DockPanel();
         if (badge is not null)
@@ -396,7 +397,26 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             Grid.SetColumn(tile, col);
             grid.Children.Add(tile);
         }
-        return grid;
+        if (s.Screen != Screen.Home) return grid;
+        // Sur l'accueil, la signification des lettres des pièces (l'écran Équipement la donne dans son cadre central).
+        return new StackPanel { Spacing = 10, Children = { grid, LetterLegend() } };
+    }
+
+    /// <summary>Une ligne : chaque lettre de pièce dans sa couleur, suivie de ce qu'elle veut dire.</summary>
+    static Control LetterLegend()
+    {
+        var line = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Center };
+        foreach (var (code, color, text) in new[]
+        {
+            ("E", Tok.Bad, "vide"), ("W", Tok.Warn, "à remplacer ou en retard"), ("I", Tok.Info, "à enchanter"),
+            ("G", Tok.Warn, "gravures ou pierres à revoir"), ("✓", Tok.Good, "rien à faire"),
+        })
+            line.Children.Add(new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(8, 0),
+                Children = { T(code, 11, color, FontWeight.SemiBold, mono: true), T(text, 11, Tok.Muted) },
+            });
+        return line;
     }
 
     (string Label, int Value, Screen Screen)[] AreaScores =>
@@ -408,11 +428,20 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     /// <summary>Accueil : la silhouette, la note globale et le nombre d'actions en badges.</summary>
     Control HomeScreen()
     {
-        var todo = r.ActionPlan.Count(f => !IsDone(f));
+        var (advice, important, _) = Fmt.Counts(r.Findings);
         return Page($"Accueil · {r.Character.Name} · {Mode}", Badges(
-            Badge($"score global {r.Scores.Overall}", Tok.Score(r.Scores.Overall)),
-            Badge(todo == 0 ? "✓ rien d'important" : $"{todo} action{(todo > 1 ? "s" : "")} à faire", todo == 0 ? Tok.Good : Tok.Warn)), Doll());
+            Tip(Badge($"score global {r.Scores.Overall}", Tok.Score(r.Scores.Overall)), HowText),
+            Badge(advice == 0 ? "✓ aucun conseil" : Fmt.CountsText(r.Findings), important > 0 ? Tok.Warn : advice > 0 ? Tok.Text2 : Tok.Good)), Doll());
     }
+
+    /// <summary>Ce que mesure chaque note (survol des tuiles de l'Accueil).</summary>
+    static string ScoreTip(Screen screen) => screen switch
+    {
+        Screen.Stats => "Note Stats : part de tes stats ajustables placée dans des stats utiles à ta classe. Clic : l'écran Stats.",
+        Screen.Gear => "Note Équipement : tes pièces face au niveau de ton palier. Clic : l'écran Équipement.",
+        Screen.Skills => "Note Compétences : niveaux visés atteints, pondérés par l'importance de chaque compétence. Clic : l'écran Compétences.",
+        _ => "Note Daevanion : part des plateaux utiles déjà ouverte. Clic : l'écran Daevanion.",
+    };
 
     /// <summary>Accueil : les quatre notes (clic = écran), puis les actions les plus rentables (clic = l'endroit où agir).</summary>
     Control HomeCenter()
@@ -430,6 +459,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             tile.CornerRadius = new CornerRadius(4);
             tile.BorderBrush = Tok.Border;
             tile.BorderThickness = new Thickness(1);
+            Tip(tile, ScoreTip(screen));
             Grid.SetColumn(tile, i++);
             tiles.Children.Add(tile);
         }
@@ -437,8 +467,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var done = r.ActionPlan.Count(IsDone);
         foreach (var f in r.ActionPlan.Where(f => !IsDone(f)).Take(5)) actions.Children.Add(CompactAction(f));
         if (actions.Children.Count == 0) actions.Children.Add(T("✓ Rien d'important à faire : tout est en ordre pour cette vue.", 13, Tok.Good).WithMargin(4, 8));
-        if (done > 0) actions.Children.Add(T($"{done} action(s) cochée(s) « fait » depuis l'import : elles sont dans Détails.", 11, Tok.Muted, mono: true).WithMargin(8, 6, 0, 0));
-        var all = Clickable(T($"tout voir ({r.Findings.Count}) ›", 12, Accent.Main), () => GoTo(Screen.Details), hover: Tok.HoverStrong, padding: new Thickness(4, 0));
+        if (done > 0) actions.Children.Add(T($"{Fmt.Plural(done, "conseil coché", "conseils cochés")} « fait » depuis l'import : dans Détails.", 11, Tok.Muted, mono: true).WithMargin(8, 6, 0, 0));
+        var all = Tip(Clickable(T("tout voir ›", 12, Accent.Main), () => GoTo(Screen.Details), hover: Tok.HoverStrong, padding: new Thickness(4, 0)),
+            $"Tous les conseils, par écran : {Fmt.CountsText(r.Findings)}, plus {Fmt.Plural(Fmt.Counts(r.Findings).Info, "info")}.");
         return new StackPanel { Spacing = 12, Children = { tiles, Card(actions, "À faire maintenant", all, new Thickness(6, 2, 6, 6)) } };
     }
 
@@ -488,17 +519,17 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     RoundBar(g.ProgressToNext(r.Character.ItemLevel), Accent.Main, 6),
                 },
             });
-        foreach (var (status, label) in new[] { (SlotStatus.Empty, "vide(s)"), (SlotStatus.Replace, "à remplacer"), (SlotStatus.Weak, "en retard"), (SlotStatus.Enchant, "à enchanter") })
+        foreach (var (status, label) in new[] { (SlotStatus.Empty, "vide"), (SlotStatus.Replace, "à remplacer"), (SlotStatus.Weak, "en retard"), (SlotStatus.Enchant, "à enchanter") })
         {
             var slots = g.Slots.Where(x => x.Status == status).ToList();
             if (slots.Count == 0) continue;
             var (code, color) = StatusCode(status);
             lines.Children.Add(ColumnsSpaced("18,*", 8, T(code, 12, color, FontWeight.SemiBold, mono: true),
-                T($"{slots.Count} {label} : {string.Join(", ", slots.OrderByDescending(x => x.Priority).Select(x => x.SlotName))}", 13, Tok.Text2, wrap: true)));
+                T($"{(status == SlotStatus.Empty ? Fmt.Plural(slots.Count, "vide") : $"{slots.Count} {label}")} : {string.Join(", ", slots.OrderByDescending(x => x.Priority).Select(x => x.SlotName))}", 13, Tok.Text2, wrap: true)));
         }
         var engr = r.Engravings.Items.Count(e => e.NeedsWork);
         if (engr > 0)
-            lines.Children.Add(ColumnsSpaced("18,*", 8, T("G", 12, Tok.Warn, FontWeight.SemiBold, mono: true), T($"{engr} pièce(s) aux gravures à revoir (sous-page Pierres)", 13, Tok.Text2, wrap: true)));
+            lines.Children.Add(ColumnsSpaced("18,*", 8, T("G", 12, Tok.Warn, FontWeight.SemiBold, mono: true), T($"{Fmt.Plural(engr, "pièce")} aux gravures à revoir (sous-page Pierres)", 13, Tok.Text2, wrap: true)));
         if (g.Slots.All(x => x.Status == SlotStatus.Ok) && engr == 0)
             lines.Children.Add(T("✓ Toutes les pièces sont au niveau de ton palier.", 13, Tok.Good));
         lines.Children.Add(T("Clique une pièce pour son détail dans l'inspecteur.", 12, Tok.Muted).WithMargin(0, 6, 0, 0));
@@ -539,8 +570,13 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         tile.BorderBrush = selected ? Accent.Main : Tok.Border;
         tile.BorderThickness = new Thickness(1);
         var tip = p.Item is null
-            ? $"{p.SlotName} : emplacement vide"
+            ? $"{p.SlotName} : emplacement vide (E)"
             : $"{p.Item.Name} — {db.Grade(p.Item.Grade).Name}, niveau d'objet {p.Power}, +{p.Item.EnchantLevel}\n" +
+              "État : " + string.Join(" · ", new[]
+              {
+                  p.Status != SlotStatus.Ok ? $"{code} = {Fmt.Status(p.Status).ToLowerInvariant()}" : null,
+                  engraving is { NeedsWork: true } ? "G = gravures ou pierres à revoir" : null,
+              }.OfType<string>().DefaultIfEmpty("✓ = rien à faire")) + "\n" +
               string.Join("\n", p.Item.MainStats.Select(e => e.Raw)) +
               (engraving is null ? "" : EngravingTip(engraving));
         return Tip(tile, tip);
@@ -594,7 +630,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         };
         var empty = e.StoneSlots - e.Stones.Count;
         var stones = e.StoneAdvice is null ? null
-            : empty > 0 ? $"graver {empty} pierre(s)"
+            : empty > 0 ? $"graver {Fmt.Plural(empty, "pierre")}"
             : e.Stones.Any(x => x.Verdict == LineVerdict.Poor) ? "changer des pierres" : "monter le grade des pierres";
         return string.Join(" · ", new[] { soul, stones }.Where(x => x is not null)) is { Length: > 0 } t ? t : "—";
     }
@@ -702,29 +738,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             raise.Count > 0 ? $"{raise[0].SlotName.ToLowerInvariant()} +{raise[0].Item.EnchantLevel} → +{raise[0].Target}" : "rien à monter sans risque");
         var engr = r.Engravings.Items.Count(e => e.NeedsWork);
         Page(Icons.Gem, GearPage.Stones, engr > 0 ? $"{engr}" : "✓", engr > 0 ? Tok.Warn : Tok.Good,
-            plan.SacredSlots.Count > 0 ? $"pierre sacrée : {plan.SacredSlots.Sum(x => x.Count)} emplacement(s)" : "gravures et pierres");
-
-        // Les pièces, comme les fichiers d'un explorateur : grade (trait), puissance, état ; clic = la pièce dans l'inspecteur.
-        body.Children.Add(SideGroup($"Tes pièces · {r.Gear.Slots.Count(p => p.Item is not null)}"));
-        var selected = SelectedSlot?.Slot;
-        foreach (var p in r.Gear.Slots)
-        {
-            var (code, color) = StatusCode(p.Status);
-            var engraving = r.Engravings.For(p.Slot);
-            var codes = (engraving is { NeedsWork: true } ? "G" : "") + (p.Status != SlotStatus.Ok || engraving is not { NeedsWork: true } ? code : "");
-            var right = new StackPanel
-            {
-                Orientation = Orientation.Horizontal, Spacing = 6,
-                Children = { T(p.Item is null ? "—" : p.Power.ToString(), 11, Tok.Text, mono: true), T(codes, 11, engraving is { NeedsWork: true } && p.Status == SlotStatus.Ok ? Tok.Warn : color, FontWeight.SemiBold, mono: true) },
-            };
-            DockPanel.SetDock(right, Dock.Right);
-            var bar = new Border { Width = 3, Height = 14, Background = GradeBrush(p.Item), Margin = new Thickness(0, 0, 8, 0) };
-            DockPanel.SetDock(bar, Dock.Left);
-            var slot = p.Slot;
-            var row = Clickable(new DockPanel { Children = { right, bar, T(p.SlotName, 12, slot == selected ? Tok.Text : Tok.Text2) } },
-                () => update(st => st.Slot = slot), slot == selected ? Accent.Dim : null, slot == selected ? null : Tok.Hover, new Thickness(22, 3, 10, 3));
-            body.Children.Add(Tip(row, p.Item?.Name ?? $"{p.SlotName} : emplacement vide"));
-        }
+            plan.SacredSlots.Count > 0 ? $"pierre sacrée : {Fmt.Plural(plan.SacredSlots.Sum(x => x.Count), "emplacement")}" : "gravures et pierres");
         return new SidePanel("Équipement", null, body);
     }
 
@@ -743,8 +757,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var logs = session.Select(i => combats[i].Log).ToList();
             var first = logs.Min(l => l.ImportedAtUtc).ToLocalTime();
             var last = logs.Max(l => l.ImportedAtUtc.AddSeconds(l.Duration)).ToLocalTime();
-            var map = logs.Select(l => l.Map).FirstOrDefault(m => m is not null);
-            body.Children.Add(SideGroup($"{first:dd/MM} · {first:HH:mm}–{last:HH:mm}" + (map is { } m ? $" · carte {m}" : "")));
+            body.Children.Add(SideGroup($"{first:dd/MM} · {first:HH:mm}–{last:HH:mm}"));
             var group = g;
             if (session.Count > 1)
             {
@@ -761,7 +774,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 body.Children.Add(SideItem(null, log.Target, todo == 0 ? "✓" : $"{todo}", todo == 0 ? Tok.Good : Tok.Warn,
                     $"{log.ImportedAtUtc.ToLocalTime():HH:mm:ss} · {Duration(log.Duration)} · {PetMeterFights.KindName(log) ?? (log.Source == "Pet Meter" ? "Pet Meter" : "captures")}",
                     shown == i, () => update(st => { st.CombatIndex = index; st.CombatGroup = null; st.CombatSkill = null; st.CombatList = false; }), dps,
-                    todo == 0 ? "Rien à corriger" : $"{todo} point(s) à corriger"));
+                    todo == 0 ? "Rien à corriger" : $"{Fmt.Plural(todo, "point")} à corriger"));
             }
         }
         if (combats.Count == 0)
@@ -796,7 +809,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var steps = r.Daevanion.Steps.Count(x => x.Board.Id == b.Board.Id);
             var id = b.Board.Id;
             body.Children.Add(SideItem(Icons.Board, b.Board.Name, $"{b.Board.OpenNodes}/{b.Board.TotalNodes}", Tok.Text2,
-                $"réserve {PoolShort(b.Pool)}" + (steps > 0 ? $" · {steps} case(s) à prendre" : ""), b.Board.Id == selected?.Board.Id, () => update(st => st.Board = id)));
+                $"réserve {PoolShort(b.Pool)}" + (steps > 0 ? $" · {Fmt.Plural(steps, "case")} à prendre" : ""), b.Board.Id == selected?.Board.Id, () => update(st => st.Board = id)));
         }
         body.Children.Add(SideGroup("Plan"));
         var respec = r.Daevanion.Respecs.Count(x => x.Remove.Count > 0 && x.Gain >= db.Settings.Daevanion.RespecMinGain);
@@ -821,22 +834,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         Page(Icons.Swap, SkillPage.Moves, sk.Moves.Count > 0 ? $"{sk.Moves.Count}" : "—", sk.Moves.Count > 0 ? Tok.Warn : Tok.Muted, "la raison de chaque point déplacé");
         var equipped = sk.Stigmas.Count(x => x.Skill.Equipped);
         Page(Icons.Shield, SkillPage.Stigmas, $"{equipped}/{db.Settings.Stigmas.Slots}", Tok.Text2,
-            sk.NextShards.Count > 0 ? $"{sk.NextShards.Count} palier(s) de fragments" : "stigmas au niveau visé");
-
-        // Ce qui fait les dégâts : un clic ouvre la compétence dans l'inspecteur.
-        if (sk.Focus.Count > 0)
-        {
-            body.Children.Add(SideGroup("Ce qui fait tes dégâts"));
-            var selected = SelectedSkillName;
-            foreach (var a in sk.Focus.Where(a => a.DamageShare >= 0.005).Take(8))
-            {
-                var name = a.Skill.Name;
-                var share = T(Fmt.Pct(a.DamageShare), 11, Tok.Text2, mono: true);
-                DockPanel.SetDock(share, Dock.Right);
-                body.Children.Add(Clickable(new DockPanel { Children = { share, T(name, 12, name == selected ? Accent.Main : Tok.Text2) } },
-                    () => update(st => st.Skill = name), name == selected ? Accent.Dim : null, name == selected ? null : Tok.Hover, new Thickness(22, 3, 10, 3)));
-            }
-        }
+            sk.NextShards.Count > 0 ? $"{Fmt.Plural(sk.NextShards.Count, "palier")} de fragments" : "stigmas au niveau visé");
         return new SidePanel("Compétences", null, body);
     }
 
@@ -936,7 +934,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var (gate, list, actions, points) = segments[i];
             if (i == 0) { shown.Children.Add(list); continue; }
             var id = $"route:seg:{i}";
-            shown.Children.Add(Expander(gate is null ? $"Ensuite : {actions} action(s), +{points}" : $"Puis pour {Fmt.Num(gate.Score)} : {actions} action(s), +{points}",
+            shown.Children.Add(Expander(gate is null ? $"Ensuite : {Fmt.Plural(actions, "action")}, +{points}" : $"Puis pour {Fmt.Num(gate.Score)} : {Fmt.Plural(actions, "action")}, +{points}",
                 IsOpen(id), () => Toggle(id), () => list, new Thickness(10, 6)));
         }
         if (plan.Steps.Count == 0)
@@ -1114,8 +1112,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var todo = r.Engravings.Items.Count(e => e.NeedsWork);
         var sacredCount = plan.SacredSlots.Sum(x => x.Count);
         var badges = Badges(
-            todo > 0 ? Badge($"{todo} pièce(s) à revoir", Tok.Warn) : Badge("✓ gravures en ordre", Tok.Good),
-            sacredCount > 0 ? Badge($"{sacredCount} emplacement(s) de pierre sacrée", Tok.Info) : null);
+            todo > 0 ? Badge($"{Fmt.Plural(todo, "pièce")} à revoir", Tok.Warn) : Badge("✓ gravures en ordre", Tok.Good),
+            sacredCount > 0 ? Badge($"{Fmt.Plural(sacredCount, "emplacement")} de pierre sacrée", Tok.Info) : null);
 
         var sacred = new StackPanel { Spacing = 8 };
         foreach (var (slotName, count) in plan.SacredSlots)
@@ -1158,7 +1156,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             Spacing = 6,
             Children =
             {
-                TableCard($"Gravures · {todo} pièce(s) à revoir", T("✓ utile   ~ moyen   ✕ à remplacer", 11, Tok.Muted, mono: true),
+                TableCard($"Gravures · {Fmt.Plural(todo, "pièce")} à revoir", T("✓ utile   ~ moyen   ✕ à remplacer", 11, Tok.Muted, mono: true),
                     TableHeader(cols, "Pièce", "Lien d'âme", "Options", "Pierres", "À faire"), rows),
                 Expander("Dans quel ordre corriger", IsOpen("gear:order"), () => Toggle("gear:order"), () =>
                     T("Ordre économe : corrige d'abord les ✕ des pièces que tu gardes (arme en tête), monte ensuite le lien d'âme des pièces " +
@@ -1228,8 +1226,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     _ => new SimulationOptions(DaevanionChoice.Next),
                 };
                 rows.Children.Add(Tip(Clickable(ColumnsSpaced("40,*,Auto", 8, T($"+{g.Delta}", 13, Tok.Good, FontWeight.SemiBold, mono: true),
-                        T(g.Label, 12, Tok.Text2), T($"→ {g.Overall}", 12, Tok.Score(g.Overall), mono: true)),
-                    () => update(st => { st.Screen = Screen.Simulate; st.Sim = preset; }), hover: Tok.Hover, padding: new Thickness(4, 3)), $"{g.Detail}\nClic : ouvrir la simulation."));
+                        T(g.Label, 12, Tok.Text2, wrap: true), T($"→ {g.Overall}", 12, Tok.Score(g.Overall), mono: true)),
+                    () => update(st => { st.Screen = Screen.Simulate; st.Sim = preset; }), hover: Tok.Hover, padding: new Thickness(4, 3)), $"Si tu suivais ce conseil ({g.Detail}), ton score global passerait de {g.Overall - g.Delta} à {g.Overall}.\nClic : ouvrir la simulation."));
             }
             panel.Children.Add(rows);
         }
@@ -1237,7 +1235,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         // Comparaison aux joueurs de la classe (niveau 45) : position dans l'échantillon, de 0 à 100 %.
         if (r.Profile.Class.Benchmark is { ItemLevel.Count: > 0 } bench && c.Level >= 45)
         {
-            panel.Children.Add(SectionHeader("Comparé aux joueurs", Tip(T($"{bench.ItemLevel.Count} {r.Profile.Class.Name}s", 11, Tok.Muted, mono: true), bench.Source)));
+            var peers = StatAnalyzer.Peers(r.Profile, c)?.Count;
+            panel.Children.Add(SectionHeader("Comparé aux joueurs", Tip(T($"{bench.ItemLevel.Count} {r.Profile.Class.Name}s", 11, Tok.Muted, mono: true),
+                $"{bench.Source}\nIci, tous les {r.Profile.Class.Name}s relevés ({bench.ItemLevel.Count}) : ta place dans la classe." +
+                (peers is { } n ? $"\nL'écran Stats n'en garde que {n}, ceux au niveau d'objet le plus proche du tien, pour comparer des stats à équipement égal." : ""))));
             var rows = new StackPanel { Spacing = 8, Margin = new Thickness(14, 12) };
             var nodes = r.Daevanion.Boards.Where(b => b.Pool == DaevanionPlanner.NormalPool).Sum(b => b.Board.OpenNodes);
             foreach (var (label, mine, sample) in new[] { ("Niveau d'objet", c.ItemLevel, bench.ItemLevel), ("Puissance", c.CombatPower, bench.CombatPower), ("Cases Daevanion", nodes, bench.DaevanionNodes) })
@@ -1251,9 +1252,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     Children =
                     {
                         ColumnsSpaced("*,Auto", 8, T(label, 12, Tok.Muted), T($"{mine} · médiane {ClassBenchmark.Median(sample)}", 12, mono: true)),
-                        ColumnsSpaced("*,64", 8, Bar(pct, color, 4, track: Tok.Border), T($"devant {Fmt.Pct(pct)}", 11, color, mono: true)),
+                        ColumnsSpaced("*,Auto", 8, Bar(pct, color, 4, track: Tok.Border), T($"devant {Fmt.Pct(pct)}", 11, color, mono: true)),
                     },
-                }, $"{label} : {mine}. Échantillon : {string.Join(", ", sample)}."));
+                }, $"{label} : {mine}, devant {Fmt.Pct(pct)} des {r.Profile.Class.Name}s relevés (médiane {ClassBenchmark.Median(sample)}).\nÉchantillon : {string.Join(", ", sample)}."));
             }
             panel.Children.Add(rows);
         }
@@ -1374,6 +1375,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             return x.Weight < 0.6
                 ? ($"Tu y mets {Pts(x.Share - x.ExpectedShare)} points de part de trop : à réduire au profit des stats manquantes.", Tok.Warn)
                 : ("Au-dessus de la part visée, mais c'est une stat prioritaire pour ta classe : rien à réduire.", Tok.Good);
+        if (x.Share - x.ExpectedShare > 0.02)
+            return ($"Un peu au-dessus de la part visée (+{Pts(x.Share - x.ExpectedShare)} points) : rien d'urgent.", Tok.Good);
         return ("Proche de la part visée pour ta classe.", Tok.Good);
     }
 
@@ -1565,8 +1568,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var off = cmp.Families.Count(f => FamilyVerdict(f, cmp.Families).Off);
         var below = cmp.Families.SelectMany(f => f.Players).Count(v => v.Verdict < 0 && v.Stat.Weight >= 0.6);
         var badges = Badges(
-            Badge(off == 0 ? "✓ familles équilibrées" : $"{off} famille{(off > 1 ? "s" : "")} à revoir", off == 0 ? Tok.Good : Tok.Warn),
-            cmp.Peers is null ? null : Badge(below == 0 ? "✓ rien sous la moyenne" : $"{below} stat{(below > 1 ? "s" : "")} utile{(below > 1 ? "s" : "")} sous la moyenne", below == 0 ? Tok.Good : Tok.Bad));
+            Badge(off == 0 ? "✓ familles équilibrées" : $"{Fmt.Plural(off, "famille")} à revoir", off == 0 ? Tok.Good : Tok.Warn),
+            cmp.Peers is null ? null : Badge(below == 0 ? "✓ rien sous la moyenne" : Fmt.Plural(below, "stat utile", "stats utiles") + " sous la moyenne", below == 0 ? Tok.Good : Tok.Bad));
 
         // Comment lire : chaque mot de la page défini une fois.
         var cls = r.Profile.Class.Name;
@@ -1582,7 +1585,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             ? $"{who[0].ToString().ToUpperInvariant()}{who[1..]}, stats totales calculées comme les tiennes. « Dans la moyenne » : à 3 % près."
             : r.Mode == GameMode.PvE ? "pas d'échantillon de joueurs pour ta classe à ton niveau." : "relevée en JcE seulement : passe en vue JcE pour la voir.");
 
-        var blocks = new List<Control?> { Card(how, "Comment lire cette page") };
+        var blocks = new List<Control?> { Expander("Comment lire cette page", IsOpen("stats:how"), () => Toggle("stats:how"), () => Card(how, null)) };
         blocks.AddRange(cmp.Families.Where(f => f.Stats.Count > 0 || Math.Abs(f.Share.Gap) > tolerance).Select(f => FamilyCard(f, cmp, cmp.Families)));
         blocks.Add(Clickable(T(s.AllStats ? "▴ masquer le tableau de toutes les stats" : "▾ toutes les stats en tableau (part, part visée, poids)", 12, Accent.Main),
             () => update(st => st.AllStats = !st.AllStats), hover: Tok.Hover, padding: new Thickness(4, 6)));
@@ -2095,7 +2098,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var slots = db.Settings.Skills.SpecialtySlots;
         var open = plans.Sum(p => p.Slots);
         var badges = Badges(
-            Badge($"{open} emplacement{(open > 1 ? "s" : "")} ouvert{(open > 1 ? "s" : "")}", Accent.Main),
+            Badge(Fmt.Plural(open, "emplacement ouvert", "emplacements ouverts"), Accent.Main),
             Tip(Badge("à comparer en jeu", Tok.Info), "Le site officiel ne dit pas quelles spécialisations sont équipées : compare avec ta fenêtre de compétence."));
         if (plans.Count == 0)
             return Page($"Compétences · spécialisations · {Mode}", null,
@@ -2132,7 +2135,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             {
                 Children =
                 {
-                    new Border { [DockPanel.DockProperty] = Dock.Right, Child = Pips(p.Slots, total, 10, 8) },
+                    Tip(new Border { [DockPanel.DockProperty] = Dock.Right, Background = Brushes.Transparent, Child = Pips(p.Slots, total, 10, 8) },
+                        $"Emplacements de spécialisation : {p.Slots} ouvert{(p.Slots > 1 ? "s" : "")} sur {total} (vert = ouvert, orange = encore fermé). " +
+                        $"Ils s'ouvrent aux niveaux {string.Join(", ", db.Settings.Skills.SpecialtySlots)} de la compétence."),
                     T($"{name} · niv. {p.Level}", 13, name == SelectedSkillName ? Accent.Main : Tok.Text, FontWeight.SemiBold),
                 },
             },
@@ -2156,6 +2161,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
     Control SkillInspector()
     {
+        // Sans compétence choisie : la vue d'ensemble (ce qui bouge, ce qui fait les dégâts) plutôt qu'une compétence au hasard.
+        if (s.Skill is null) return new StackPanel { Children = { SectionHeader("Inspecteur · compétences"), SkillSummary() } };
         var panel = new StackPanel { Children = { SectionHeader("Inspecteur · compétence") } };
         var name = SelectedSkillName;
         var body = new StackPanel { Spacing = 14, Margin = new Thickness(14) };
@@ -2195,7 +2202,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             body.Children.Add(Field("Rôle dans la classe", a.Why, a.Unverified ? Tok.Warn : null));
             // Échanges : d'où viennent ses points, ou à qui elle les cède, et pourquoi.
             var exchanges = r.Skills.Moves.Where(m => m.To == a).Select(m => m.From is null
-                    ? $"Reçoit {Pts(m.Points)} non dépensé(s)."
+                    ? $"Reçoit {Pts(m.Points)} non {(m.Points > 1 ? "dépensés" : "dépensé")}."
                     : $"Reçoit {Pts(m.Points)} de {m.From.Skill.Name} ({m.From.Role.ToLowerInvariant()}, importance {m.From.Priority:0.00}).")
                 .Concat(r.Skills.Moves.Where(m => m.From == a).Select(m =>
                     $"Cède {Pts(m.Points)} à {m.To.Skill.Name} ({m.To.Role.ToLowerInvariant()}, importance {m.To.Priority:0.00} contre {a.Priority:0.00})."))
@@ -2234,6 +2241,37 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         }
         panel.Children.Add(body);
         return panel;
+    }
+
+    /// <summary>L'inspecteur des compétences sans sélection : points à déplacer, stigmas, et ce qui fait les dégâts (clic = la compétence).</summary>
+    Control SkillSummary()
+    {
+        var sk = r.Skills;
+        var body = new StackPanel { Spacing = 14, Margin = new Thickness(14) };
+        body.Children.Add(T("Vue d'ensemble", 17, weight: FontWeight.SemiBold));
+        var moved = sk.Moves.Sum(m => m.Points);
+        body.Children.Add(KeyValue(
+        [
+            ("à déplacer", moved > 0 ? $"{Pts(moved)} ({Fmt.Plural(sk.Moves.Count, "échange")})" : "rien", moved > 0 ? Tok.Warn : Tok.Good),
+            ("stigmas", $"{sk.Stigmas.Count(x => x.Skill.Equipped)}/{db.Settings.Stigmas.Slots} équipés", null),
+            ("dégâts", sk.MeasuredFights > 0 ? $"mesurés sur {Fmt.Plural(sk.MeasuredFights, "combat")}" : "simulés (aucun combat importé)", Tok.Text2),
+        ]));
+        var focus = sk.Focus.Where(a => a.DamageShare >= 0.005).Take(8).ToList();
+        if (focus.Count > 0)
+        {
+            var rows = new StackPanel { Spacing = 2 };
+            foreach (var a in focus)
+            {
+                var name = a.Skill.Name;
+                var share = T(Fmt.Pct(a.DamageShare), 11, Tok.Text2, mono: true);
+                DockPanel.SetDock(share, Dock.Right);
+                rows.Children.Add(Clickable(new DockPanel { Children = { share, T(name, 12, Tok.Text2) } },
+                    () => update(st => st.Skill = name), hover: Tok.Hover, padding: new Thickness(4, 3)));
+            }
+            body.Children.Add(new StackPanel { Spacing = 6, Children = { Label("Ce qui fait tes dégâts"), rows } });
+        }
+        body.Children.Add(T("Clique une compétence, ici ou dans la page, pour son détail.", 12, Tok.Muted, wrap: true));
+        return body;
     }
 
     // ----- Combat : combat NotMeter lu sur des captures -----
@@ -2419,7 +2457,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             for (var i = 0; i < Math.Min(3, todo.Count); i++) cards.Children.Add(FixCard(cr, todo[i], i).WithMargin(0, 0, 12, 0));
             page.Children.Add(cards);
             if (todo.Count > 3)
-                page.Children.Add(Expander($"{todo.Count - 3} autre{(todo.Count > 4 ? "s" : "")} conseil{(todo.Count > 4 ? "s" : "")}", IsOpen("combat:more"), () => Toggle("combat:more"), () =>
+                page.Children.Add(Expander(Fmt.Plural(todo.Count - 3, "autre conseil", "autres conseils"), IsOpen("combat:more"), () => Toggle("combat:more"), () =>
                 {
                     var more = new StackPanel { Spacing = 10 };
                     foreach (var f in todo.Skip(3))
@@ -2623,10 +2661,11 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 ("intervalle", x.Skill.IntervalMs is { } ms ? $"{Fmt.Num(ms / 1000)} s entre deux coups" : "—", Tok.Text2),
             ]));
         }
-        body.Children.Add(T("Lancers possibles = durée du combat ÷ recharge du sort (+1 au départ), sans réduction de recharge : un sort réinitialisé " +
+        body.Children.Add(Expander("Lancers possibles, « simulé »", IsOpen("combat:fields"), () => Toggle("combat:fields"), () =>
+            T("Lancers possibles = durée du combat ÷ recharge du sort (+1 au départ), sans réduction de recharge : un sort réinitialisé " +
             "(Clone illusoire pour Coup au cœur) peut dépasser. « Simulé » = part de dégâts prévue par la rotation simulée ; les enchaînements " +
             "(sorts absents des données) n'y figurent pas. Combats du Pet Meter : lancers chronométrés (combos, temps morts), dégâts subis et soins ; les captures NotMeter n'ont ni l'un ni l'autre.",
-            12, Tok.Muted, wrap: true).WithLineHeight(1.5));
+            12, Tok.Muted, wrap: true).WithLineHeight(1.5)));
         panel.Children.Add(body);
         return panel;
     }
@@ -2809,7 +2848,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         }
         col.Children.Add(rotation);
         if (play.Tips.Count > 0)
-            col.Children.Add(Expander($"Façon de jouer · {play.Tips.Count} conseil{(play.Tips.Count > 1 ? "s" : "")}", IsOpen($"build:{id}:tips"), () => Toggle($"build:{id}:tips"), () =>
+            col.Children.Add(Expander($"Façon de jouer · {Fmt.Plural(play.Tips.Count, "conseil")}", IsOpen($"build:{id}:tips"), () => Toggle($"build:{id}:tips"), () =>
             {
                 var tips = new StackPanel { Spacing = 4, Margin = new Thickness(22, 0, 0, 0) };
                 foreach (var x in play.Tips) tips.Children.Add(ColumnsSpaced("14,*", 6, T("•", 12, Accent.Main), T(x, 12, Tok.Text2, wrap: true).WithLineHeight(1.4)));
@@ -2829,7 +2868,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         body.Children.Add(T("Conçue : construite à partir des seules données des sorts (dégâts en % d'ATQ, temps de recharge, conditions, spécialisations), " +
             "sans guide ni profil de joueur. Ses rotations et priorités viennent du calcul, pas de l'expérience en jeu : à tester.",
             12, Tok.Text2, wrap: true).WithLineHeight(1.45));
-        if (cls.Designed is { } d) body.Children.Add(Field("Méthode", d.Method, Tok.Text2));
+        if (cls.Designed is { } d)
+            body.Children.Add(Expander("Méthode du build conçu", IsOpen("build:method"), () => Toggle("build:method"), () => T(d.Method, 12, Tok.Text2, wrap: true).WithLineHeight(1.45)));
         body.Children.Add(Callout(r.Profile.UsesDesigned
             ? "Les conseils de compétences de ce personnage suivent le build conçu. « Joueurs » pour revenir au build des joueurs."
             : "Les conseils de compétences de ce personnage suivent le build des joueurs." + (cls.Designed is null ? "" : " « Conçue » pour suivre le build conçu."),
@@ -2940,7 +2980,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var steps = respec?.Add ?? r.Daevanion.Steps.Where(x => x.Pool == selected.Pool).ToList();
         var unspent = r.Daevanion.Budgets.FirstOrDefault(x => x.Pool == selected.Pool)?.Unspent ?? 0;
         var title = respec is not null
-            ? $"Après réinitialisation ({respec.Remove.Count} case(s) à retirer, +{Fmt.Pct(respec.Gain)} de valeur) · dans cet ordre"
+            ? $"Après réinitialisation ({Fmt.Plural(respec.Remove.Count, "case")} à retirer, +{Fmt.Pct(respec.Gain)} de valeur) · dans cet ordre"
             : unspent > 0
                 ? $"Prochaines cases · réserve {PoolShort(selected.Pool)} · tes {unspent} points libres couvrent les cases « faisable »"
                 : $"Prochaines cases · réserve {PoolShort(selected.Pool)} · suis la liste jusqu'à épuisement de tes points";
@@ -3003,7 +3043,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             return panel;
         }
 
-        var openTitle = $"À ouvrir pour suivre la route · {toOpen.Count} case(s), {Fmt.Num(toOpen.Sum(x => x.Cost))} points";
+        var openTitle = $"À ouvrir pour suivre la route · {Fmt.Plural(toOpen.Count, "case")}, {Fmt.Num(toOpen.Sum(x => x.Cost))} points";
         var list = new StackPanel();
         foreach (var x in toOpen) list.Children.Add(NodeRow(x.Step.ToString(), Accent.Main, x, selected, ("à ouvrir", Tok.Good)));
         if (toOpen.Count == 0) list.Children.Add(T("Tes cases ouvertes suivent déjà la route conçue.", 12, Tok.Good).WithMargin(6, 4));
@@ -3011,7 +3051,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
         if (outside.Count > 0)
         {
-            var offTitle = $"Ouvertes chez toi, hors de la route · {outside.Count} case(s)";
+            var offTitle = $"Ouvertes chez toi, hors de la route · {Fmt.Plural(outside.Count, "case")}";
             var off = new StackPanel();
             foreach (var (board, node) in outside)
             {
@@ -3023,7 +3063,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             panel.Children.Add(Card(off, offTitle, padding: new Thickness(8, 6)));
         }
 
-        var nextTitle = $"La suite, avec tes prochains points · {later.Count} case(s)";
+        var nextTitle = $"La suite, avec tes prochains points · {Fmt.Plural(later.Count, "case")}";
         var next = new StackPanel();
         foreach (var x in later.Take(12)) next.Children.Add(NodeRow(x.Step.ToString(), Tok.Text2, x, selected, ("suite", Tok.Muted)));
         next.Children.Add(Clickable(T("▾ ordre complet depuis le centre (pour suivre la route après une réinitialisation)", 12, Accent.Main),
@@ -3076,7 +3116,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 Child = isRemoved ? T("✕", 11, Tok.Bad, FontWeight.SemiBold, mono: true).Centered()
                     : step is null ? null : T(step.ToString()!, step >= 100 ? 9 : 11, openStep ? Tok.OnAccent : Accent.Main, FontWeight.SemiBold, mono: true).Centered(),
             };
-            Tip(cell, $"{(n.Name.Length > 0 ? n.Name : n.Type)} — {db.Settings.Daevanion.NodeCost.GetValueOrDefault(n.Grade, 0)} point(s)\n" +
+            Tip(cell, $"{(n.Name.Length > 0 ? n.Name : n.Type)} — {Fmt.Plural(db.Settings.Daevanion.NodeCost.GetValueOrDefault(n.Grade, 0), "point")}\n" +
                       string.Join("\n", n.Effects.Select(e => e.Raw)) +
                       (isRemoved ? "\nÀ retirer : " + Reason(n) : n.Open ? "\n(ouverte)" : step is not null ? $"\nÉtape {step} du plan" : ""));
             Canvas.SetLeft(cell, (n.Col - 1) * (size + gap));
@@ -3435,12 +3475,12 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 foreach (var pool in r.Daevanion.ByPool)
                 {
                     var taken = pool.Take(o.NextNodes).ToList();
-                    cost.Children.Add(T($"Daevanion ({PoolShort(pool.Key)}) : ouvrir {taken.Count} case(s), {Fmt.Num(taken.Sum(x => x.Cost))} points.", 12, Tok.Text2));
+                    cost.Children.Add(T($"Daevanion ({PoolShort(pool.Key)}) : ouvrir {Fmt.Plural(taken.Count, "case")}, {Fmt.Num(taken.Sum(x => x.Cost))} points.", 12, Tok.Text2));
                 }
                 break;
             case DaevanionChoice.Respec:
                 foreach (var x in r.Daevanion.Respecs.Where(x => x.Remove.Count > 0))
-                    cost.Children.Add(T($"Daevanion ({PoolShort(x.Pool)}) : retirer {x.Remove.Count} case(s) et en prendre {x.Add.Count} (réinitialisation du plateau).", 12, Tok.Text2));
+                    cost.Children.Add(T($"Daevanion ({PoolShort(x.Pool)}) : retirer {Fmt.Plural(x.Remove.Count, "case")} et en prendre {x.Add.Count} (réinitialisation du plateau).", 12, Tok.Text2));
                 break;
             case DaevanionChoice.Route:
                 foreach (var x in r.Daevanion.Routes.Where(x => x.Nodes.Count > 0))
@@ -3450,10 +3490,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 }
                 break;
         }
-        if (o.Skills) cost.Children.Add(T($"Compétences : réinitialiser (gratuit) et refaire la répartition conseillée ({r.Skills.Skills.Count(a => a.Delta != 0)} compétence(s) changent).", 12, Tok.Text2));
+        if (o.Skills) cost.Children.Add(T($"Compétences : réinitialiser (gratuit) et refaire la répartition conseillée ({Fmt.Plural(r.Skills.Skills.Count(a => a.Delta != 0), "compétence change", "compétences changent")}).", 12, Tok.Text2));
         if (o.Designed is { } designed) cost.Children.Add(T($"Build : suivre le build {(designed ? "conçu" : "des joueurs")} (écran Build).", 12, Tok.Text2));
         if (o.GearAtStage)
-            cost.Children.Add(T($"Équipement : {r.Gear.Slots.Count(x => x.Status is SlotStatus.Empty or SlotStatus.Replace or SlotStatus.Weak)} pièce(s) à remplacer ou monter (note seulement : leurs stats futures sont inconnues).", 12, Tok.Text2));
+            cost.Children.Add(T($"Équipement : {Fmt.Plural(r.Gear.Slots.Count(x => x.Status is SlotStatus.Empty or SlotStatus.Replace or SlotStatus.Weak), "pièce")} à remplacer ou monter (note seulement : leurs stats futures sont inconnues).", 12, Tok.Text2));
         // Familles de stats avant → après.
         var families = new StackPanel { Spacing = 8 };
         foreach (var (b, a) in r.Stats.Categories.Zip(after.Stats.Categories))
@@ -3572,7 +3612,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             {
                 var changes = p.ChangesSince(prev, db.SlotName);
                 foreach (var change in changes.Take(10)) block.Children.Add(T($"· {change}", 12, Tok.Text2).WithMargin(132, 0, 0, 0));
-                if (changes.Count > 10) block.Children.Add(Tip(T($"· et {changes.Count - 10} autre(s) changement(s)", 12, Tok.Muted).WithMargin(132, 0, 0, 0), string.Join("\n", changes.Skip(10))));
+                if (changes.Count > 10) block.Children.Add(Tip(T($"· et {Fmt.Plural(changes.Count - 10, "autre changement", "autres changements")}", 12, Tok.Muted).WithMargin(132, 0, 0, 0), string.Join("\n", changes.Skip(10))));
                 if (changes.Count == 0 && p.Gear is not null && prev.Gear is not null) block.Children.Add(T("· rien d'autre de visible", 12, Tok.Faint).WithMargin(132, 0, 0, 0));
             }
             else block.Children.Add(T("· premier import enregistré", 12, Tok.Faint).WithMargin(132, 0, 0, 0));
@@ -3590,7 +3630,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     {
         // Les simples informations (bilans chiffrés) sont repliées par défaut : la liste montre d'abord ce qu'il y a à faire.
         var infos = r.Findings.Count(f => f.Severity == Severity.Info);
-        var toggle = Clickable(T(s.ShowInfo ? $"masquer les infos ({infos})" : $"afficher aussi les infos ({infos})", 11, Accent.Main), () => update(st => st.ShowInfo = !st.ShowInfo),
+        var toggle = Clickable(T(s.ShowInfo ? $"masquer les {Fmt.Plural(infos, "info")}" : $"afficher aussi les {Fmt.Plural(infos, "info")}", 11, Accent.Main), () => update(st => st.ShowInfo = !st.ShowInfo),
             hover: Tok.HoverStrong, padding: new Thickness(4, 0));
         var bySeverity = Badges(
             new[] { Severity.Critical, Severity.Important, Severity.Advice }
@@ -3610,7 +3650,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             if (collapsed) continue;
             foreach (var f in group.OrderBy(IsDone).ThenBy(f => f.Severity))
             {
-                // Titre et action ; le détail chiffré tient sur une ligne et s'affiche en entier au survol. Fait = grisé, en bas.
+                // Titre et action ; le détail chiffré tient sur deux lignes et s'affiche en entier au survol. Fait = grisé, en bas.
                 var (icon, color) = Sev(f.Severity);
                 var done = IsDone(f);
                 var iconText = T(icon, 13, color, FontWeight.SemiBold, mono: true);
@@ -3619,7 +3659,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 if (done) title.TextDecorations = TextDecorations.Strikethrough;
                 var text = new StackPanel { Spacing = 3, Children = { title } };
                 if (f.Action is not null && !done) text.Children.Add(T($"→ {f.Action}", 12, Tok.Text2, wrap: true).WithLineHeight(1.45));
-                if (!done) text.Children.Add(T(f.Detail.Replace('\n', ' '), 12, Tok.Muted));
+                if (!done) text.Children.Add(new TextBlock { Text = f.Detail.Replace('\n', ' '), FontSize = 12, Foreground = Tok.Muted, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis });
                 var lead = f.Severity == Severity.Info ? (Control)new Border() : Check(f);
                 var row = Clickable(ColumnsSpaced("22,22,*", 6, lead, iconText, text), () => Go(f), hover: Tok.Hover, padding: new Thickness(14, 8));
                 row.BorderBrush = Tok.RowLine;
@@ -3627,7 +3667,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 list.Children.Add(Tip(row, f.Detail));
             }
         }
-        return Page($"À faire · {Mode} · {r.Findings.Count - infos} conseils", bySeverity, groups.ToArray());
+        return Page($"À faire · {Mode} · {Fmt.CountsText(r.Findings)}", bySeverity, groups.ToArray());
     }
 }
 

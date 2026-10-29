@@ -143,7 +143,7 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
         if (!obtainable.TryGetValue(t.Def.Key, out var a))
             return t.Def.Where.Count > 0 ? string.Join(", ", t.Def.Where.Take(2)) : "stats secondaires";
         var parts = new List<string>();
-        if (a.Nodes > 0) parts.Add($"{a.Nodes} case(s) Daevanion encore fermée(s)");
+        if (a.Nodes > 0) parts.Add(Fmt.Plural(a.Nodes, "case Daevanion encore fermée", "cases Daevanion encore fermées"));
         if (a.Slots.Count > 0) parts.Add($"stat secondaire possible sur : {string.Join(", ", a.Slots.Take(4))}");
         if (a.Title) parts.Add("titres");
         return string.Join(" ; ", parts);
@@ -310,7 +310,7 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
         }
 
         if (sp.Unrecognized.Count > 0)
-            findings.Add(new Finding(Area.General, Severity.Info, $"{sp.Unrecognized.Count} libellé(s) non reconnu(s)",
+            findings.Add(new Finding(Area.General, Severity.Info, Fmt.Plural(sp.Unrecognized.Count, "libellé non reconnu", "libellés non reconnus"),
                 "Ajoute-les dans stats.json pour qu'ils comptent : " + string.Join(" | ", sp.Unrecognized.Take(8))));
 
         return findings;
