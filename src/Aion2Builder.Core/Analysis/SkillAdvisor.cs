@@ -392,8 +392,12 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         string Line(SkillAdvice a) => $"« {a.Skill.Name} » ({a.Role}) : {Levels(a)}. {(a.Delta < 0 ? a.Decision : a.Reason)}";
         // Important seulement si une compétence monte vers son niveau visé (c'est ce que mesure la note Compétences) ; monter
         // au-delà, jusqu'au maximum, avec des points posés trop haut ailleurs est un petit gain (note et « Et si » ne bougent pas).
-        var toTarget = add.Any(a => a.Base < a.Target);
-        const string Beyond = "Déjà au niveau visé partout : ces points montent des compétences plus utiles au-delà (jusqu'au maximum), un petit gain qui ne change pas la note.";
+        // Important : une compétence majeure sous son niveau visé, ou au moins 3 points qui manquent aux niveaux visés.
+        var missing = add.Sum(a => Math.Max(0, Math.Min(a.RecommendedBase, a.Target) - a.Base));
+        var toTarget = add.Any(a => a.Base < a.Target && a.Priority >= 0.85) || missing >= 3;
+        var Beyond = missing == 0
+            ? "Déjà au niveau visé partout : ces points montent des compétences plus utiles au-delà (jusqu'au maximum), un petit gain qui ne change pas la note."
+            : $"Il ne manque que {Fmt.Plural(missing, "point")} aux niveaux visés ; le reste monte des compétences plus utiles au-delà (jusqu'au maximum) : un petit gain, la note bouge à peine.";
         if (remove.Count > 0)
             findings.Add(new Finding(Area.Skills, toTarget ? Severity.Important : Severity.Advice, $"Compétences : retire des points à {string.Join(", ", remove.Select(a => a.Skill.Name))}",
                 (toTarget ? "" : Beyond + "\n") + string.Join("\n", remove.Select(Line)),

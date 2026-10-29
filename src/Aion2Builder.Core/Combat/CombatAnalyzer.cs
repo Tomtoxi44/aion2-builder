@@ -140,7 +140,7 @@ public sealed class CombatAnalyzer(GameDatabase db)
             findings.Add(new Finding(Area.Skills, Severity.Important, $"Jamais lancé{(unseen.Count > 1 ? "s" : "")} : {string.Join(", ", unseen)}",
                 string.Join(" · ", unseen.Select(n => expected.First(s => s.Name == n)).Select(s =>
                     $"{s.Name} : dans ta rotation {mode}{(s.Coef > 0 ? $", {s.Coef:0} % d'ATQ" : "")}{(PossibleFor(s.Cooldown) is { } m ? $", jusqu'à {m} lancer{(m > 1 ? "s" : "")} en {seconds}" : "")}")),
-                "Ajoute-les à ta rotation (écran Build).", 65));
+                $"{(unseen.Count > 1 ? "Ajoute-les" : "Ajoute-le")} à ta rotation (écran Build).", 65));
         else if (!log.Complete && log.SkillCount > 0)
             findings.Add(new Finding(Area.Skills, Severity.Info, $"Liste partielle : {log.Skills.Count} sorts lus sur {log.SkillCount}",
                 (unseen.Count > 0 ? $"Pas vus sur les captures : {string.Join(", ", unseen)}. " : "") +
