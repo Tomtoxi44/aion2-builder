@@ -185,7 +185,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     static TextBlock SideGroup(string title) => Label(title).WithMargin(14, 12, 14, 4);
 
     public const string HowText = "Score global = moyenne pondérée des quatre notes. Stats : part de tes stats ajustables placée dans des stats " +
-        "utiles à ta classe. Équipement : pièces au niveau de ton palier. Compétences : niveaux visés atteints, pondérés par leur importance. " +
+        "utiles à ta classe. Équipement : pièces au grade et au niveau attendus à ton étape. Compétences : niveaux visés atteints, pondérés par leur importance. " +
         "Daevanion : part des plateaux utiles déjà ouverte. Les actions sont classées par gain attendu / ressources dépensées.";
 
     public static string Title(Screen screen) => Nav.FirstOrDefault(n => n.Screen == screen).Title ?? "Import";
@@ -439,7 +439,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     static string ScoreTip(Screen screen) => screen switch
     {
         Screen.Stats => "Note Stats : part de tes stats ajustables placée dans des stats utiles à ta classe. Clic : l'écran Stats.",
-        Screen.Gear => "Note Équipement : tes pièces face au niveau de ton palier. Clic : l'écran Équipement.",
+        Screen.Gear => "Note Équipement : tes pièces face au grade et au niveau attendus à ton étape. Clic : l'écran Équipement.",
         Screen.Skills => "Note Compétences : niveaux visés atteints, pondérés par l'importance de chaque compétence. Clic : l'écran Compétences.",
         _ => "Note Daevanion : part des plateaux utiles déjà ouverte. Clic : l'écran Daevanion.",
     };
@@ -469,12 +469,27 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         foreach (var f in r.ActionPlan.Where(f => !IsDone(f)).Take(5)) actions.Children.Add(CompactAction(f));
         if (actions.Children.Count == 0) actions.Children.Add(T("✓ Rien d'important à faire : tout est en ordre pour cette vue.", 13, Tok.Good).WithMargin(4, 8));
         if (done > 0) actions.Children.Add(T($"{Fmt.Plural(done, "conseil coché", "conseils cochés")} « fait » depuis l'import : dans Détails.", 11, Tok.Muted, mono: true).WithMargin(8, 6, 0, 0));
+        if (Achieved.Titles is { Count: > 0 } reached)
+            actions.Children.Add(Tip(Clickable(T($"✓ {Fmt.Plural(reached.Count, "conseil réalisé", "conseils réalisés")} depuis l'import du {Achieved.Since.ToLocalTime():dd/MM}", 12, Tok.Good),
+                    () => GoTo(Screen.Details), hover: Tok.HoverStrong, padding: new Thickness(8, 2)),
+                "Ils ne ressortent plus de l'analyse de cet import :\n" + string.Join("\n", reached.Select(t => $"· {t}")) + "\nClic : la liste dans Détails."));
         var all = Tip(Clickable(T("tout voir ›", 12, Accent.Main), () => GoTo(Screen.Details), hover: Tok.HoverStrong, padding: new Thickness(4, 0)),
             $"Tous les conseils, par écran : {Fmt.CountsText(r.Findings)}, plus {Fmt.Plural(Fmt.Counts(r.Findings).Info, "info")}.");
         return new StackPanel { Spacing = 12, Children = { tiles, Card(actions, "À faire maintenant", all, new Thickness(6, 2, 6, 6)) } };
     }
 
     bool IsDone(Finding f) => inputs.IsDone(f.Title, r.Character.FetchedAtUtc);
+
+    /// <summary>
+    /// Conseils réalisés depuis l'import précédent (ils ne ressortent plus de l'analyse), et la date de cet import ; vide
+    /// tant qu'il n'y a pas deux imports analysés dans ce mode.
+    /// </summary>
+    (List<string> Titles, DateTime Since) Achieved => achieved ??=
+        progress.LastOrDefault(p => p.FetchedAtUtc == r.Character.FetchedAtUtc) is { } now
+        && progress.LastOrDefault(p => p.FetchedAtUtc < now.FetchedAtUtc && p.Todo?.ContainsKey(r.Mode.ToString()) == true) is { } before
+            ? (now.DoneSince(before, r.Mode.ToString()), before.FetchedAtUtc)
+            : ([], default);
+    (List<string> Titles, DateTime Since)? achieved;
 
     /// <summary>Coche / décoche « fait » (gardé jusqu'au prochain import du personnage).</summary>
     void ToggleDone(Finding f)
@@ -490,7 +505,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var box = Clickable(T(done ? "☑" : "☐", 14, done ? Tok.Good : Tok.Muted), () => ToggleDone(f), hover: Tok.HoverStrong, padding: new Thickness(3, 0));
         box.CornerRadius = new CornerRadius(3);
         box.VerticalAlignment = VerticalAlignment.Top;
-        return Tip(box, done ? "Fait : décoche si ce n'est pas le cas" : "Coche quand c'est fait (jusqu'au prochain import, qui le vérifiera)");
+        return Tip(box, done ? "Fait : décoche si ce n'est pas le cas"
+            : "Coche quand c'est fait. Le prochain import le vérifie tout seul : un conseil réalisé ne ressort plus et passe dans « réalisés ».");
     }
 
     /// <summary>Une action sur une ligne : case « fait », gravité, titre, zone ; le détail passe en infobulle.</summary>
@@ -532,9 +548,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         if (engr > 0)
             lines.Children.Add(ColumnsSpaced("18,*", 8, T("G", 12, Tok.Warn, FontWeight.SemiBold, mono: true), T($"{Fmt.Plural(engr, "pièce")} aux gravures à revoir (sous-page Pierres)", 13, Tok.Text2, wrap: true)));
         if (g.Slots.All(x => x.Status == SlotStatus.Ok) && engr == 0)
-            lines.Children.Add(T("✓ Toutes les pièces sont au niveau de ton palier.", 13, Tok.Good));
+            lines.Children.Add(T("✓ Toutes les pièces sont au niveau de ton étape.", 13, Tok.Good));
         lines.Children.Add(T("Clique une pièce pour son détail dans l'inspecteur.", 12, Tok.Muted).WithMargin(0, 6, 0, 0));
-        return Card(lines, $"Palier « {g.Stage.Name} »");
+        return Card(lines, $"Étape « {g.Stage.Name} »");
     }
 
     static (string Code, IBrush Color) StatusCode(SlotStatus status) => status switch
@@ -734,7 +750,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             plan.Next is { } n ? $"prochain palier · +{n.Score - plan.Score}" : "tous les paliers atteints");
         var replace = plan.Slots.Where(x => x.Gain > 0).ToList();
         Page(Icons.Box, GearPage.Pieces, replace.Count > 0 ? $"+{replace.Sum(x => x.Gain)}" : "✓", replace.Count > 0 ? Tok.Warn : Tok.Good,
-            replace.Count > 0 ? $"{replace.Count} à passer en {plan.Available?.ItemLevel}" : "au palier accessible");
+            replace.Count > 0 ? $"{replace.Count} à passer en {plan.Available?.ItemLevel}" : "au niveau accessible");
         var raise = plan.Enchants.Where(e => e.Verdict == EnchantVerdict.Raise).ToList();
         Page(Icons.Up, GearPage.Enchant, raise.Count > 0 ? $"{raise.Count}" : "✓", raise.Count > 0 ? Tok.Warn : Tok.Good,
             raise.Count > 0 ? $"{raise[0].SlotName.ToLowerInvariant()} +{raise[0].Item.EnchantLevel} → +{raise[0].Target}" : "rien à monter sans risque");
@@ -865,7 +881,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             .Select(x => (x.Item2, Count: g.Slots.Count(p => p.Status == x.Item1), Color: StatusBrush(x.Item1)))
             .Where(x => x.Count > 0)
             .Select(x => (Control)Badge($"{x.Count} {x.Item1}{(x.Item1 == "vide" && x.Count > 1 ? "s" : "")}", x.Color)).ToArray());
-        if (badges.Children.Count == 0) badges.Children.Add(Badge("✓ tout au niveau du palier", Tok.Good));
+        if (badges.Children.Count == 0) badges.Children.Add(Badge("✓ tout au niveau de l'étape", Tok.Good));
         return badges;
     }
 
@@ -944,7 +960,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 IsOpen(id), () => Toggle(id), () => list, new Thickness(10, 6)));
         }
         if (plan.Steps.Count == 0)
-            shown.Children.Add(T("Tes pièces sont au palier accessible et à +10 : le score monte maintenant par les cartes d'arcanes, le Daevanion et les pierres.",
+            shown.Children.Add(T($"Tes pièces sont au niveau accessible ({plan.Available?.ItemLevel}) et à +10 : le score monte maintenant par les cartes d'arcanes, le Daevanion et les pierres.",
                 13, Tok.Good, wrap: true).WithMargin(14, 10));
         else if ((ahead.FirstOrDefault(g => !g.Optional) ?? ahead.FirstOrDefault()) is { } further)
             shown.Children.Add(T($"Avec tout ça : {Fmt.Num(total)}. Pour {Fmt.Num(further.Score)} (+{further.Score - total}) : cartes d'arcanes, Daevanion et pierres" +
@@ -999,7 +1015,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var rules = db.Progression.Roadmap;
         var replace = plan.Slots.Where(x => x.Gain > 0).ToList();
         var badges = Badges(
-            replace.Count > 0 ? Badge($"{replace.Count} à passer en {plan.Available?.ItemLevel} · +{replace.Sum(x => x.Gain)}", Tok.Warn) : Badge("✓ au palier accessible", Tok.Good),
+            replace.Count > 0 ? Badge($"{replace.Count} à passer en {plan.Available?.ItemLevel} · +{replace.Sum(x => x.Gain)}", Tok.Warn) : Badge("✓ au niveau accessible", Tok.Good),
             plan.Available is { } av ? Badge($"pièces {av.ItemLevel} accessibles", Tok.Info) : null);
 
         // Où trouver mieux : à partir du palier accessible, les donjons puis l'artisanat jusqu'au dernier palier.
@@ -1032,7 +1048,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             x.Slot == selected, () => update(st => st.Slot = x.Slot)),
             x.Item is null ? "Emplacement vide."
                 : x.Gain > 0 ? $"{x.Item.Name} : {x.Power} → {x.NewPower}" + (x.Item.Grade == "Unique" && x.Item.EnchantLevel > 0 ? $" (transfert du +{x.Item.EnchantLevel})" : " (pièce non unique : l'enchantement ne se transfère pas)")
-                : x.Target is null ? "Rien de mieux connu pour cet emplacement." : $"Au palier accessible ; ensuite : pièce {x.Target.ItemLevel}.")).ToList();
+                : x.Target is null ? "Rien de mieux connu pour cet emplacement." : $"Au niveau accessible ; ensuite : pièce {x.Target.ItemLevel}.")).ToList();
 
         var special = new StackPanel { Spacing = 6 };
         foreach (var x in plan.Slots.Where(x => x.Special))
@@ -1427,7 +1443,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         if (p.Status is SlotStatus.Empty or SlotStatus.Replace or SlotStatus.Weak)
         {
             var after = WhatIf.SlotFixed(r, p.Slot);
-            body.Children.Add(Field("Et si", $"Cette pièce au niveau du palier : score global {r.Scores.Overall} → {after} ({(after > r.Scores.Overall ? "+" : "")}{after - r.Scores.Overall}).", Tok.Good));
+            body.Children.Add(Field("Et si", $"Cette pièce remise à niveau : score global {r.Scores.Overall} → {after} ({(after > r.Scores.Overall ? "+" : "")}{after - r.Scores.Overall}).", Tok.Good));
         }
         body.Children.Add(Field("Où chercher", p.NextSource ?? r.Gear.Stage.Gear.FirstOrDefault(g => g.Group == p.Group)?.For(r.Mode) ?? "—", Tok.Text2));
         if (item is { HasDetail: true })
@@ -2599,13 +2615,14 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         {
             var done = x.Skill.Uses;
             var possible = x.Possible!.Value;
-            var color = done >= possible ? Tok.Good : done >= 0.8 * possible ? Tok.Text2 : Tok.Warn;
+            var color = done >= possible ? Tok.Good : done >= 0.8 * possible || x.Situational ? Tok.Text2 : Tok.Warn;
             var row = ColumnsSpaced("190,*,58", 10, T(x.Skill.Name, 13, x.Skill.Name == s.CombatSkill ? Accent.Main : null), Pips(done, possible),
                 T($"{done} / {possible}", 12, color, mono: true).AlignRight());
             recharge.Children.Add(Tip(Clickable(row, () => Select(x.Skill.Name), hover: Tok.Hover, padding: new Thickness(0, 2)), x.Verdict));
         }
         if (timed.Count == 0) recharge.Children.Add(T("Aucun sort à recharge reconnu dans ce combat.", 13, Tok.Muted));
-        recharge.Children.Add(T("vert = lancé · orange = occasion perdue · vert pâle = au-delà de la recharge (réinitialisations)", 12, Tok.Muted, wrap: true));
+        recharge.Children.Add(T("vert = lancé · orange = occasion perdue · vert pâle = au-delà de la recharge (réinitialisations) ; " +
+                                "chiffre gris : sort de situation (provocation, protection, soin, déplacement), pas jugé sur ses lancers", 12, Tok.Muted, wrap: true));
         page.Children.Add(Columns("*,*",
             Card(damage, "Où vont tes dégâts", T(log.Source == "Pet Meter" || log.Pages > 0 ? "mesuré sur ce combat" : "", 12, Tok.Muted)),
             Card(recharge, "Tes sorts à recharge", T("lancés / possibles", 12, Tok.Muted))));
@@ -3544,7 +3561,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         ])));
         options.Children.Add(ColumnsSpaced("110,*", 12, T("Équipement", 13, weight: FontWeight.Medium), Choice([
             ("tel quel", !o.GearAtStage, () => Sim(x => x with { GearAtStage = false })),
-            ("pièces en retard au niveau du palier", o.GearAtStage, () => Sim(x => x with { GearAtStage = true })),
+            ("pièces en retard remises à niveau", o.GearAtStage, () => Sim(x => x with { GearAtStage = true })),
         ])));
         var choices = Card(options, "Ce que tu changes", o.Any ? reset : null);
 
@@ -3654,7 +3671,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             {
                 T("Les changements choisis sont appliqués à une copie de ton personnage, puis toute l'analyse est refaite : notes, familles de stats, stats.", 13, Tok.Text2, wrap: true).WithLineHeight(1.5),
                 T("Daevanion : les stats viennent des effets réels des cases ouvertes ou retirées. Compétences : les niveaux de la répartition conseillée. Build : les priorités du build choisi.", 13, Tok.Text2, wrap: true).WithLineHeight(1.5),
-                T("Équipement : une pièce « au niveau du palier » ne change que la note d'équipement ; ses stats futures ne sont pas connues, elles ne sont donc pas ajoutées.", 13, Tok.Text2, wrap: true).WithLineHeight(1.5),
+                T("Équipement : une pièce « remise à niveau » ne change que la note d'équipement ; ses stats futures ne sont pas connues, elles ne sont donc pas ajoutées.", 13, Tok.Text2, wrap: true).WithLineHeight(1.5),
                 T("Rien n'est enregistré : ton personnage et tes conseils ne changent pas.", 12, Tok.Muted, wrap: true).WithLineHeight(1.45),
             },
         });
@@ -3733,6 +3750,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 foreach (var change in changes.Take(10)) block.Children.Add(T($"· {change}", 12, Tok.Text2).WithMargin(132, 0, 0, 0));
                 if (changes.Count > 10) block.Children.Add(Tip(T($"· et {Fmt.Plural(changes.Count - 10, "autre changement", "autres changements")}", 12, Tok.Muted).WithMargin(132, 0, 0, 0), string.Join("\n", changes.Skip(10))));
                 if (changes.Count == 0 && p.Gear is not null && prev.Gear is not null) block.Children.Add(T("· rien d'autre de visible", 12, Tok.Faint).WithMargin(132, 0, 0, 0));
+                var reached = p.DoneSince(prev, key);
+                foreach (var t in reached.Take(6)) block.Children.Add(T($"✓ réalisé : {t}", 12, Tok.Good, wrap: true).WithMargin(132, 0, 0, 0));
+                if (reached.Count > 6) block.Children.Add(Tip(T($"✓ et {Fmt.Plural(reached.Count - 6, "autre conseil réalisé", "autres conseils réalisés")}", 12, Tok.Good).WithMargin(132, 0, 0, 0),
+                    string.Join("\n", reached.Skip(6))));
             }
             else block.Children.Add(T("· premier import enregistré", 12, Tok.Faint).WithMargin(132, 0, 0, 0));
             (progress.Count - 1 - i < shown ? recent : older).Children.Add(new Border
@@ -3791,6 +3812,21 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 list.Children.Add(Tip(row, f.Detail));
             }
         }
+        // Réalisés depuis l'import précédent : repliés en tête, la liste montre d'abord ce qu'il reste à faire.
+        if (Achieved.Titles is { Count: > 0 } reached)
+            groups.Insert(0, Expander($"✓ {Fmt.Plural(reached.Count, "conseil réalisé", "conseils réalisés")} depuis l'import du {Achieved.Since.ToLocalTime():dd/MM}",
+                IsOpen("details:achieved"), () => Toggle("details:achieved"), () =>
+                {
+                    var list = new StackPanel { Spacing = 4, Margin = new Thickness(22, 0, 0, 0) };
+                    foreach (var t in reached)
+                    {
+                        var line = T($"☑ {t}", 12, Tok.Muted, wrap: true);
+                        line.TextDecorations = TextDecorations.Strikethrough;
+                        list.Children.Add(line);
+                    }
+                    list.Children.Add(T("Ces conseils de l'import précédent ne ressortent plus de l'analyse de celui-ci.", 11, Tok.Faint, wrap: true));
+                    return list;
+                }));
         return Page($"À faire · {Mode} · {Fmt.CountsText(r.Findings)}", bySeverity, groups.ToArray());
     }
 }

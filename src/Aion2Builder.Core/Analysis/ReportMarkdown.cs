@@ -44,10 +44,10 @@ public static class ReportMarkdown
         Line($"Efficacité : {Fmt.Pct(r.Stats.Efficiency)} des stats ajustables dans des stats utiles à la classe.");
 
         Line();
-        Line($"## Équipement — palier « {r.Gear.Stage.Name} »");
+        Line($"## Équipement — étape « {r.Gear.Stage.Name} »");
         Line();
         var gear = r.Gear.Slots.Where(s => s.Status != SlotStatus.Ok).OrderByDescending(s => s.Priority).ToList();
-        if (gear.Count == 0) Line("Toutes les pièces sont au niveau du palier.");
+        if (gear.Count == 0) Line("Toutes les pièces sont au niveau de l'étape.");
         foreach (var s in gear)
             Line($"- **{s.SlotName}** ({Fmt.Status(s.Status)}) : {s.Advice}{(s.NextSource is null ? "" : $" → {s.NextSource}")}");
         foreach (var e in r.Engravings.Items.Where(e => e.NeedsWork && e.Action != SoulAction.None))

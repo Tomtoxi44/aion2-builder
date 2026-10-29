@@ -1,5 +1,5 @@
 {
-  "_note": "Paliers de progression d'équipement. Un palier est atteint quand le niveau d'objet (gear score du site officiel) dépasse 'minItemLevel' et que le niveau du personnage dépasse 'minLevel'. 'targetGrade' = rareté visée à ce palier : les pièces en dessous sont de transition (ne pas trop les enchanter), celles à ce grade ou plus sont à garder. Seuils et sources indicatifs (guides communautaires) : ajuste-les à la saison en cours.",
+  "_note": "Étapes de progression d'équipement (les « paliers » sont les seuils de score de 'roadmap'). Une étape est atteinte quand le niveau d'objet (gear score du site officiel) dépasse 'minItemLevel' et que le niveau du personnage dépasse 'minLevel'. 'targetGrade' = rareté visée à cette étape : les pièces en dessous sont de transition (ne pas trop les enchanter), celles à ce grade ou plus sont à garder. Seuils et sources indicatifs (guides communautaires) : ajuste-les à la saison en cours.",
   "grades": [
     { "code": "Common", "name": "Commun (blanc)", "rank": 1, "color": "#EDEDED" },
     { "code": "Rare", "name": "Rare (vert)", "rank": 2, "color": "#52B35C" },
@@ -190,7 +190,7 @@
         { "group": "Accessory", "pve": "Relance des stats secondaires vers tes stats prioritaires", "pvp": "Relance des stats secondaires vers tes stats JcJ" },
         { "group": "Special", "pve": "Runes et amulette au meilleur grade disponible", "pvp": "Runes et amulette au meilleur grade disponible" }
       ],
-      "tips": ["Le gain par point d'enchantement baisse : compare avec la relance des stats secondaires.", "Orange et rouge n'apparaissent pas encore chez les joueurs EU observés : ajuste ce palier quand ils arriveront."]
+      "tips": ["Le gain par point d'enchantement baisse : compare avec la relance des stats secondaires.", "Orange et rouge n'apparaissent pas encore chez les joueurs EU observés : ajuste cette étape quand ils arriveront."]
     }
   ]
 }

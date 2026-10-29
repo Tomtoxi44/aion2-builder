@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Aion2Builder.Analysis;
 using Aion2Builder.GameData;
 using Aion2Builder.Model;
@@ -21,6 +22,25 @@ public sealed record ProgressPoint(DateTime FetchedAtUtc, int Level, int ItemLev
     public Dictionary<string, int>? Skills { get; init; }
     /// <summary>Plateau Daevanion → cases ouvertes.</summary>
     public Dictionary<string, int>? Boards { get; init; }
+    /// <summary>Conseils à faire de cet import (titres, des critiques aux conseils, hors combat), par mode.</summary>
+    public Dictionary<string, List<string>>? Todo { get; init; }
+
+    /// <summary>Les conseils à faire d'un rapport, tels que gardés dans <see cref="Todo"/> (le combat suit les combats, pas les imports).</summary>
+    public static List<string> Todos(IEnumerable<Finding> findings) =>
+        findings.Where(f => f.Severity <= Severity.Advice && !f.Title.StartsWith("Combat :", StringComparison.Ordinal)).Select(f => f.Title).Distinct().ToList();
+
+    /// <summary>
+    /// Conseils de l'import précédent (même mode) qui ne ressortent plus : réalisés. Les chiffres ne comptent pas dans la
+    /// comparaison (« 11 stats utiles… » puis « 10 stats utiles… » reste le même conseil, pas encore fait).
+    /// </summary>
+    public List<string> DoneSince(ProgressPoint previous, string mode)
+    {
+        if (Todo?.GetValueOrDefault(mode) is not { } now || previous.Todo?.GetValueOrDefault(mode) is not { } before) return [];
+        var still = now.Select(TodoKey).ToHashSet();
+        return before.Where(t => !still.Contains(TodoKey(t))).ToList();
+    }
+
+    static string TodoKey(string title) => Regex.Replace(title, @"\d+([.,]\d+)?", "#");
 
     public static ProgressPoint Of(CharacterSnapshot c) => new(c.FetchedAtUtc, c.Level, c.ItemLevel, c.CombatPower)
     {
@@ -108,8 +128,11 @@ public sealed class CharacterStore(string? dir = null)
         SaveProgress(c, points.OrderBy(p => p.FetchedAtUtc).ToList());
     }
 
-    /// <summary>Notes calculées pour l'import en cours (un mode à la fois), gardées dans son point de progression.</summary>
-    public void RecordScores(CharacterSnapshot c, GameMode mode, AreaScores scores)
+    /// <summary>
+    /// Notes calculées pour l'import en cours (un mode à la fois), gardées dans son point de progression, avec ses conseils à
+    /// faire la première fois seulement (ceux de l'analyse faite à l'import, comparés à l'import précédent analysé au même moment).
+    /// </summary>
+    public void RecordScores(CharacterSnapshot c, GameMode mode, AreaScores scores, List<string>? todo = null)
     {
         var points = Progress(c);
         var index = points.FindLastIndex(p => p.FetchedAtUtc == c.FetchedAtUtc);
@@ -120,8 +143,27 @@ public sealed class CharacterStore(string? dir = null)
         }
         var key = mode.ToString();
         var current = points[index].Scores ?? [];
-        if (current.TryGetValue(key, out var known) && known == scores) return;
-        points[index] = points[index] with { Scores = new Dictionary<string, AreaScores>(current) { [key] = scores } };
+        var todos = points[index].Todo ?? [];
+        var addTodo = todo is not null && !todos.ContainsKey(key);
+        if (current.TryGetValue(key, out var known) && known == scores && !addTodo) return;
+        points[index] = points[index] with
+        {
+            Scores = new Dictionary<string, AreaScores>(current) { [key] = scores },
+            Todo = addTodo ? new Dictionary<string, List<string>>(todos) { [key] = todo! } : points[index].Todo,
+        };
+        SaveProgress(c, points);
+    }
+
+    /// <summary>
+    /// Conseils à faire d'un import plus ancien, recalculés au moment d'un nouvel import avec la même version de l'analyse :
+    /// la comparaison des deux ne prend pas pour « réalisé » un conseil que l'analyse a simplement cessé de donner.
+    /// </summary>
+    public void RecordTodo(CharacterSnapshot c, GameMode mode, List<string> todo)
+    {
+        var points = Progress(c);
+        var index = points.FindLastIndex(p => p.FetchedAtUtc == c.FetchedAtUtc);
+        if (index < 0) return;
+        points[index] = points[index] with { Todo = new Dictionary<string, List<string>>(points[index].Todo ?? []) { [mode.ToString()] = todo } };
         SaveProgress(c, points);
     }
 

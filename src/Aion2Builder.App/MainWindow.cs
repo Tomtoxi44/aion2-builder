@@ -319,7 +319,7 @@ public sealed class MainWindow : Window
         }
         try { report = new Advisor(db).Analyze(current, prefs.Mode, inputs, pets.Collection, combats.Select(x => x.Log).ToList()); }
         catch (InvalidOperationException ex) { report = null; SetStatus(ex.Message, error: true); state.Screen = Screen.Import; }
-        if (report is not null) store.RecordScores(current, prefs.Mode, report.Scores);
+        if (report is not null) store.RecordScores(current, prefs.Mode, report.Scores, ProgressPoint.Todos(report.Findings));
         progress = store.Progress(current);
         Render();
         return fresh;
@@ -1605,6 +1605,15 @@ public sealed class MainWindow : Window
                 if (loadText is not null) loadText.Text = m;
             }));
             var previous = store.Find(snapshot.Name, snapshot.ServerName) is { } saved ? TryLoad(saved.Path) : null;
+            // Conseils de l'import précédent, refaits avec cette version : l'import qui arrive dira ceux qui ont été réalisés.
+            if (previous is not null && previous.FetchedAtUtc != snapshot.FetchedAtUtc)
+                try
+                {
+                    var before = new Advisor(db).Analyze(previous, prefs.Mode, store.LoadInputs(previous), pets.Collection,
+                        current?.FileKey == previous.FileKey ? combats.Select(x => x.Log).ToList() : null);
+                    store.RecordTodo(previous, prefs.Mode, ProgressPoint.Todos(before.Findings));
+                }
+                catch (InvalidOperationException) { /* fiche de classe absente : rien à comparer */ }
             var path = store.Save(snapshot);
             prefs = prefs with { LastFile = path, Name = search.Text ?? snapshot.Name, Region = snapshot.Region };
             prefs.Save();

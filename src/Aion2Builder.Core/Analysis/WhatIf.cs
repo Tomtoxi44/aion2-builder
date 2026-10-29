@@ -23,7 +23,7 @@ public static class WhatIf
         if (todo.Count > 0)
         {
             var overall = Score(r, gear: r.Gear with { Slots = r.Gear.Slots.Select(s => Todo(s) ? s with { Status = SlotStatus.Ok } : s).ToList() }).Overall;
-            gains.Add(new Gain($"{Fmt.Plural(todo.Count, "pièce")} au niveau du palier", string.Join(", ", todo.OrderByDescending(s => s.Priority).Select(s => s.SlotName)),
+            gains.Add(new Gain(Fmt.Plural(todo.Count, "pièce remise à niveau", "pièces remises à niveau"), string.Join(", ", todo.OrderByDescending(s => s.Priority).Select(s => s.SlotName)),
                 overall, overall - now, Area.Gear));
         }
 

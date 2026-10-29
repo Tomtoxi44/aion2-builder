@@ -92,7 +92,7 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
             else if (rank > 0 && rank < targetRank)
             {
                 status = SlotStatus.Replace;
-                advice = $"Pièce {db.Grade(item.Grade).Name} : à ce palier, vise le grade {db.Grade(stage.TargetGrade).Name}.";
+                advice = $"Pièce {db.Grade(item.Grade).Name} : à cette étape, vise le grade {db.Grade(stage.TargetGrade).Name}.";
                 // Source du palier qui apporte le grade suivant (pas celle du palier d'optimisation).
                 source = Tier(item) ?? prog.Stages.FirstOrDefault(s => db.Grade(s.TargetGrade).Rank > rank)?.Gear.FirstOrDefault(g => g.Group == group)?.For(p.Mode) ?? sourceNow;
                 priority = (40 + 3 * Math.Max(gap, 0) + 10 * (targetRank - rank)) * gw;
@@ -111,7 +111,7 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
                 var target = Math.Min(cap, item.MaxEnchantLevel);
                 var cost = EnchantCost(item.EnchantLevel, target);
                 status = SlotStatus.Enchant;
-                advice = (db.Grade(item.Grade).Rank < keepRank ? "Pièce de transition (remplacée au palier suivant) : " : "À garder : ")
+                advice = (db.Grade(item.Grade).Rank < keepRank ? "Pièce de transition (remplacée à l'étape suivante) : " : "À garder : ")
                          + $"enchante +{item.EnchantLevel} → +{target} (coût relatif {Fmt.Num(cost)}).";
                 source = sourceNext;
                 priority = (15 + 30.0 * (target - item.EnchantLevel) / (cost + 1)) * gw;
@@ -119,7 +119,7 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
             else
             {
                 status = SlotStatus.Ok;
-                advice = next is null ? "Pièce au niveau du palier." : $"Au niveau du palier. Étape suivante : {next.Name}.";
+                advice = next is null ? "Pièce au niveau de l'étape." : $"Au niveau de l'étape. Étape suivante : {next.Name}.";
                 source = sourceNext;
                 priority = 5;
             }
@@ -162,9 +162,9 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
         var findings = new List<Finding>();
         var stage = plan.Stage;
         var nextText = plan.NextStage is null
-            ? "Dernier palier défini dans progression.json."
-            : $"Niveau d'objet {c.ItemLevel} / {plan.NextStage.MinItemLevel} pour passer au palier « {plan.NextStage.Name} » ({Fmt.Pct(plan.ProgressToNext(c.ItemLevel))}).";
-        findings.Add(new Finding(Area.Gear, Severity.Info, $"Palier actuel : {stage.Name}", $"{stage.Goal} {nextText}"));
+            ? "Dernière étape définie dans progression.json."
+            : $"Niveau d'objet {c.ItemLevel} / {plan.NextStage.MinItemLevel} pour passer à l'étape « {plan.NextStage.Name} » ({Fmt.Pct(plan.ProgressToNext(c.ItemLevel))}).";
+        findings.Add(new Finding(Area.Gear, Severity.Info, $"Étape actuelle : {stage.Name}", $"{stage.Goal} {nextText}"));
 
         foreach (var s in plan.Slots.Where(s => s.Status == SlotStatus.Empty && s.Priority > 1))
             findings.Add(new Finding(Area.Gear, Severity.Critical, $"{s.SlotName} : emplacement vide", s.Advice,
@@ -189,10 +189,10 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
                                                  && i.EnchantLevel > db.Progression.Enchant.TransitionalMax).ToList();
         if (overInvested.Count > 0)
             findings.Add(new Finding(Area.Enchant, Severity.Info, "Pièces de transition déjà bien enchantées",
-                $"{string.Join(", ", overInvested.Select(s => $"{s.SlotName} +{s.Item!.EnchantLevel}"))} : ce sont des pièces de transition (remplacées d'ici le palier suivant), n'y remets plus de ressources."));
+                $"{string.Join(", ", overInvested.Select(s => $"{s.SlotName} +{s.Item!.EnchantLevel}"))} : ce sont des pièces de transition (remplacées d'ici l'étape suivante), n'y remets plus de ressources."));
 
         if (stage.Tips.Count > 0)
-            findings.Add(new Finding(Area.Gear, Severity.Info, "Conseils du palier", string.Join(" ", stage.Tips)));
+            findings.Add(new Finding(Area.Gear, Severity.Info, "Conseils de l'étape", string.Join(" ", stage.Tips)));
         return findings;
     }
 }

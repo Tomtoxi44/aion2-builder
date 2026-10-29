@@ -128,7 +128,7 @@ public sealed class EngravingAdvisor(GameDatabase db)
             if (replaced)
             {
                 action = SoulAction.Skip;
-                advice = "Pièce à remplacer à ce palier : ne dépense rien dans ses gravures ni ses pierres, garde tes livres et tes pierres pour la suivante.";
+                advice = "Pièce à remplacer : ne dépense rien dans ses gravures ni ses pierres, garde tes livres et tes pierres pour la suivante.";
             }
             else if (item.SoulLineCount == 0)
             {
@@ -167,7 +167,7 @@ public sealed class EngravingAdvisor(GameDatabase db)
 
             // Pièce en retard sur le palier : elle partira peut-être bientôt, inutile d'y mettre beaucoup.
             if (slot.Status == SlotStatus.Weak && action is SoulAction.Reset or SoulAction.Sync or SoulAction.RaiseRate)
-                advice += " Pièce en retard sur ton palier : si tu la remplaces bientôt, n'y dépense rien.";
+                advice += " Pièce en retard sur tes autres pièces : si tu la remplaces bientôt, n'y dépense rien.";
 
             var empty = Math.Max(0, item.MagicStoneSlots - item.Stones.Count);
             var poorStones = stones.Where(s => s.Verdict == LineVerdict.Poor).ToList();

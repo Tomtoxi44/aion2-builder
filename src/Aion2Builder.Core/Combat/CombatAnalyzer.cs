@@ -5,7 +5,11 @@ using Aion2Builder.Model;
 namespace Aion2Builder.Combat;
 
 /// <summary>Un sort du combat jugé : sa donnée de sort (recharge), le nombre de lancers possibles, la part simulée.</summary>
-public sealed record SkillReview(CombatSkill Skill, SpellData? Spell, int? Possible, double? Simulated, string Verdict, Severity Level);
+public sealed record SkillReview(CombatSkill Skill, SpellData? Spell, int? Possible, double? Simulated, string Verdict, Severity Level)
+{
+    /// <summary>Sort de situation (provocation, protection, soin, déplacement) : lancé au moment voulu, pas jugé sur ses lancers.</summary>
+    public bool Situational { get; init; }
+}
 
 /// <summary>Un buff du combat jugé : lancers possibles s'il a une recharge, ou ce qui le déclenche.</summary>
 public sealed record BuffReview(CombatBuff Buff, SpellData? Spell, int? Possible, string Verdict, Severity Level);
@@ -25,6 +29,22 @@ public sealed class CombatAnalyzer(GameDatabase db)
     static int? Possible(double duration, double cooldown) => cooldown > 0 && duration > 0 ? (int)Math.Floor(duration / cooldown) + 1 : null;
 
     static string Times(int n) => $"{n} fois";
+
+    /// <summary>
+    /// Rôles (fiches de classe) d'un sort de situation : il sert au moment voulu (prendre l'aggro, protéger, soigner, se
+    /// déplacer, se libérer), pas dès que sa recharge est finie. Ni « lancers perdus » ni « jamais lancé » pour eux.
+    /// </summary>
+    static readonly string[] SituationalRoles =
+    [
+        "Menace", "Protection", "Bouclier", "Soin", "Gros soin", "Sanctuaire", "Résurrection", "Immunité", "Fuite", "Repositionnement",
+        "Rapprochement", "Engagement", "Libération des contrôles", "Furtivité", "Peur", "Repoussement", "Entrave", "Silence",
+        "Retrait de buffs", "Réduction de dégâts", "Réduction des soins", "Défense", "Survie", "Esquive garantie", "Partage des dégâts",
+        "PV plancher", "Contrôle aérien", "Invocation (provocation",
+    ];
+
+    /// <summary>Le rôle du sort pour ta classe s'il en fait un sort de situation ; null sinon.</summary>
+    static string? SituationalRole(ResolvedProfile p, string name) =>
+        p.Skill(name)?.Role is { Length: > 0 } role && SituationalRoles.Any(k => role.StartsWith(k, StringComparison.OrdinalIgnoreCase)) ? role : null;
 
     /// <summary>Sort de la classe par nom ; un nom coupé par NotMeter (« Position d'attaque sur... ») se reconnaît par son début.</summary>
     SpellData? Find(string classCode, string name)
@@ -110,6 +130,10 @@ public sealed class CombatAnalyzer(GameDatabase db)
             if (possible is not { } max || s.Uses <= 0)
                 return new SkillReview(s, spell, null, sim, spell.Kind == "Passive" ? "Effet passif déclenché par tes coups : rien à comparer."
                     : spell.Cooldown > 0 ? "Utilisations non lues." : "Sans recharge : sort de remplissage.", Severity.Info);
+            if (s.Uses < 0.8 * max && SituationalRole(p, s.Name) is { } role)
+                return new SkillReview(s, spell, max, sim,
+                    $"{s.Uses} sur {max} possibles ({why}) : sort de situation ({role.ToLowerInvariant()}), lancé au moment voulu : pas jugé sur ses lancers.",
+                    Severity.Info) { Situational = true };
             if (s.Uses > max)
                 return new SkillReview(s, spell, max, sim,
                     $"{Times(s.Uses)} pour {max} permises ({why}) : réinitialisations ou réductions de recharge bien exploitées.", Severity.Info);
@@ -134,7 +158,7 @@ public sealed class CombatAnalyzer(GameDatabase db)
             .Take(db.Settings.Stigmas.Slots).Select(k => Key(k.Name)).ToHashSet();
         bool Expected(string name) => p.Skill(name, "Stigma") is null || slotted.Contains(Key(name));
         var expected = RotationSimulator.Priority(p.Play).Select(step => Find(p.Class.Code, step.Replace("(stigma)", "").Trim()))
-            .OfType<SpellData>().Where(s => (s.Coef > 0 || s.Cooldown > 0) && Expected(s.Name)).DistinctBy(s => s.Name).ToList();
+            .OfType<SpellData>().Where(s => (s.Coef > 0 || s.Cooldown > 0) && Expected(s.Name) && SituationalRole(p, s.Name) is null).DistinctBy(s => s.Name).ToList();
         var unseen = expected.Where(s => !seen.Contains(Key(s.Name)) && !seen.Any(k => k.Length >= 8 && Key(s.Name).StartsWith(k))).Select(s => s.Name).ToList();
         if (unseen.Count > 0 && log.Complete)
             findings.Add(new Finding(Area.Skills, Severity.Important, $"Jamais lancé{(unseen.Count > 1 ? "s" : "")} : {string.Join(", ", unseen)}",
