@@ -1178,7 +1178,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 T(c.Name, 17, weight: FontWeight.SemiBold),
                 T($"{r.Profile.Class.Name} · {r.Profile.Role.Name} · niveau {c.Level}", 13, Tok.Text2),
                 KeyValue([
-                    ("serveur", $"{c.ServerName} ({c.Region})", null), ("niveau_objet", c.ItemLevel.ToString(), null), ("puissance", c.CombatPower.ToString(), null),
+                    ("serveur", $"{c.ServerName} ({c.Region})", null), ("niv. d'objet", Fmt.Big(c.ItemLevel), null), ("puissance", Fmt.Big(c.CombatPower), null),
                     ("vue", Mode, Accent.Main), ("build", inputs.UsesDesigned ? "conçu" : "joueurs", null),
                     ("importé", c.FetchedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm"), null),
                 ]),
@@ -1267,15 +1267,16 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var last = progress[^1];
             panel.Children.Add(SectionHeader("Progression", Clickable(T($"tout voir ({progress.Count} imports)", 11, Accent.Main), () => GoTo(Screen.Progress))));
             var rows = new StackPanel { Spacing = 5, Margin = new Thickness(14, 10) };
-            rows.Children.Add(T($"depuis le {first.FetchedAtUtc.ToLocalTime():dd/MM} : obj {Delta(last.ItemLevel - first.ItemLevel).Trim()} · pc {Delta(last.CombatPower - first.CombatPower).Trim()}",
-                12, last.ItemLevel > first.ItemLevel || last.CombatPower > first.CombatPower ? Tok.Good : Tok.Text2, mono: true));
+            rows.Children.Add(T($"depuis le {first.FetchedAtUtc.ToLocalTime():dd/MM} : objet {Delta(last.ItemLevel - first.ItemLevel).Trim()} · puissance {Delta(last.CombatPower - first.CombatPower).Trim()}",
+                12, last.ItemLevel > first.ItemLevel || last.CombatPower > first.CombatPower ? Tok.Good : Tok.Text2, mono: true, wrap: true));
             for (var i = progress.Count - 1; i >= Math.Max(0, progress.Count - 6); i--)
             {
                 var p = progress[i];
                 var prev = i > 0 ? progress[i - 1] : null;
                 rows.Children.Add(ColumnsSpaced("86,*", 8, T(p.FetchedAtUtc.ToLocalTime().ToString("dd/MM HH:mm"), 11, Tok.Muted, mono: true),
-                    T($"niv. {p.Level} · obj {p.ItemLevel}{Delta(p.ItemLevel - (prev?.ItemLevel ?? p.ItemLevel))} · pc {p.CombatPower}{Delta(p.CombatPower - (prev?.CombatPower ?? p.CombatPower))}",
-                        11, Tok.Text2, mono: true)));
+                    T((prev is not null && prev.Level != p.Level ? $"niv. {p.Level} · " : "") +
+                      $"objet {p.ItemLevel}{Delta(p.ItemLevel - (prev?.ItemLevel ?? p.ItemLevel))} · puissance {p.CombatPower}{Delta(p.CombatPower - (prev?.CombatPower ?? p.CombatPower))}",
+                        11, Tok.Text2, mono: true, wrap: true)));
             }
             panel.Children.Add(rows);
         }
@@ -1319,7 +1320,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         body.Children.Add(KeyValue(
         [
             ("rareté", grade?.Name ?? "—", null),
-            ("niveau_objet", item is null ? "—" : p.Power.ToString(), null),
+            ("niv. d'objet", item is null ? "—" : p.Power.ToString(), null),
             ("enchantement", item is null ? "—" : $"+{item.EnchantLevel} / {item.MaxEnchantLevel}", null),
             ("statut", Fmt.Status(p.Status), StatusBrush(p.Status)),
         ]));
@@ -1695,8 +1696,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
     // ----- Compétences -----
 
-    string? SelectedSkillName => s.Skill is { } n && (r.Skills.Skills.Any(a => a.Skill.Name == n) || r.Skills.Stigmas.Any(a => a.Skill.Name == n))
-        ? n
+    /// <summary>Compétence choisie (null : aucune, l'inspecteur montre la vue d'ensemble) ; une compétence absente de ce personnage passe à la première à changer.</summary>
+    string? SelectedSkillName => s.Skill is not { } n ? null
+        : r.Skills.Skills.Any(a => a.Skill.Name == n) || r.Skills.Stigmas.Any(a => a.Skill.Name == n) ? n
         : r.Skills.Skills.Where(a => a.Delta != 0).OrderByDescending(a => a.Priority).Select(a => a.Skill.Name).FirstOrDefault()
           ?? r.Skills.Skills.FirstOrDefault()?.Skill.Name;
 
@@ -3636,7 +3638,12 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             new[] { Severity.Critical, Severity.Important, Severity.Advice }
                 .Select(level => (level, n: r.Findings.Count(f => f.Severity == level && !IsDone(f))))
                 .Where(x => x.n > 0)
-                .Select(x => (Control)Badge($"{Sev(x.level).Icon} {x.n}", LevelColor(x.level))).Append(toggle).ToArray());
+                .Select(x => (Control)Badge($"{Sev(x.level).Icon} " + (x.level switch
+                {
+                    Severity.Critical => Fmt.Plural(x.n, "critique"),
+                    Severity.Important => Fmt.Plural(x.n, "important"),
+                    _ => $"{x.n} à suivre",
+                }), LevelColor(x.level))).Append(toggle).ToArray());
         var groups = new List<Control>();
         var shown = r.Findings.Where(f => s.ShowInfo || f.Severity != Severity.Info);
         foreach (var group in shown.GroupBy(f => f.Area).OrderBy(g => g.Key))
