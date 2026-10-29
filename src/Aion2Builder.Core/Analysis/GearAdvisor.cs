@@ -31,6 +31,8 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
         var keepRank = db.Grade((next ?? stage).TargetGrade).Rank;
 
         var bySlot = c.Equipment.GroupBy(i => i.Slot).ToDictionary(g => g.Key, g => g.First());
+        // Où remplacer une pièce : le palier de pièces accessible, comme la feuille de route et l'enchantement (même contexte partout).
+        var available = GearRoadmap.AvailableTier(db, c.ItemLevel);
         static int Median(List<int> values) => values.Count == 0 ? 0 : values.OrderBy(x => x).ElementAt(values.Count / 2);
         var detailed = prog.RequiredSlots.Select(s => (Slot: s, Item: bySlot.GetValueOrDefault(s))).Where(x => x.Item is { HasDetail: true }).ToList();
         // Médiane hors runes / amulette (leur échelle de niveau est différente) ; chaque famille est comparée à elle-même.
@@ -49,12 +51,13 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
             var name = db.SlotName(slot);
             var rule = prog.SlotRules.GetValueOrDefault(slot);
             if (rule?.Source is { } ruleSource) sourceNow = sourceNext = ruleSource;
+            string? Tier(EquippedItem? i) => GearRoadmap.TierSource(db, slot, group, i, available);
 
             if (!bySlot.TryGetValue(slot, out var item))
             {
                 slots.Add(new SlotPlan(slot, name, group, null, 0, SlotStatus.Empty,
                     optional ? "Emplacement facultatif / pas encore débloqué." : "Emplacement vide : n'importe quelle pièce est un gros gain.",
-                    sourceNow, 0, [], optional ? 1 : 100 * gw));
+                    Tier(null) ?? sourceNow, 0, [], optional ? 1 : 100 * gw));
                 continue;
             }
 
@@ -91,17 +94,19 @@ public sealed class GearAdvisor(GameDatabase db, StatAnalyzer stats)
                 status = SlotStatus.Replace;
                 advice = $"Pièce {db.Grade(item.Grade).Name} : à ce palier, vise le grade {db.Grade(stage.TargetGrade).Name}.";
                 // Source du palier qui apporte le grade suivant (pas celle du palier d'optimisation).
-                source = prog.Stages.FirstOrDefault(s => db.Grade(s.TargetGrade).Rank > rank)?.Gear.FirstOrDefault(g => g.Group == group)?.For(p.Mode) ?? sourceNow;
+                source = Tier(item) ?? prog.Stages.FirstOrDefault(s => db.Grade(s.TargetGrade).Rank > rank)?.Gear.FirstOrDefault(g => g.Group == group)?.For(p.Mode) ?? sourceNow;
                 priority = (40 + 3 * Math.Max(gap, 0) + 10 * (targetRank - rank)) * gw;
             }
             else if (gap >= db.Settings.Gear.WeakSlotGap)
             {
                 status = SlotStatus.Weak;
                 advice = $"Niveau d'objet {item.Power} contre {reference} en médiane pour tes {group switch { "Weapon" => "armes", "Armor" => "pièces d'armure", "Accessory" => "accessoires", _ => "runes et amulette" }} : c'est ta pièce en retard.";
-                source = sourceNow;
+                source = Tier(item) ?? sourceNow;
                 priority = (35 + 3 * gap) * gw;
             }
-            else if (EnchantCap(item, keepRank, stage) is var cap && item.MaxEnchantLevel > item.EnchantLevel && item.EnchantLevel < cap)
+            // Runes : enchantement secondaire, laissé bas (comme la sous-page Enchantement) ; l'amulette, elle, monte à +10.
+            else if (EnchantCap(item, keepRank, stage) is var cap && item.MaxEnchantLevel > item.EnchantLevel && item.EnchantLevel < cap
+                     && !(group == "Special" && slot != "Amulet"))
             {
                 var target = Math.Min(cap, item.MaxEnchantLevel);
                 var cost = EnchantCost(item.EnchantLevel, target);

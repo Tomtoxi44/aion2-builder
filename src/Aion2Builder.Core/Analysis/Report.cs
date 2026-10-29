@@ -98,6 +98,13 @@ public sealed record StatComparison(List<BenchPlayer>? Peers, string? PeersText,
 
     /// <summary>Plafond dépassé : la stat ne sert plus au-delà (2 % de marge).</summary>
     public StatTarget? CapExceeded(StatTotal x) => TargetsFor(x).FirstOrDefault(t => t.Cap && x.BenchValue > t.Value * 1.02);
+
+    /// <summary>
+    /// Ta valeur face aux joueurs comparés (−1 en dessous, 0 dans la moyenne, 1 au-dessus) ; null sans joueurs ou pour une stat
+    /// non comparée. Tous les écrans et conseils jugent une stat par là quand il y a des joueurs : la part visée n'est alors
+    /// qu'une indication.
+    /// </summary>
+    public int? PlayerVerdict(string key) => Families.SelectMany(f => f.Players).FirstOrDefault(v => v.Stat.Def.Key == key)?.Verdict;
 }
 
 /// <param name="OtherModeBudget">Budget des stats réservées à l'autre mode (ex. "ATQ JcJ" vu en JcE), non compté ici.</param>
@@ -162,7 +169,14 @@ public sealed record GearSkillBonus(string Slot, string Item, bool Arcana, strin
 
 /// <summary>Stigma : niveau monté avec des fragments, 4 emplacements, échange gratuit.</summary>
 public sealed record StigmaAdvice(SkillInfo Skill, string Role, string Why, bool Known, bool Unverified, double Priority,
-    bool Recommended, int Target, int ShardsToTarget);
+    bool Recommended, int Target, int ShardsToTarget)
+{
+    /// <summary>
+    /// Dans un emplacement : équipé ET monté. Le site officiel marque parfois « équipés » des stigmas au niveau 0, au-delà
+    /// des emplacements (6 pour 4 vus le 29/10/2026, alors que les autres personnages en ont 4) : ils ne comptent pas.
+    /// </summary>
+    public bool Slotted => Skill.Equipped && Skill.Level > 0;
+}
 
 /// <summary>
 /// Points déplacés par la répartition conseillée : d'une compétence nettement moins utile vers une plus utile

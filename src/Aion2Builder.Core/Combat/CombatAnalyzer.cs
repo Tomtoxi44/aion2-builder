@@ -128,8 +128,13 @@ public sealed class CombatAnalyzer(GameDatabase db)
 
         // Sorts de la rotation jamais vus.
         var seen = log.Skills.Select(s => Key(s.Name)).Concat(log.Buffs.Select(b => Key(b.Name))).ToHashSet();
+        // Un stigma que l'écran Stigmas ne met pas dans les emplacements (les plus prioritaires du mode) n'est pas attendu ici :
+        // sinon le combat dirait de lancer un stigma que les conseils disent de retirer.
+        var slotted = p.Skills.Where(k => k.Kind == "Stigma").OrderByDescending(k => k.Priority.GetValueOrDefault(p.Mode))
+            .Take(db.Settings.Stigmas.Slots).Select(k => Key(k.Name)).ToHashSet();
+        bool Expected(string name) => p.Skill(name, "Stigma") is null || slotted.Contains(Key(name));
         var expected = RotationSimulator.Priority(p.Play).Select(step => Find(p.Class.Code, step.Replace("(stigma)", "").Trim()))
-            .OfType<SpellData>().Where(s => s.Coef > 0 || s.Cooldown > 0).DistinctBy(s => s.Name).ToList();
+            .OfType<SpellData>().Where(s => (s.Coef > 0 || s.Cooldown > 0) && Expected(s.Name)).DistinctBy(s => s.Name).ToList();
         var unseen = expected.Where(s => !seen.Contains(Key(s.Name)) && !seen.Any(k => k.Length >= 8 && Key(s.Name).StartsWith(k))).Select(s => s.Name).ToList();
         if (unseen.Count > 0 && log.Complete)
             findings.Add(new Finding(Area.Skills, Severity.Important, $"Jamais lancé{(unseen.Count > 1 ? "s" : "")} : {string.Join(", ", unseen)}",

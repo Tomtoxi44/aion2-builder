@@ -82,11 +82,19 @@ public sealed class CharacterStore(string? dir = null)
 
     string ProgressPath(CharacterSnapshot c) => Path.Combine(Directory, "history", $"{Sanitize(c.FileKey)}.progress.json");
 
-    /// <summary>Imports successifs du personnage, du plus ancien au plus récent (un point par import qui change quelque chose).</summary>
+    /// <summary>
+    /// Imports successifs du personnage, du plus ancien au plus récent par date des données (un point par import qui change
+    /// quelque chose). Rangés par date, pas par ordre d'écriture : rouvrir un ancien fichier ajoutait un point daté d'avant
+    /// à la fin, et la progression comparait alors des imports dans le désordre.
+    /// </summary>
     public List<ProgressPoint> Progress(CharacterSnapshot c)
     {
         var path = ProgressPath(c);
-        try { return File.Exists(path) ? JsonSerializer.Deserialize<List<ProgressPoint>>(File.ReadAllText(path), GameDataStore.Json) ?? [] : []; }
+        try
+        {
+            var points = File.Exists(path) ? JsonSerializer.Deserialize<List<ProgressPoint>>(File.ReadAllText(path), GameDataStore.Json) ?? [] : [];
+            return points.OrderBy(p => p.FetchedAtUtc).ToList();
+        }
         catch (Exception ex) when (ex is JsonException or IOException) { return []; }
     }
 
@@ -94,9 +102,10 @@ public sealed class CharacterStore(string? dir = null)
     {
         var points = Progress(c);
         var point = ProgressPoint.Of(c);
-        if (points.Count > 0 && points[^1].SameState(point)) return; // rien de neuf
+        if (points.Any(p => p.FetchedAtUtc == point.FetchedAtUtc)) return; // déjà là
+        if (points.LastOrDefault(p => p.FetchedAtUtc < point.FetchedAtUtc) is { } before && before.SameState(point)) return; // rien de neuf
         points.Add(point);
-        SaveProgress(c, points);
+        SaveProgress(c, points.OrderBy(p => p.FetchedAtUtc).ToList());
     }
 
     /// <summary>Notes calculées pour l'import en cours (un mode à la fois), gardées dans son point de progression.</summary>
@@ -106,8 +115,8 @@ public sealed class CharacterStore(string? dir = null)
         var index = points.FindLastIndex(p => p.FetchedAtUtc == c.FetchedAtUtc);
         if (index < 0)
         {
-            points.Add(ProgressPoint.Of(c));
-            index = points.Count - 1;
+            points = points.Append(ProgressPoint.Of(c)).OrderBy(p => p.FetchedAtUtc).ToList();
+            index = points.FindLastIndex(p => p.FetchedAtUtc == c.FetchedAtUtc);
         }
         var key = mode.ToString();
         var current = points[index].Scores ?? [];

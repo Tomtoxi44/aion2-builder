@@ -227,8 +227,10 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
         var obtainable = Obtainable(c, p);
         bool Can(StatTotal t) => obtainable.ContainsKey(t.Def.Key);
         string Where(StatTotal t) => WhereToFind(t, obtainable);
+        // Avec des joueurs comparés, une stat déjà dans leur moyenne ou au-dessus n'est jamais « à chercher » (même règle que l'écran Stats).
+        bool NotAhead(StatTotal t) => sp.Comparison.PlayerVerdict(t.Def.Key) is null or < 0;
         StatTotal? Wanted(StatCategory? category) =>
-            sp.Stats.Where(x => (category is null || x.Def.Category == category) && x.Weight > s.LowWeight && Can(x))
+            sp.Stats.Where(x => (category is null || x.Def.Category == category) && x.Weight > s.LowWeight && Can(x) && NotAhead(x))
                 .OrderByDescending(x => x.Deficit * x.Weight).FirstOrDefault();
 
         findings.Add(new Finding(Area.Stats, Severity.Info, $"Efficacité des stats : {Fmt.Pct(sp.Efficiency)}",
@@ -245,7 +247,9 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
         {
             var o = over[0];
             var u = under[0];
-            var give = sp.Stats.Where(x => x.Def.Category == o.Category).OrderByDescending(x => x.ChoiceBudget * (1 - x.Weight)).First();
+            // La stat à céder : la première de « Où reprendre de la place » de l'écran Stats (au-dessus des joueurs ou peu utile).
+            var give = sp.Comparison.Families.FirstOrDefault(f => f.Share.Category == o.Category)?.Free.FirstOrDefault()?.Stat
+                       ?? sp.Stats.Where(x => x.Def.Category == o.Category).OrderByDescending(x => x.ChoiceBudget * (1 - x.Weight)).First();
             var take = Wanted(u.Category);
             var big = Math.Max(o.Gap, -u.Gap) > 2 * s.CategoryTolerance;
             findings.Add(new Finding(Area.Stats, big ? Severity.Important : Severity.Advice,
@@ -279,22 +283,32 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
 
         // 2 bis. Stats importantes sous la moyenne des joueurs de la classe à ton niveau d'objet (même calcul, JcE seulement :
         // l'échantillon est en JcE). Pas tout l'échantillon : les stats montent avec le niveau d'objet.
+        // Même compte que le badge de l'écran Stats ; à monter tout de suite : celles qu'on peut encore trouver (cases, stats
+        // secondaires, titres), les autres viendront avec les prochaines pièces (même partage que les cartes des familles).
+        var behindKeys = new HashSet<string>();
         if (sp.Comparison is { Peers: not null, PeersText: { } peersText })
         {
             var behind = sp.Comparison.Families.SelectMany(f => f.Players).Where(v => v.Verdict < 0 && v.Stat.Weight >= 0.6)
-                .OrderByDescending(v => v.Stat.Weight).Take(3).ToList();
+                .OrderByDescending(v => v.Stat.Weight).ThenBy(v => v.Mine / Math.Max(1e-9, v.Average)).ToList();
+            behindKeys.UnionWith(behind.Select(v => v.Stat.Def.Key));
             string Value(StatTotal x, double v) => x.Def.Kind == StatKind.Percent ? $"{Fmt.Num(v)} %" : Fmt.Num(v);
+            var now = behind.Where(v => Can(v.Stat)).Take(3).ToList();
+            var later = behind.Where(v => !Can(v.Stat)).ToList();
             if (behind.Count > 0)
                 findings.Add(new Finding(Area.Stats, Severity.Advice,
-                    $"{string.Join(", ", behind.Select(v => v.Stat.Def.Name))} : sous la moyenne des joueurs de ton niveau d'objet",
-                    string.Join(" · ", behind.Select(v => $"{v.Stat.Def.Name} : {Value(v.Stat, v.Mine)}, moyenne {Value(v.Stat, v.Average)}")) +
+                    $"{Fmt.Plural(behind.Count, "stat utile", "stats utiles")} sous la moyenne des joueurs de ton niveau d'objet",
+                    string.Join(" · ", behind.Take(6).Select(v => $"{v.Stat.Def.Name} : {Value(v.Stat, v.Mine)}, moyenne {Value(v.Stat, v.Average)}")) +
+                    (behind.Count > 6 ? $" · et {Fmt.Plural(behind.Count - 6, "autre")}" : "") +
                     $". Joueurs comparés : {peersText}, stats totales calculées comme les tiennes.",
-                    $"Vise au moins la moyenne : {string.Join(" ; ", behind.Select(v => $"{v.Stat.Def.Name} ({Where(v.Stat)})"))}.",
-                    45 + 10 * behind.Count));
+                    (now.Count > 0 ? $"Vise au moins la moyenne : {string.Join(" ; ", now.Select(v => $"{v.Stat.Def.Name} ({Where(v.Stat)})"))}." : "") +
+                    (later.Count > 0 ? $"{(now.Count > 0 ? " " : "")}{string.Join(", ", later.Take(4).Select(v => v.Stat.Def.Name))}{(later.Count > 4 ? "…" : "")} : " +
+                                       "plus rien à prendre sur tes pièces actuelles ni tes cases Daevanion, elles monteront avec tes prochaines pièces." : ""),
+                    45 + 10 * Math.Min(3, behind.Count)));
         }
 
-        // 3. Stats prioritaires en retard sur la répartition idéale, et réellement disponibles.
-        var wanted = sp.Stats.Where(x => x.Weight >= 0.6 && x.Deficit > 0.01 && Can(x))
+        // 3. Stats prioritaires en retard sur la répartition idéale, et réellement disponibles ; avec des joueurs comparés,
+        //    seulement celles encore sous leur moyenne et pas déjà dans le conseil précédent.
+        var wanted = sp.Stats.Where(x => x.Weight >= 0.6 && x.Deficit > 0.01 && Can(x) && NotAhead(x) && !behindKeys.Contains(x.Def.Key))
             .OrderByDescending(x => x.Deficit * x.Weight).Take(3).ToList();
         if (wanted.Count > 0)
             findings.Add(new Finding(Area.Stats, Severity.Advice, $"Stats à aller chercher : {string.Join(", ", wanted.Select(x => x.Def.Name))}",

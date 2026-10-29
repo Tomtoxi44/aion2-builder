@@ -37,7 +37,7 @@ public static class GearRoadmap
         var score = c.ItemLevel;
         var reached = rules.Gates.LastOrDefault(g => g.Score <= score);
         var next = rules.Gates.FirstOrDefault(g => g.Score > score);
-        var available = rules.Tiers.Where(t => t.Gate is { } gate && gate <= score).MaxBy(t => t.ItemLevel);
+        var available = AvailableTier(db, score);
         var nextTier = rules.Tiers.Where(t => t.Gate is not null && t.ItemLevel > (available?.ItemLevel ?? 0)).MinBy(t => t.ItemLevel);
 
         var slots = r.Gear.Slots.Select(p => Route(db, r, p, available, nextTier)).ToList();
@@ -75,12 +75,28 @@ public static class GearRoadmap
         return new GearRoadmapPlan(score, c.Level, rules.MaxLevel, reached, next, available, nextTier, steps, slots, enchants, sacred);
     }
 
+    /// <summary>Palier de pièces accessible avec ce score d'équipement (le plus haut dont le seuil est franchi) ; null sinon.</summary>
+    public static GearTier? AvailableTier(GameDatabase db, int score) =>
+        db.Progression.Roadmap.Tiers.Where(t => t.Gate is { } gate && gate <= score).MaxBy(t => t.ItemLevel);
+
+    /// <summary>Runes, amulette, ceinture : hors des paliers des donjons (transmutation, ou règle propre comme la ceinture noble).</summary>
+    public static bool OutsideTiers(GameDatabase db, string slot, string group) =>
+        group == "Special" || db.Progression.SlotRules.GetValueOrDefault(slot) is { Keep: true };
+
+    /// <summary>
+    /// La pièce du palier accessible pour cet emplacement (« pièce 86 · Conquête : Temple du feu ») quand la pièce actuelle
+    /// est en dessous (ou absente) ; null sinon. Tous les écrans donnent cette source-là pour une pièce à remplacer.
+    /// </summary>
+    public static string? TierSource(GameDatabase db, string slot, string group, EquippedItem? item, GearTier? available) =>
+        available is null || OutsideTiers(db, slot, group) || item is not null && (!item.HasDetail || item.ItemLevel >= available.ItemLevel) ? null
+            : $"pièce {available.ItemLevel} · {available.WhereFor(slot == "SubHand" ? "Guard" : group)}";
+
     static SlotRoute Route(GameDatabase db, AdviceReport r, SlotPlan p, GearTier? available, GearTier? nextTier)
     {
         var group = p.Slot == "SubHand" ? "Guard" : p.Group;
         var rule = db.Progression.SlotRules.GetValueOrDefault(p.Slot);
         // Runes, amulette et ceinture ne suivent pas les paliers des donjons : transmutation, ou règle propre (ceinture noble).
-        if (p.Group == "Special" || rule is { Keep: true })
+        if (OutsideTiers(db, p.Slot, p.Group))
         {
             var where = rule?.Source ?? r.Gear.Stage.Gear.FirstOrDefault(g => g.Group == p.Group)?.For(r.Mode) ?? "";
             return new SlotRoute(p.Slot, p.SlotName, group, p.Item, p.Power, null, where, p.Power, 0, false, true);

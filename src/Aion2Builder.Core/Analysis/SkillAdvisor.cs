@@ -390,15 +390,19 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         var remove = plan.ToRemove.ToList();
         var add = plan.ToAdd.ToList();
         string Line(SkillAdvice a) => $"« {a.Skill.Name} » ({a.Role}) : {Levels(a)}. {(a.Delta < 0 ? a.Decision : a.Reason)}";
+        // Important seulement si une compétence monte vers son niveau visé (c'est ce que mesure la note Compétences) ; monter
+        // au-delà, jusqu'au maximum, avec des points posés trop haut ailleurs est un petit gain (note et « Et si » ne bougent pas).
+        var toTarget = add.Any(a => a.Base < a.Target);
+        const string Beyond = "Déjà au niveau visé partout : ces points montent des compétences plus utiles au-delà (jusqu'au maximum), un petit gain qui ne change pas la note.";
         if (remove.Count > 0)
-            findings.Add(new Finding(Area.Skills, Severity.Important, $"Compétences : retire des points à {string.Join(", ", remove.Select(a => a.Skill.Name))}",
-                string.Join("\n", remove.Select(Line)),
+            findings.Add(new Finding(Area.Skills, toTarget ? Severity.Important : Severity.Advice, $"Compétences : retire des points à {string.Join(", ", remove.Select(a => a.Skill.Name))}",
+                (toTarget ? "" : Beyond + "\n") + string.Join("\n", remove.Select(Line)),
                 $"Réinitialise tes compétences (gratuit) et refais la répartition {mode} de l'onglet Compétences : ces points servent davantage ailleurs.",
                 60 + 5 * remove.Sum(a => -a.Delta) * remove.Max(a => 1 - a.Priority) / 3));
         if (add.Count > 0)
-            findings.Add(new Finding(Area.Skills, remove.Count > 0 || add.Any(a => a.Priority >= 0.85) ? Severity.Important : Severity.Advice,
+            findings.Add(new Finding(Area.Skills, toTarget && (remove.Count > 0 || add.Any(a => a.Priority >= 0.85)) ? Severity.Important : Severity.Advice,
                 $"Compétences : ajoute des points à {string.Join(", ", add.Select(a => a.Skill.Name))}",
-                string.Join("\n", add.Select(Line)),
+                (toTarget ? "" : Beyond + "\n") + string.Join("\n", add.Select(Line)),
                 plan.UnspentPoints > 0 && remove.Count == 0
                     ? "Place tes points non dépensés dans cet ordre."
                     : "Mets les points récupérés dans cet ordre (la plus importante d'abord).",
@@ -425,8 +429,8 @@ public sealed partial class SkillAdvisor(GameDatabase db)
         // Stigmas.
         var st = db.Settings.Stigmas;
         var wanted = plan.Stigmas.Where(s => s.Recommended).ToList();
-        var toUnequip = plan.Stigmas.Where(s => s.Skill.Equipped && !s.Recommended).ToList();
-        var toEquip = wanted.Where(s => !s.Skill.Equipped).ToList();
+        var toUnequip = plan.Stigmas.Where(s => s.Slotted && !s.Recommended).ToList();
+        var toEquip = wanted.Where(s => !s.Slotted).ToList();
         if (toEquip.Count > 0 || toUnequip.Count > 0)
             findings.Add(new Finding(Area.Skills, Severity.Important, $"Stigmas {mode} : {string.Join(", ", wanted.Select(s => s.Skill.Name))}",
                 string.Join("\n", toUnequip.Select(s => $"Retire « {s.Skill.Name} » : {s.Why}")

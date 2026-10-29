@@ -58,6 +58,9 @@ public sealed class EngravingAdvisor(GameDatabase db)
         return new EngravingLine(e, e.StatKey is { } k ? db.StatName(k) : e.Raw, weight, e.StatKey is null ? LineVerdict.Medium : Verdict(weight), grade);
     }
 
+    /// <summary>La stat jugée pour une stat principale : celle qu'elle augmente.</summary>
+    string Proxy(string key) => db.Stat(key) is { Category: StatCategory.Primary, Proxy: { } proxy } ? proxy : key;
+
     /// <summary>Famille d'une stat (une stat principale prend celle de la stat qu'elle augmente).</summary>
     StatCategory? Category(string key) => db.Stat(key) is { } def
         ? def.Category == StatCategory.Primary && def.Proxy is { } proxy ? db.Stat(proxy)?.Category : def.Category
@@ -68,16 +71,26 @@ public sealed class EngravingAdvisor(GameDatabase db)
         var rules = db.Progression.Engraving;
         var tolerance = db.Settings.Stats.CategoryTolerance;
         // Pour choisir quoi viser : l'importance de la stat, relevée si sa famille est en manque, baissée si elle est en trop.
+        // Avec des joueurs comparés, ce sont eux qui disent ce qui manque, stat par stat (comme l'écran Stats) ; sans joueurs, la
+        // part de la famille face à sa part visée.
+        var players = sp.Comparison.Peers is not null;
         var gaps = sp.Categories.ToDictionary(x => x.Category, x => x.Gap);
-        double Need(string key) => Category(key) is { } cat && gaps.TryGetValue(cat, out var gap) ? Math.Clamp(1 - 2 * gap, 0.6, 1.5) : 1;
+        double Need(string key) => players
+            ? sp.Comparison.PlayerVerdict(Proxy(key)) switch { < 0 => 1.4, > 0 => 0.7, _ => 1 }
+            : Category(key) is { } cat && gaps.TryGetValue(cat, out var gap) ? Math.Clamp(1 - 2 * gap, 0.6, 1.5) : 1;
         var lacking = sp.Categories.Where(x => x.Gap < -tolerance).Select(x => x.Category).ToHashSet();
         var surplus = sp.Categories.Where(x => x.Gap > tolerance).Select(x => x.Category).ToHashSet();
         List<string> Rank(IEnumerable<string> keys) => keys.Select(k => (Key: k, W: Weight(k, p)))
             .Where(x => x.W >= rules.GoodWeight).OrderByDescending(x => x.W * Need(x.Key)).Take(3).Select(x => x.Key).ToList();
-        // Nom de la stat, suivi de l'état de sa famille dans tes stats quand il compte (en manque / déjà en trop).
-        string Aim(IEnumerable<string> keys, string separator) => string.Join(separator, keys.Select(k => db.StatName(k) + (Category(k) is { } cat
-            ? lacking.Contains(cat) ? $" ({GameDatabase.CategoryName(cat)} en manque)" : surplus.Contains(cat) ? $" ({GameDatabase.CategoryName(cat)} déjà en trop, à défaut)" : ""
-            : "")));
+        // Nom de la stat, suivi de ce qui la rend utile ou non ici : sa place face aux joueurs, sinon l'état de sa famille.
+        string Note(string k) => players
+            ? sp.Comparison.PlayerVerdict(Proxy(k)) switch { < 0 => " (sous la moyenne des joueurs)", > 0 => " (déjà au-dessus de la moyenne, à défaut)", _ => "" }
+            : Category(k) is { } cat
+                ? lacking.Contains(cat) ? $" ({GameDatabase.CategoryName(cat)} en manque)" : surplus.Contains(cat) ? $" ({GameDatabase.CategoryName(cat)} déjà en trop, à défaut)" : ""
+                : "";
+        string Aim(IEnumerable<string> keys, string separator) => string.Join(separator, keys.Select(k => db.StatName(k) + Note(k)));
+        // Pierres : elles ne passent pas au transfert, donc seulement sur les pièces gardées (pas celles que le palier accessible remplacera).
+        var available = GearRoadmap.AvailableTier(db, c.ItemLevel);
         // Options vues sur tes propres pièces : elles complètent les listes relevées ailleurs.
         var observed = c.Equipment.Where(i => i.Category is not null).GroupBy(i => i.Category!)
             .ToDictionary(g => g.Key, g => g.SelectMany(i => i.SubStats).Where(e => e.IsStat).Select(e => e.StatKey!).ToHashSet());
@@ -161,10 +174,18 @@ public sealed class EngravingAdvisor(GameDatabase db)
             var commonStones = stones.Where(s => s.Verdict != LineVerdict.Poor && s.Grade == "Common").ToList();
             var bestStones = betterStones.Count > 0 ? Aim(stoneKeys.Take(2), " ou ") : "une stat utile à ta classe";
             var stoneParts = new List<string>();
-            if (!replaced && empty > 0) stoneParts.Add($"{Fmt.Plural(empty, "emplacement libre", "emplacements libres")} : grave des {stoneKind} de {bestStones}.");
-            if (!replaced && poorStones.Count > 0) stoneParts.Add($"Remplace {string.Join(", ", poorStones.Select(s => s.Effect.Raw))} par {bestStones}.");
+            // Pièce provisoire (le palier accessible la remplacera, par transfert ou non) : ses pierres seraient perdues.
+            var keepStones = !replaced && GearRoadmap.TierSource(db, slot.Slot, slot.Group, item, available) is null;
+            if (keepStones && empty > 0) stoneParts.Add($"{Fmt.Plural(empty, "emplacement libre", "emplacements libres")} : grave des {stoneKind} de {bestStones}.");
+            if (keepStones && poorStones.Count > 0) stoneParts.Add($"Remplace {string.Join(", ", poorStones.Select(s => s.Effect.Raw))} par {bestStones}.");
+            if (!keepStones)
+            {
+                poorStones.Clear();
+                commonStones.Clear();
+                empty = 0;
+            }
             // Grade commun : gain faible, à faire quand une meilleure pierre tombe (hors « à revoir »).
-            var upgrade = replaced || commonStones.Count == 0 ? null
+            var upgrade = !keepStones || commonStones.Count == 0 ? null
                 : $"Grade commun : {string.Join(", ", commonStones.Select(s => s.Effect.Raw))}. {(commonStones.Count > 1 ? "Remplace-les" : "Remplace-la")} par la même stat en grade supérieur quand tu en obtiens (gain faible, pas prioritaire).";
 
             var quality = lines.Count == 0 ? 1 : lines.Average(l => Math.Min(1, l.Weight / maxWeight));

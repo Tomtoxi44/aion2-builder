@@ -832,7 +832,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         Page(Icons.Star, SkillPage.Specs, specs.Count > 0 ? $"{specs.Sum(p => p.Slots)}" : "—", Accent.Main,
             specs.Count > 0 ? "lesquelles équiper, sort par sort" : "pas de données pour cette classe");
         Page(Icons.Swap, SkillPage.Moves, sk.Moves.Count > 0 ? $"{sk.Moves.Count}" : "—", sk.Moves.Count > 0 ? Tok.Warn : Tok.Muted, "la raison de chaque point déplacé");
-        var equipped = sk.Stigmas.Count(x => x.Skill.Equipped);
+        var equipped = sk.Stigmas.Count(x => x.Slotted);
         Page(Icons.Shield, SkillPage.Stigmas, $"{equipped}/{db.Settings.Stigmas.Slots}", Tok.Text2,
             sk.NextShards.Count > 0 ? $"{Fmt.Plural(sk.NextShards.Count, "palier")} de fragments" : "stigmas au niveau visé");
         return new SidePanel("Compétences", null, body);
@@ -1368,14 +1368,32 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     static IBrush ShareColor(StatTotal x) =>
         x.ExpectedShare - x.Share > 0.02 ? Tok.Bad : x.Share - x.ExpectedShare > 0.08 && x.Weight < 0.6 ? Tok.Warn : Tok.Text;
 
-    static (string Text, IBrush Color) Verdict(StatTotal x)
+    /// <summary>
+    /// Verdict d'une stat, en une phrase. Avec des joueurs comparés, eux seuls décident (comme les cartes des familles et les
+    /// conseils) ; sans joueurs (JcJ, pas d'échantillon), la part face à la part visée.
+    /// </summary>
+    (string Text, IBrush Color) Verdict(StatTotal x)
     {
+        var importance = StatImportance(x).Text;
+        switch (r.Stats.Comparison.PlayerVerdict(x.Def.Key))
+        {
+            case < 0:
+                return x.Weight >= 0.6
+                    ? ("En dessous de la moyenne des joueurs de ton niveau d'objet : à monter.", Tok.Bad)
+                    : ($"En dessous de la moyenne des joueurs, mais {importance} pour ta classe : pas prioritaire.", Tok.Text2);
+            case 0:
+                return ("Dans la moyenne des joueurs de ton niveau d'objet : rien à faire.", Tok.Good);
+            case > 0:
+                return x.Weight < 0.5
+                    ? ($"Au-dessus de la moyenne des joueurs et {importance} pour ta classe : de la place à reprendre.", Tok.Warn)
+                    : ("Au-dessus de la moyenne des joueurs de ton niveau d'objet : rien à faire.", Tok.Good);
+        }
         if (x.ExpectedShare - x.Share > 0.02)
             return ($"Il te manque environ {Pts(x.ExpectedShare - x.Share)} points de part : à augmenter.", Tok.Bad);
         if (x.Share - x.ExpectedShare > 0.08)
             return x.Weight < 0.6
                 ? ($"Tu y mets {Pts(x.Share - x.ExpectedShare)} points de part de trop : à réduire au profit des stats manquantes.", Tok.Warn)
-                : ("Au-dessus de la part visée, mais c'est une stat prioritaire pour ta classe : rien à réduire.", Tok.Good);
+                : ($"Au-dessus de la part visée, mais c'est une stat {importance} pour ta classe : rien à réduire.", Tok.Good);
         if (x.Share - x.ExpectedShare > 0.02)
             return ($"Un peu au-dessus de la part visée (+{Pts(x.Share - x.ExpectedShare)} points) : rien d'urgent.", Tok.Good);
         return ("Proche de la part visée pour ta classe.", Tok.Good);
@@ -2055,9 +2073,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var panel = new StackPanel();
         var selected = SelectedSkillName;
         const string stigmaCols = "80,*,140,90,110";
-        foreach (var g in sk.Stigmas.Where(x => x.Recommended || x.Skill.Equipped))
+        foreach (var g in sk.Stigmas.Where(x => x.Recommended || x.Slotted))
         {
-            var (label, color) = g.Recommended ? (g.Skill.Equipped ? ("Garder", Tok.Good) : ("Mettre", Tok.Info)) : ("Retirer", Tok.Bad);
+            var (label, color) = g.Recommended ? (g.Slotted ? ("Garder", Tok.Good) : ("Mettre", Tok.Info)) : ("Retirer", Tok.Bad);
             panel.Children.Add(TableRow(Columns(stigmaCols,
                     T(label, 12, color, FontWeight.SemiBold, mono: true), T(g.Skill.Name, 13, g.Skill.Acquired ? null : Tok.Muted), T(g.Role, 13, Tok.Text2),
                     T(g.Recommended ? $"{g.Skill.Level} → {g.Target}" : $"{g.Skill.Level}", 13, mono: true),
@@ -2235,7 +2253,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 ("type", "Stigma", null),
                 ("rôle", g.Role, null),
                 ("niveau", g.Recommended ? $"{g.Skill.Level} → {g.Target}" : g.Skill.Level.ToString(), null),
-                ("conseil", g.Recommended ? (g.Skill.Equipped ? "garder" : "mettre") : "retirer", g.Recommended ? (g.Skill.Equipped ? Tok.Good : Tok.Info) : Tok.Bad),
+                ("conseil", g.Recommended ? (g.Slotted ? "garder" : "mettre") : g.Slotted ? "retirer" : "pas utile", g.Recommended ? (g.Slotted ? Tok.Good : Tok.Info) : g.Slotted ? Tok.Bad : Tok.Muted),
                 ("fragments", g.ShardsToTarget.ToString(), null),
                 ("priorité", g.Priority.ToString("0.00"), null),
             ]));
@@ -2255,7 +2273,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         body.Children.Add(KeyValue(
         [
             ("à déplacer", moved > 0 ? $"{Pts(moved)} ({Fmt.Plural(sk.Moves.Count, "échange")})" : "rien", moved > 0 ? Tok.Warn : Tok.Good),
-            ("stigmas", $"{sk.Stigmas.Count(x => x.Skill.Equipped)}/{db.Settings.Stigmas.Slots} équipés", null),
+            ("stigmas", $"{sk.Stigmas.Count(x => x.Slotted)}/{db.Settings.Stigmas.Slots} équipés", null),
             ("dégâts", sk.MeasuredFights > 0 ? $"mesurés sur {Fmt.Plural(sk.MeasuredFights, "combat")}" : "simulés (aucun combat importé)", Tok.Text2),
         ]));
         var focus = sk.Focus.Where(a => a.DamageShare >= 0.005).Take(8).ToList();
@@ -3607,7 +3625,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var score = p.Scores?.GetValueOrDefault(key);
             var prevScore = prev?.Scores?.GetValueOrDefault(key);
             var head = ColumnsSpaced("120,*", 12, T(p.FetchedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm"), 12, Tok.Muted, mono: true),
-                T($"niv. {p.Level} · obj {p.ItemLevel}{Delta(p.ItemLevel - (prev?.ItemLevel ?? p.ItemLevel))} · pc {p.CombatPower}{Delta(p.CombatPower - (prev?.CombatPower ?? p.CombatPower))}" +
+                T($"niv. {p.Level} · objet {p.ItemLevel}{Delta(p.ItemLevel - (prev?.ItemLevel ?? p.ItemLevel))} · puissance {p.CombatPower}{Delta(p.CombatPower - (prev?.CombatPower ?? p.CombatPower))}" +
                   (score is null ? "" : $" · score {score.Overall}{(prevScore is null ? "" : Delta(score.Overall - prevScore.Overall))}"), 13, mono: true));
             var block = new StackPanel { Spacing = 3, Children = { head } };
             if (prev is not null)
@@ -3622,7 +3640,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 { Padding = new Thickness(14, 8), BorderBrush = Tok.RowLine, BorderThickness = new Thickness(0, 0, 0, 1), Child = block });
         }
         if (older.Children.Count > 0)
-            recent.Children.Add(Expander($"{older.Children.Count} import{(older.Children.Count > 1 ? "s" : "")} plus ancien{(older.Children.Count > 1 ? "s" : "")}",
+            recent.Children.Add(Expander(Fmt.Plural(older.Children.Count, "import plus ancien", "imports plus anciens"),
                 IsOpen("progress:older"), () => Toggle("progress:older"), () => older, new Thickness(10, 4)));
         return Page($"Progression · {progress.Count} imports depuis le {first.FetchedAtUtc.ToLocalTime():dd/MM/yyyy}", null,
             Card(curvesBlock, "Courbes"), Card(recent, "Imports, du plus récent au plus ancien", padding: new Thickness(0)));
