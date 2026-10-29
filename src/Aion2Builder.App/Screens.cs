@@ -18,7 +18,7 @@ namespace Aion2Builder.App;
 enum Screen { Import, Home, Stats, Gear, Skills, Build, Combat, Daeva, Pets, Simulate, Progress, Details }
 
 /// <summary>Sous-pages de l'écran Équipement (sous-menu du rail).</summary>
-enum GearPage { Overview, Roadmap, Pieces, Enchant, Stones }
+enum GearPage { Overview, Roadmap, Pieces, Enchant, Stones, Arcana }
 
 /// <summary>Sous-pages de l'écran Compétences.</summary>
 enum SkillPage { Overview, Specs, Moves, Stigmas }
@@ -89,7 +89,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     public static readonly (GearPage Page, string Title, string Short)[] GearPages =
     [
         (GearPage.Overview, "Vue d'ensemble", "Vue"), (GearPage.Roadmap, "Feuille de route", "Route"), (GearPage.Pieces, "Pièces et sources", "Pièces"),
-        (GearPage.Enchant, "Enchantement", "Enchant."), (GearPage.Stones, "Pierres et gravures", "Pierres"),
+        (GearPage.Enchant, "Enchantement", "Enchant."), (GearPage.Stones, "Pierres et gravures", "Pierres"), (GearPage.Arcana, "Arcanes", "Arcanes"),
     ];
 
     public static readonly (SkillPage Page, string Title)[] SkillPages =
@@ -117,6 +117,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         public const string Board = "M2 2h10v10H2zM2 7h10M7 2v10";
         public const string Play = "M3 2l9 5-9 5z";
         public const string Diff = "M4 2v10M10 2v10M1.5 5h5M7.5 9h5";
+        public const string Card = "M3 1.5h8v11H3zM5 5h4M5 8h4M5 10.5h2";
         public const string Star = "M7 1.5l1.7 3.5 3.8.5-2.8 2.6.7 3.8L7 10.1l-3.4 1.8.7-3.8L1.5 5.5l3.8-.5z";
     }
 
@@ -715,6 +716,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         GearPage.Pieces => GearPiecesPage(),
         GearPage.Enchant => GearEnchantPage(),
         GearPage.Stones => GearStonesPage(),
+        GearPage.Arcana => GearArcanaPage(),
         _ => GearOverview(),
     };
 
@@ -739,6 +741,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var engr = r.Engravings.Items.Count(e => e.NeedsWork);
         Page(Icons.Gem, GearPage.Stones, engr > 0 ? $"{engr}" : "✓", engr > 0 ? Tok.Warn : Tok.Good,
             plan.SacredSlots.Count > 0 ? $"pierre sacrée : {Fmt.Plural(plan.SacredSlots.Sum(x => x.Count), "emplacement")}" : "gravures et pierres");
+        var cards = Arcana;
+        var lost = r.Skills.GearBonuses.Count(b => b.Arcana && !b.Useful);
+        Page(Icons.Card, GearPage.Arcana, lost > 0 ? $"{lost}" : $"{cards.Count(a => a.Item is not null)}/{cards.Count}", lost > 0 ? Tok.Warn : Tok.Text2,
+            WeakestArcana is { } low ? $"d'abord : {low.Kind.ToLowerInvariant()}{(low.Item is { } i ? $" ({db.Grade(i.Grade).Name.Split(' ')[0].ToLowerInvariant()})" : " (vide)")}" : "cartes de Transcendance");
         return new SidePanel("Équipement", null, body);
     }
 
@@ -1102,6 +1108,99 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     T(rules.Transmute, 12, Tok.Text2, wrap: true).WithLineHeight(1.45),
                 },
             }));
+    }
+
+    /// <summary>Les 5 emplacements d'arcanes, dans l'ordre du jeu.</summary>
+    static readonly (string Slot, string Kind)[] ArcanaSlots =
+        [("Arcana1", "Calice"), ("Arcana2", "Manuscrit"), ("Arcana3", "Boussole"), ("Arcana4", "Cloche"), ("Arcana5", "Miroir")];
+
+    List<(string Slot, string Kind, EquippedItem? Item)> Arcana =>
+        ArcanaSlots.Select(a => (a.Slot, a.Kind, r.Character.Equipment.FirstOrDefault(i => i.Slot == a.Slot))).ToList();
+
+    /// <summary>La carte à améliorer d'abord : un emplacement vide, sinon la plus basse (grade, puis niveau).</summary>
+    (string Slot, string Kind, EquippedItem? Item)? WeakestArcana => Arcana.Count == 0 ? null
+        : Arcana.OrderBy(a => a.Item is null ? -1 : db.Grade(a.Item.Grade).Rank).ThenBy(a => a.Item?.ItemLevel ?? 0).First();
+
+    /// <summary>
+    /// Ce qu'une stat divine augmente, d'après stats.json (« Stat divine Temps [Siel] » dans « où la trouver ») : la valeur d'un
+    /// point n'est pas connue, elle n'est donc pas comptée dans l'analyse des stats.
+    /// </summary>
+    string DivineTip(string raw)
+    {
+        var name = System.Text.RegularExpressions.Regex.Replace(raw, @"\s*\+?\d+([.,]\d+)?\s*%?$", "");
+        var stats = db.Stats.Where(d => d.Where.Any(w => w.Equals($"Stat divine {name}", StringComparison.OrdinalIgnoreCase))).Select(d => d.Name).ToList();
+        return $"{raw} : points de stat divine{(stats.Count > 0 ? $" ({string.Join(", ", stats)}, d'après les guides)" : "")}. " +
+               "La valeur d'un point n'est pas connue : pas encore comptée dans l'analyse des stats.";
+    }
+
+    /// <summary>
+    /// Arcanes (cartes de Transcendance) : chaque carte, son grade et son niveau, sa stat divine, ses compétences bonus jugées
+    /// comme dans l'onglet Compétences ; la carte à améliorer d'abord et les cartes que le score d'équipement ouvre.
+    /// </summary>
+    Control GearArcanaPage()
+    {
+        var cards = Arcana;
+        var bonuses = r.Skills.GearBonuses.Where(b => b.Arcana).ToList();
+        var lost = bonuses.Count(b => !b.Useful);
+        var filled = cards.Count(a => a.Item is not null);
+        var badges = Badges(
+            Badge($"{filled}/{cards.Count} cartes", filled < cards.Count ? Tok.Warn : Tok.Text2),
+            lost > 0 ? Badge(Fmt.Plural(lost, "bonus perdu", "bonus perdus"), Tok.Warn) : bonuses.Count > 0 ? Badge("✓ bonus utiles", Tok.Good) : null);
+
+        const string cols = "110,120,70,160,*";
+        var rows = new List<Control>();
+        foreach (var (slot, kind, item) in cards)
+        {
+            if (item is null)
+            {
+                rows.Add(TableRow(Columns(cols, T(kind, 13), T("vide", 12, Tok.Bad), T("—", 12, Tok.Muted, mono: true), T("—", 12, Tok.Muted),
+                    T("emplacement à remplir", 12, Tok.Bad)), false, () => { }));
+                continue;
+            }
+            var grade = db.Grade(item.Grade);
+            var divine = string.Join(", ", item.MainStats.Concat(item.SubStats).Select(e => e.Raw));
+            var skills = new WrapPanel();
+            foreach (var b in bonuses.Where(b => b.Slot == slot))
+                skills.Children.Add(Tip(T($"{b.SkillName} +{b.Levels}", 12, !b.Useful ? Tok.Bad : b.Strong ? Tok.Good : Tok.Text2), b.Verdict).WithMargin(0, 0, 12, 2));
+            if (skills.Children.Count == 0) skills.Children.Add(T("aucune compétence bonus", 12, Tok.Muted));
+            rows.Add(TableRow(Columns(cols,
+                    new StackPanel { Spacing = 1, Children = { T(kind, 13), T(item.Name, 11, Tok.Muted) } },
+                    T(grade.Name, 12, Tok.B(grade.Color)),
+                    T($"{item.ItemLevel} +{item.EnchantLevel}", 12, Tok.Text2, mono: true),
+                    divine.Length > 0 ? Tip(T(divine, 12, Tok.Text2), DivineTip(divine)) : T("—", 12, Tok.Muted),
+                    skills), false, () => { }));
+        }
+
+        // Quoi faire : la carte la plus basse, les bonus perdus, ce qu'il faut chercher, et les cartes que ton score ouvre.
+        var todo = new StackPanel { Spacing = 8 };
+        if (WeakestArcana is { } low)
+            todo.Children.Add(T(low.Item is { } w
+                ? $"Améliore d'abord le {low.Kind.ToLowerInvariant()} (« {w.Name} », {db.Grade(w.Grade).Name}, niveau {w.ItemLevel}) : c'est ta carte la plus basse."
+                : $"Remplis d'abord l'emplacement du {low.Kind.ToLowerInvariant()} : une carte vide ne donne rien.", 13, wrap: true).WithLineHeight(1.45));
+        if (lost > 0)
+            todo.Children.Add(T($"Bonus perdus : {string.Join(", ", bonuses.Where(b => !b.Useful).Select(b => $"{b.SkillName} ({cards.First(a => a.Slot == b.Slot).Kind.ToLowerInvariant()})"))}. " +
+                                "À remplacer en priorité quand tu changes ou relances la carte (survole un bonus pour sa raison).", 12, Tok.Warn, wrap: true).WithLineHeight(1.45));
+        if (r.Skills.BonusWanted.Count > 0)
+            todo.Children.Add(T($"À chercher sur tes prochaines cartes : {string.Join(", ", r.Skills.BonusWanted.Select(a => a.DamageShare > 0 ? $"{a.Skill.Name} ({Fmt.Pct(a.DamageShare)})" : a.Skill.Name))}. " +
+                                $"Un niveau bonus s'ajoute au-dessus des {db.Settings.Skills.BaseMax} achetés : il rapporte le plus sur les sorts qui font le plus de dégâts.",
+                12, Tok.Text2, wrap: true).WithLineHeight(1.45));
+        var gates = db.Progression.Roadmap.Gates.Where(g => g.Unlocks.Contains("cartes", StringComparison.OrdinalIgnoreCase)).ToList();
+        var score = r.Character.ItemLevel;
+        if (gates.LastOrDefault(g => g.Score <= score) is { } reached)
+            todo.Children.Add(T($"Ton score d'équipement ({Fmt.Num(score)}) ouvre la {reached.Unlocks}." +
+                                (gates.FirstOrDefault(g => g.Score > score) is { } next ? $" Ensuite, la {next.Unlocks}, à {Fmt.Num(next.Score)} (+{next.Score - score})." : ""),
+                12, Tok.Text2, wrap: true).WithLineHeight(1.45));
+        else if (gates.FirstOrDefault() is { } first)
+            todo.Children.Add(T($"Les arcanes s'ouvrent à {Fmt.Num(first.Score)} de score d'équipement : {first.Unlocks}.", 12, Tok.Text2, wrap: true));
+
+        return Page($"Équipement · arcanes · {Mode}", badges,
+            T("Cinq cartes de Transcendance : chacune donne des points de stat divine et +1 à des compétences de ta classe, tirées au hasard. " +
+              "Leur niveau compte dans ton score d'équipement.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4),
+            TableCard("Tes cartes", T("vert = bon bonus · rouge = perdu", 11, Tok.Muted, mono: true), TableHeader(cols, "Carte", "Grade", "Niveau", "Stat divine", "Compétences bonus"), rows),
+            Card(todo, "Quoi faire"),
+            Expander("Stats divines : pas encore comptées", IsOpen("arcana:divine"), () => Toggle("arcana:divine"), () =>
+                T("Les points de stat divine de tes cartes (Temps [Siel], Vie [Yustiel]…) ne sont pas dans l'analyse des stats : on sait quelles stats ils augmentent " +
+                  "(survole la colonne), pas de combien par point. Une capture de leur infobulle en jeu suffirait à les compter.", 12, Tok.Text2, wrap: true).WithLineHeight(1.45).WithMargin(22, 0, 0, 0)));
     }
 
     /// <summary>Pierres : pierre sacrée des armes (conseil selon la classe et le mode), puis gravures et pierres de mana ou d'âme.</summary>
