@@ -150,6 +150,12 @@ public sealed record BenchPlayer(int ItemLevel, Dictionary<string, double> Stats
 /// </summary>
 public sealed record BenchmarkFile(string Updated, Dictionary<string, ClassBenchmark> Classes);
 
+/// <summary>
+/// bosses.json : noms des boss par code de créature (celui que lit le Pet Meter), en (fr, en, ru), relevés sur
+/// aion2.gaming.tools ; le même fichier que celui du Pet Meter.
+/// </summary>
+public sealed record BossNamesFile(string Source, Dictionary<long, List<string>> Bosses);
+
 public sealed record DesignedBuild
 {
     public string Summary { get; init; } = "";
@@ -444,9 +450,10 @@ public sealed class GameDatabase
     readonly Dictionary<string, StatDef> byLabel;
 
     public GameDatabase(StatCatalogFile stats, ClassesFile classes, ProgressionFile progression, SettingsFile settings, SpellsFile? spells = null,
-        BenchmarkFile? benchmark = null)
+        BenchmarkFile? benchmark = null, BossNamesFile? bosses = null)
     {
         Spells = spells?.Spells ?? [];
+        bossNames = bosses?.Bosses.Where(b => b.Value.Count > 0).ToDictionary(b => b.Key, b => b.Value[0]) ?? [];
         Stats = stats.Stats;
         Roles = classes.Roles;
         Classes = classes.Classes
@@ -472,6 +479,11 @@ public sealed class GameDatabase
     public SettingsFile Settings { get; }
     /// <summary>Données des sorts par identifiant officiel (recharge, % d'ATQ, cibles).</summary>
     public Dictionary<long, SpellData> Spells { get; }
+
+    readonly Dictionary<long, string> bossNames;
+
+    /// <summary>Nom français d'un boss par son code de créature (« Désir de Kromede ») ; null s'il n'est pas dans bosses.json.</summary>
+    public string? BossName(long code) => bossNames.GetValueOrDefault(code);
 
     /// <summary>Sort d'un code de compétence, y compris un code de combat (variante dans les 4 derniers chiffres).</summary>
     public SpellData? Spell(long code) => Spells.GetValueOrDefault(code) ?? Spells.GetValueOrDefault(code / 10000 * 10000);

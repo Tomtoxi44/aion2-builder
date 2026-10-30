@@ -13,8 +13,9 @@ public static class PetMeterFights
     public static string Dir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AION2-pet-meter", "fights");
 
     /// <summary>Version de la conversion (2 : lancers groupés à 0,6 s, noms des enchaînements du Templier ; 3 : type du combat ;
-    /// 4 : dégâts seconde par seconde sur la cible principale et combat entier ; 5 : « Boss (code …) » pour un boss sans nom).</summary>
-    public const int Version = 5;
+    /// 4 : dégâts seconde par seconde sur la cible principale et combat entier ; 5 : « Boss (code …) » pour un boss sans nom ;
+    /// 6 : nom du boss d'après bosses.json).</summary>
+    public const int Version = 6;
 
     /// <summary>Types de combats gardés : boss, mannequin, JcJ (« other » : un pack de monstres, un monstre achevé).</summary>
     public static readonly HashSet<string> KeptKinds = ["boss", "dummy", "pvp"];
@@ -123,6 +124,7 @@ public static class PetMeterFights
         {
             Source = "Pet Meter", ImportedAtUtc = start, Character = f.Character, ImportVersion = Version, Kind = KindOf(f),
             Target = Creatures.TryGetValue(f.Target.Code, out var n) ? n
+                : db.BossName(f.Target.Code) is { } boss ? boss
                 : KindOf(f) == "pvp" ? "Joueur" : f.Target.Code > 0 ? $"{(KindOf(f) == "boss" ? "Boss" : "Créature")} (code {f.Target.Code})" : "Monstres",
             Duration = f.Duration, TotalDamage = f.Damage, Dps = f.Duration > 0 ? f.Damage / f.Duration : 0, Hits = f.Hits,
             SkillCount = skills.Count, Skills = skills.OrderByDescending(s => s.Damage).ToList(), Pages = 0,
