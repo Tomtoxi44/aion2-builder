@@ -1090,7 +1090,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         }
 
         // Tes pièces, du plus gros gain au plus petit.
-        const string cols = "120,*,70,46,*,46";
+        // La colonne de la pièce (icône + nom sur une ligne) prend plus que « Où », qui passe à la ligne.
+        const string cols = "120,1.4*,70,46,*,46";
         var selected = SelectedSlot?.Slot;
         var rows = plan.Slots.Where(x => !x.Special).OrderByDescending(x => x.Gain).ThenBy(x => x.Power).Select(x => (Control)Tip(TableRow(Columns(cols,
                 T(x.SlotName, 13), WithIcon(ItemIcon(x.Item), T(x.Item?.Name ?? "vide", 13, x.Item is null ? Tok.Bad : GradeBrush(x.Item))),
@@ -1220,7 +1221,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             Badge($"{filled}/{cards.Count} cartes", filled < cards.Count ? Tok.Warn : Tok.Text2),
             lost > 0 ? Badge(Fmt.Plural(lost, "bonus perdu", "bonus perdus"), Tok.Warn) : bonuses.Count > 0 ? Badge("✓ bonus utiles", Tok.Good) : null);
 
-        const string cols = "180,110,70,160,*";
+        const string cols = "150,96,50,130,*";
         var rows = new List<Control>();
         foreach (var (slot, kind, item) in cards)
         {
@@ -2305,7 +2306,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     {
         var panel = new StackPanel();
         var selected = SelectedSkillName;
-        const string stigmaCols = "80,*,140,90,110";
+        const string stigmaCols = "64,*,120,72,100";
         foreach (var g in sk.Stigmas.Where(x => x.Recommended || x.Slotted))
         {
             var (label, color) = g.Recommended ? (g.Slotted ? ("Garder", Tok.Good) : ("Mettre", Tok.Info)) : ("Retirer", Tok.Bad);
@@ -2723,7 +2724,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var max = cr.Skills.Select(x => x.Skill.Share).DefaultIfEmpty(1).Max();
         var damage = new StackPanel { Spacing = 8 };
         foreach (var x in cr.Skills.OrderByDescending(x => x.Skill.Share).Take(8))
-            damage.Children.Add(BarRow(x.Skill.Name, x.Skill.Share / Math.Max(0.0001, max), Fmt.Pct(x.Skill.Share), Accent.Main, 190, onClick: () => Select(x.Skill.Name),
+            damage.Children.Add(BarRow(x.Skill.Name, x.Skill.Share / Math.Max(0.0001, max), Fmt.Pct(x.Skill.Share), Accent.Main, onClick: () => Select(x.Skill.Name),
                 tip: x.Verdict, selected: x.Skill.Name == s.CombatSkill, icon: SkillIcon(x.Skill.Name)));
         var rest = cr.Skills.OrderByDescending(x => x.Skill.Share).Skip(8).ToList();
         if (rest.Count > 0) damage.Children.Add(T($"{rest.Count} autre{(rest.Count > 1 ? "s" : "")} sort{(rest.Count > 1 ? "s" : "")} : {Fmt.Pct(rest.Sum(x => x.Skill.Share))} · clic sur un sort = son détail à droite", 12, Tok.Muted));
