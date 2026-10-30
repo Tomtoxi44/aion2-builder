@@ -29,7 +29,7 @@ sealed record UiPrefs(string Region = "eu", string Server = "", string Name = ""
     int Tab = 0, string Screen = "Home", string Accent = "Orange", bool AutoUpdate = true,
     List<string>? Tabs = null, double InspectorWidth = 340, bool InspectorHidden = false, int AutoRefreshHours = 0,
     List<string>? Mine = null, bool BottomHidden = false, double BottomHeight = 190, string BottomTab = "advice", List<string>? RailOrder = null, string GearPage = "Overview", string SkillPage = "Overview", string BuildPage = "Compare", bool SideHidden = false,
-    bool TipsSeen = false, int UiVersion = 1)
+    bool TipsSeen = false, int UiVersion = 1, bool DetailsByNeed = false)
 {
     static string PathOf => System.IO.Path.Combine(AppPaths.Root, "ui.json");
 
@@ -215,6 +215,7 @@ public sealed class MainWindow : Window
         {
             state.Screen = Enum.TryParse<Screen>(prefs.Screen, out var screen) ? screen : Screen.Home;
             state.GearPage = Enum.TryParse<GearPage>(prefs.GearPage, out var gearPage) ? gearPage : GearPage.Overview;
+            state.ByNeed = prefs.DetailsByNeed;
             state.SkillPage = Enum.TryParse<SkillPage>(prefs.SkillPage, out var skillPage) ? skillPage : SkillPage.Overview;
             state.BuildPage = Enum.TryParse<BuildPage>(prefs.BuildPage, out var buildPage) ? buildPage : BuildPage.Compare;
             Open(opened[last], last, keepScreen: true);
@@ -346,7 +347,7 @@ public sealed class MainWindow : Window
     void Update(Action<UiState> change)
     {
         change(state);
-        prefs = prefs with { Screen = state.Screen.ToString(), GearPage = state.GearPage.ToString(), SkillPage = state.SkillPage.ToString(), BuildPage = state.BuildPage.ToString() };
+        prefs = prefs with { Screen = state.Screen.ToString(), GearPage = state.GearPage.ToString(), SkillPage = state.SkillPage.ToString(), BuildPage = state.BuildPage.ToString(), DetailsByNeed = state.ByNeed };
         prefs.Save();
         Render();
     }

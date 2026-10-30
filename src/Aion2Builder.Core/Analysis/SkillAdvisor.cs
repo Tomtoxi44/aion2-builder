@@ -417,7 +417,7 @@ public sealed partial class SkillAdvisor(GameDatabase db)
                 $"{a.Role} : {a.Why}", $"Mets « {a.Skill.Name} » dans ta barre {mode}.", 75));
         foreach (var a in plan.Skills.Where(a => a.Priority >= 0.85 && !a.Skill.Acquired))
             findings.Add(new Finding(Area.Skills, Severity.Important, $"Apprends « {a.Skill.Name} »",
-                $"{a.Role} : {a.Why}", $"Apprends-la dès le niveau {a.Skill.NeedLevel}.", 70));
+                $"{a.Role} : {a.Why}", $"Apprends-la dès le niveau {a.Skill.NeedLevel}.", 70) { Need = Need.Points });
 
         // Au-delà du niveau 10 : spécialisations aux niveaux 12, 16, 20, atteignables seulement par le Daevanion et l'équipement.
         var specialties = set.SpecialtyLevels.Where(l => l > set.BaseMax).ToList();
@@ -445,7 +445,7 @@ public sealed partial class SkillAdvisor(GameDatabase db)
             findings.Add(new Finding(Area.Skills, Severity.Advice, $"Stigmas : {shards} fragments pour atteindre les niveaux visés",
                 string.Join(" · ", wanted.Where(s => s.ShardsToTarget > 0).Select(s => $"{s.Skill.Name} niv. {s.Skill.Level} → {s.Target} ({s.ShardsToTarget} fragments)")) +
                 $". Coût par niveau : 1 jusqu'au niveau 5, puis 2, 4 et 8 fragments. Sources : {st.ShardSources}",
-                $"Monte d'abord « {wanted.Where(s => s.ShardsToTarget > 0).OrderByDescending(s => s.Priority).First().Skill.Name} ».", 40));
+                $"Monte d'abord « {wanted.Where(s => s.ShardsToTarget > 0).OrderByDescending(s => s.Priority).First().Skill.Name} ».", 40) { Need = Need.Points });
 
         if (!plan.HasKnowledge)
             findings.Add(new Finding(Area.Skills, Severity.Info, $"Pas de fiche de compétences pour {p.Class.Name}",

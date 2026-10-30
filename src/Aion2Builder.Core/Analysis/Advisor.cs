@@ -26,18 +26,20 @@ public sealed class Advisor(GameDatabase db)
         var engravings = engravingAdvisor.Plan(c, profile, gear, sp);
         var petPlan = petAdvisor.Plan(pets, profile, sp);
 
+        // Ce que chaque conseil demande (vue « par ressource » de Détails) : celui de son analyse, sauf s'il le précise.
+        static IEnumerable<Finding> As(IEnumerable<Finding> list, Func<Finding, Need> need) => list.Select(f => f with { Need = f.Need ?? need(f) });
         var findings = new List<Finding>();
-        findings.AddRange(stats.Findings(sp, profile, c));
-        findings.AddRange(gearAdvisor.Findings(gear, c, profile));
-        findings.AddRange(skillAdvisor.Findings(skills, c, profile));
-        findings.AddRange(planner.Findings(daevanion, c, profile));
-        findings.AddRange(engravingAdvisor.Findings(engravings, profile));
-        findings.AddRange(petAdvisor.Findings(petPlan, profile));
+        findings.AddRange(As(stats.Findings(sp, profile, c), _ => Need.Rolls));
+        findings.AddRange(As(gearAdvisor.Findings(gear, c, profile), f => f.Area == Area.Enchant ? Need.Enchant : Need.Farm));
+        findings.AddRange(As(skillAdvisor.Findings(skills, c, profile), _ => Need.Free));
+        findings.AddRange(As(planner.Findings(daevanion, c, profile), _ => Need.Points));
+        findings.AddRange(As(engravingAdvisor.Findings(engravings, profile), _ => Need.Engraving));
+        findings.AddRange(As(petAdvisor.Findings(petPlan, profile), _ => Need.Pets));
         if (combats?.FirstOrDefault(l => l.Kind is null or "boss" or "dummy") is { Skills.Count: > 0 } combat && mode == GameMode.PvE)
             findings.AddRange(new Combat.CombatAnalyzer(db).Analyze(combat, profile).Findings.Where(f => f.Severity <= Severity.Advice)
-                .Select(f => f with { Title = $"Combat : {f.Title}" }));
+                .Select(f => f with { Title = $"Combat : {f.Title}", Need = Need.Combat }));
         if (profile.Class.Notes.Count > 0)
-            findings.Add(new Finding(Area.General, Severity.Info, $"Repères {profile.Class.Name} ({profile.Role.Name})", string.Join(" ", profile.Class.Notes)));
+            findings.Add(new Finding(Area.General, Severity.Info, $"Repères {profile.Class.Name} ({profile.Role.Name})", string.Join(" ", profile.Class.Notes)) { Need = Need.Info });
 
         var ordered = findings.OrderBy(f => f.Severity).ThenByDescending(f => f.Priority).ToList();
         return new AdviceReport(c, profile, mode, sp, gear, skills, daevanion, engravings, petPlan, ordered, Scores(sp, gear, skills, daevanion, c, mode));

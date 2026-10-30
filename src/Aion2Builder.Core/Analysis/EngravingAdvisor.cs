@@ -224,7 +224,7 @@ public sealed class EngravingAdvisor(GameDatabase db)
                 $"Pierres gravées à revoir ({Fmt.Plural(stones.Count, "pièce")})",
                 string.Join("\n", stones.Take(6).Select(e => $"{e.SlotName} ({e.Stones.Count}/{e.StoneSlots} {e.StoneKind}) : {e.StoneAdvice}")),
                 $"Les pierres comptent dans tes stats : vise {string.Join(", ", stones[0].BetterStones)} pour un {p.Class.Name} en {GameDatabase.ModeName(p.Mode)}.",
-                25 + stones.Max(e => e.Priority) / 2));
+                25 + stones.Max(e => e.Priority) / 2) { Need = Need.Stones });
 
         var skipped = plan.Items.Where(e => e.Action == SoulAction.Skip).ToList();
         if (skipped.Count > 0)

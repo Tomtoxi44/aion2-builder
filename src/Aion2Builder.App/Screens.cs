@@ -51,6 +51,8 @@ sealed class UiState
     public bool DaevaRoute { get; set; }
     /// <summary>Détails : afficher aussi les simples informations.</summary>
     public bool ShowInfo { get; set; }
+    /// <summary>Détails rangés par ressource (ce que chaque conseil demande) plutôt que par écran.</summary>
+    public bool ByNeed { get; set; }
     /// <summary>Stats : afficher aussi les stats qui ne comptent pas pour la classe.</summary>
     public bool AllStats { get; set; }
     public bool SkillsMore { get; set; }
@@ -3844,18 +3846,37 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     Severity.Critical => Fmt.Plural(x.n, "critique"),
                     Severity.Important => Fmt.Plural(x.n, "important"),
                     _ => $"{x.n} à suivre",
-                }), LevelColor(x.level))).Append(toggle).ToArray());
+                }), LevelColor(x.level))).Append(Arrange()).Append(toggle).ToArray());
         var groups = new List<Control>();
         var shown = r.Findings.Where(f => s.ShowInfo || f.Severity != Severity.Info);
-        foreach (var group in shown.GroupBy(f => f.Area).OrderBy(g => g.Key))
+        // Par écran (comme le reste de l'appli) ou par ressource : ce que chaque conseil demande, du plus immédiat (gratuit) au
+        // plus long (sorties en donjon) ; les infos à part, à la fin.
+        var grouped = s.ByNeed
+            ? shown.GroupBy(f => (int)(f.Severity == Severity.Info ? Need.Info : f.Need ?? Need.Info)).OrderBy(g => g.Key).ToList()
+            : shown.GroupBy(f => (int)f.Area).OrderBy(g => g.Key).ToList();
+        foreach (var group in grouped)
         {
-            var collapsed = s.Collapsed.Contains(group.Key);
-            var key = group.Key;
-            var fold = Clickable(T(collapsed ? "ouvrir ▸" : "replier ▾", 11, Tok.Muted, mono: true),
-                () => update(st => { if (!st.Collapsed.Remove(key)) st.Collapsed.Add(key); }), hover: Tok.HoverStrong, padding: new Thickness(4, 0));
+            string name;
+            string? hint = null;
+            Control? fold = null;
+            var collapsed = false;
+            if (s.ByNeed) (name, hint) = Fmt.NeedLabel((Need)group.Key);
+            else
+            {
+                var key = (Area)group.Key;
+                name = Fmt.Area(key);
+                collapsed = s.Collapsed.Contains(key);
+                fold = Clickable(T(collapsed ? "ouvrir ▸" : "replier ▾", 11, Tok.Muted, mono: true),
+                    () => update(st => { if (!st.Collapsed.Remove(key)) st.Collapsed.Add(key); }), hover: Tok.HoverStrong, padding: new Thickness(4, 0));
+            }
             var list = new StackPanel();
-            groups.Add(Card(list, $"{Fmt.Area(group.Key)} · {group.Count()}", fold, new Thickness(0)));
+            groups.Add(Card(list, $"{name} · {group.Count()}", fold, new Thickness(0)));
             if (collapsed) continue;
+            if (hint is not null)
+            {
+                var line = T(hint, 12, Tok.Muted, wrap: true).WithMargin(14, 8, 14, 6);
+                list.Children.Add(line);
+            }
             foreach (var f in group.OrderBy(IsDone).ThenBy(f => f.Severity))
             {
                 // Titre et action ; le détail chiffré tient sur deux lignes et s'affiche en entier au survol. Fait = grisé, en bas.
@@ -3891,6 +3912,24 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     return list;
                 }));
         return Page($"À faire · {Mode} · {Fmt.CountsText(r.Findings)}", bySeverity, groups.ToArray());
+    }
+
+    /// <summary>« rangés par écran · par ressource » : le choix de rangement de Détails.</summary>
+    Control Arrange()
+    {
+        Control Choice(string text, bool by)
+        {
+            var on = s.ByNeed == by;
+            return Tip(Clickable(T(text, 11, on ? Accent.Main : Tok.Muted, on ? FontWeight.SemiBold : FontWeight.Normal), () => update(st => st.ByNeed = by),
+                    hover: Tok.HoverStrong, padding: new Thickness(4, 0)),
+                by ? "Par ce que chaque conseil demande : gratuit tout de suite, à ta prochaine sortie, relances de stats, gravures, enchantement, points à gagner, donjons…"
+                   : "Par écran de l'appli : Stats, Équipement, Compétences, Daevanion…");
+        }
+        return new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center,
+            Children = { T("rangés", 11, Tok.Muted), Choice("par écran", false), T("·", 11, Tok.Faint), Choice("par ressource", true) },
+        };
     }
 }
 

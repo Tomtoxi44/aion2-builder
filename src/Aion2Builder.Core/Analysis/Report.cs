@@ -11,7 +11,14 @@ public enum Area { Stats, Gear, Enchant, Skills, Daevanion, Pets, General }
 /// Un conseil. <see cref="Priority"/> mesure le gain attendu rapporté au coût en ressources :
 /// c'est l'ordre du plan d'action.
 /// </summary>
-public sealed record Finding(Area Area, Severity Severity, string Title, string Detail, string? Action = null, double Priority = 0);
+public sealed record Finding(Area Area, Severity Severity, string Title, string Detail, string? Action = null, double Priority = 0)
+{
+    /// <summary>Ce qu'il faut pour le suivre (gratuit, en combat, relances…), vue « par ressource » de Détails ; posé par l'analyse.</summary>
+    public Need? Need { get; init; }
+}
+
+/// <summary>Ce qu'un conseil demande pour être suivi, du plus immédiat au plus long.</summary>
+public enum Need { Free, Combat, Rolls, Engraving, Stones, Enchant, Points, Farm, Pets, Info }
 
 // ----- Stats -----
 
@@ -302,6 +309,21 @@ public static class Fmt
     /// Nombre et mot accordés, à la française (0 et 1 au singulier) : « 1 pièce », « 11 pièces » ; pluriel irrégulier en
     /// troisième argument (« 2 emplacements de pierre », « 3 cases fermées »).
     /// </summary>
+    /// <summary>Titre et explication d'un groupe de la vue « par ressource ».</summary>
+    public static (string Title, string Hint) NeedLabel(Need n) => n switch
+    {
+        Need.Free => ("Gratuit, tout de suite", "Réinitialisation des compétences, échange de stigmas, barre de sorts : ça ne coûte rien."),
+        Need.Combat => ("À ta prochaine sortie", "Rotation et sorts à relancer, d'après ton dernier combat."),
+        Need.Rolls => ("Relances de stats et choix", "Aux relances de stats secondaires, aux choix Daevanion et aux titres."),
+        Need.Engraving => ("Gravures d'âme", "Synchronisation (une pièce du même grade sacrifiée), puis livres de gravure pour le lien d'âme."),
+        Need.Stones => ("Pierres de mana et d'âme", "À graver sur les pièces que tu gardes."),
+        Need.Enchant => ("Enchantement", "Pierres d'enchantement, sur les pièces où ça rapporte le plus."),
+        Need.Points => ("Points à gagner", "Points Daevanion et fragments de stigma, au fil du jeu."),
+        Need.Farm => ("Sorties en donjon et artisanat", "Les pièces à aller chercher, et où."),
+        Need.Pets => ("Familiers", "Âmes à récolter et collection à relier."),
+        _ => ("Pour info", "Bilans chiffrés : rien à faire."),
+    };
+
     public static string Plural(int n, string one, string? many = null) => $"{n} {(n <= 1 ? one : many ?? one + "s")}";
     public static string Plural(double n, string one, string? many = null) => $"{Num(n)} {(n < 2 ? one : many ?? one + "s")}";
 
