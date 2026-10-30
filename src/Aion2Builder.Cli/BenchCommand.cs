@@ -11,7 +11,8 @@ namespace Aion2Builder.Cli;
 
 /// <summary>
 /// « bench » : refait les joueurs de comparaison de chaque classe (benchmark.json). Des joueurs niveau 45 de la région, trouvés
-/// par la recherche du site officiel, importés en entier et calculés par le Builder comme ton perso (JcE) ; le fichier ne garde
+/// par la recherche du site officiel, importés en entier et calculés par le Builder comme ton perso, en JcE puis en JcJ (seules les
+/// stats qui changent sont gardées pour le JcJ) ; le fichier ne garde
 /// ni nom ni serveur. Lancé chaque semaine par .github/workflows/benchmark.yml.
 /// </summary>
 static class BenchCommand
@@ -22,7 +23,7 @@ static class BenchCommand
     // Un import à la fois et une pause entre deux : on reste raisonnable avec le site officiel.
     static readonly TimeSpan Pause = TimeSpan.FromSeconds(1);
 
-    sealed record Measured(int ItemLevel, int CombatPower, int DaevanionNodes, Dictionary<string, double> Stats);
+    sealed record Measured(int ItemLevel, int CombatPower, int DaevanionNodes, Dictionary<string, double> Stats, Dictionary<string, double> PvpStats);
 
     public static async Task<int> Run(Args cli)
     {
@@ -55,7 +56,11 @@ static class BenchCommand
         }
 
         // Une ligne par classe, comme les autres fichiers de données : les changements de la semaine restent lisibles.
-        var compact = new JsonSerializerOptions(GameDataStore.Json) { WriteIndented = false, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+        var compact = new JsonSerializerOptions(GameDataStore.Json)
+        {
+            WriteIndented = false, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        };
         var lines = classes.Where(x => x.Bench is not null).Select(x => $"    \"{x.Code}\": {JsonSerializer.Serialize(x.Bench, compact)}");
         File.WriteAllText(output, $"{{\n  \"updated\": \"{today:yyyy-MM-dd}\",\n  \"classes\": {{\n{string.Join(",\n", lines)}\n  }}\n}}\n");
         Console.WriteLine($"{refreshed}/{classes.Count} classes relevées : {Path.GetFullPath(output)}");
@@ -90,7 +95,7 @@ static class BenchCommand
                 var s = await client.Fetch(db, region, hit.ServerId, hit.CharacterId);
                 // Un perso à peine équipé (ou dont les pièces ne s'ouvrent pas) fausserait la comparaison.
                 if (s.Level != Level || s.Equipment.Count(i => i.HasDetail) < 10) skipped++;
-                else players.Add(Measure(advisor.Analyze(s, GameMode.PvE)));
+                else players.Add(Measure(db, advisor.Analyze(s, GameMode.PvE)));
             }
             catch (Exception ex) when (ex is ArmoryException or InvalidDataException or JsonException or KeyNotFoundException or InvalidOperationException)
             {
@@ -102,13 +107,21 @@ static class BenchCommand
         return (players, candidates.Count, skipped, error);
     }
 
-    /// <summary>Ce que l'appli compare : niveau d'objet, puissance, cases Daevanion et stats totales (le % pour une stat en %).</summary>
-    static Measured Measure(AdviceReport r) => new(
-        r.Character.ItemLevel,
-        r.Character.CombatPower,
-        r.Daevanion.Boards.Where(b => b.Pool == DaevanionPlanner.NormalPool).Sum(b => b.Board.OpenNodes),
-        r.Stats.Stats.Where(x => Math.Abs(x.BenchValue) >= 0.05).OrderBy(x => x.Def.Key, StringComparer.Ordinal)
-            .ToDictionary(x => x.Def.Key, x => Math.Round(x.BenchValue, 1)));
+    /// <summary>
+    /// Ce que l'appli compare : niveau d'objet, puissance, cases Daevanion et stats totales (le % pour une stat en %) en JcE, et
+    /// en JcJ les seules stats qui changent (même calcul, effets réservés à chaque mode).
+    /// </summary>
+    static Measured Measure(GameDatabase db, AdviceReport r)
+    {
+        static Dictionary<string, double> Totals(StatProfile sp) => sp.Stats.Where(x => Math.Abs(x.BenchValue) >= 0.05)
+            .OrderBy(x => x.Def.Key, StringComparer.Ordinal).ToDictionary(x => x.Def.Key, x => Math.Round(x.BenchValue, 1));
+        var pve = Totals(r.Stats);
+        var pvp = Totals(new StatAnalyzer(db).Profile(r.Character, db.Resolve(r.Character.ClassCode, GameMode.PvP)));
+        var changed = pve.Keys.Union(pvp.Keys).Where(k => Math.Abs(pve.GetValueOrDefault(k) - pvp.GetValueOrDefault(k)) > 1e-9)
+            .OrderBy(k => k, StringComparer.Ordinal).ToDictionary(k => k, k => pvp.GetValueOrDefault(k));
+        return new(r.Character.ItemLevel, r.Character.CombatPower,
+            r.Daevanion.Boards.Where(b => b.Pool == DaevanionPlanner.NormalPool).Sum(b => b.Board.OpenNodes), pve, changed);
+    }
 
     static ClassBenchmark Build(ClassProfile c, List<Measured> players, string region, DateTime date)
     {
@@ -122,7 +135,7 @@ static class BenchCommand
             CombatPower = rows.Select(p => p.CombatPower).Order().ToList(),
             DaevanionNodes = rows.Select(p => p.DaevanionNodes).Order().ToList(),
             Stats = keys.ToDictionary(k => k, k => rows.Select(p => p.Stats.GetValueOrDefault(k)).Order().ToList()),
-            Players = rows.Select(p => new BenchPlayer(p.ItemLevel, p.Stats)).ToList(),
+            Players = rows.Select(p => new BenchPlayer(p.ItemLevel, p.Stats, p.PvpStats)).ToList(),
         };
     }
 }

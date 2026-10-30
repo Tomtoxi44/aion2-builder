@@ -127,8 +127,22 @@ public sealed record ClassBenchmark
     public static List<double> Sample(IEnumerable<BenchPlayer> players, string key) => players.Select(p => p.Stats.GetValueOrDefault(key)).ToList();
 }
 
-/// <summary>Un joueur de l'échantillon : niveau d'objet et stats totales par clé (le % pour une stat en %, la valeur plate sinon).</summary>
-public sealed record BenchPlayer(int ItemLevel, Dictionary<string, double> Stats);
+/// <summary>
+/// Un joueur de l'échantillon : niveau d'objet et stats totales par clé (le % pour une stat en %, la valeur plate sinon), en
+/// JcE ; <paramref name="PvpStats"/> : celles qui changent en JcJ (stats réservées à un mode), null s'il n'a pas été relevé en JcJ.
+/// </summary>
+public sealed record BenchPlayer(int ItemLevel, Dictionary<string, double> Stats, Dictionary<string, double>? PvpStats = null)
+{
+    /// <summary>Le même joueur vu dans un mode : en JcJ, ses stats JcE corrigées de celles qui changent ; null sans relevé JcJ.</summary>
+    public BenchPlayer? In(GameMode mode)
+    {
+        if (mode == GameMode.PvE) return this;
+        if (PvpStats is null) return null;
+        var stats = new Dictionary<string, double>(Stats);
+        foreach (var (key, value) in PvpStats) stats[key] = value;
+        return this with { Stats = stats, PvpStats = null };
+    }
+}
 
 /// <summary>
 /// benchmark.json : les joueurs de comparaison de chaque classe (par code de classe), relevés chaque semaine sur le site

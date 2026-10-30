@@ -236,7 +236,7 @@ détaillée (12 actives, 10 passifs, 13 stigmas). Elles croisent des guides et l
 24 joueurs niveau 45 des serveurs EU par classe (`classes.json` → `skills` : rôle, priorité et niveau visé par mode, et
 la raison affichée ; les entrées « à valider » ne sont pas documentées par les guides). Des joueurs niveau 45 de chaque
 classe servent aussi de repère (`benchmark.json`, sans nom ni serveur : niveau d'objet, puissance, cases Daevanion
-ouvertes, et leurs totaux par stat calculés par le Builder, comme les tiens, en JcE). Ils sont relevés à nouveau chaque
+ouvertes, et leurs totaux par stat calculés par le Builder, comme les tiens, en JcE et en JcJ). Ils sont relevés à nouveau chaque
 jeudi par le workflow « Joueurs de comparaison » (commande `bench` : recherche du site officiel, un import à la fois),
 qui publie ensuite la version du Builder qui les embarque. Ils servent à situer un personnage dans sa classe : colonne « vs joueurs » de l'écran
 Stats (part des joueurs que tu dépasses), médiane et quartiles dans l'inspecteur, conseil quand une stat importante est

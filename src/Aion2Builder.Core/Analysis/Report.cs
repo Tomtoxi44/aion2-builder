@@ -91,7 +91,7 @@ public sealed record FamilyReview(CategoryShare Share, List<StatTotal> Stats, Li
 
 /// <summary>
 /// Les stats famille par famille. <see cref="Peers"/> : joueurs de comparaison (ta classe, niveau 45, niveau d'objet le plus
-/// proche du tien), null sans échantillon ou en JcJ (l'échantillon est relevé en JcE). <see cref="Targets"/> : valeurs
+/// proche du tien, leurs stats dans le mode de l'analyse), null sans échantillon. <see cref="Targets"/> : valeurs
 /// conseillées par les guides (de la classe, sinon communes), par stat, de la plus basse à la plus haute.
 /// </summary>
 public sealed record StatComparison(List<BenchPlayer>? Peers, string? PeersText, List<FamilyReview> Families)

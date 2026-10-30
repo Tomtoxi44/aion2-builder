@@ -100,15 +100,15 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
 
     /// <summary>
     /// Famille par famille : ta part face à la part conseillée ; chaque stat qui compte face aux valeurs conseillées par les
-    /// guides (de la classe, sinon communes) et à la moyenne des joueurs de ta classe au niveau d'objet le plus proche (JcE
-    /// seulement : l'échantillon est en JcE). À monter : les stats utiles sous une valeur conseillée ou sous la moyenne (sous
+    /// guides (de la classe, sinon communes) et à la moyenne des joueurs de ta classe au niveau d'objet le plus proche (leurs
+    /// stats dans le mode de l'analyse). À monter : les stats utiles sous une valeur conseillée ou sous la moyenne (sous
     /// la part visée, sans joueurs), encore trouvables, celles des guides d'abord. Où reprendre de la place : les stats
     /// au-delà de leur plafond, et, si la famille dépasse la part conseillée, ses stats au-dessus de la moyenne ou peu utiles.
     /// </summary>
     StatComparison Compare(List<StatTotal> stats, List<CategoryShare> categories, CharacterSnapshot c, ResolvedProfile p)
     {
         var tolerance = db.Settings.Stats.CategoryTolerance;
-        var peers = p.Mode == GameMode.PvE ? Peers(p, c) : null;
+        var peers = Peers(p, c);
         var obtainable = Obtainable(c, p);
         var comparison = new StatComparison(peers, peers is null ? null : PeersText(p, c, peers), []) { Targets = Targets(p) };
         static string Value(StatTotal x, double v) => x.Def.Kind == StatKind.Percent ? $"{Fmt.Num(v)} %" : Fmt.Num(Math.Round(v));
@@ -182,9 +182,16 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
         return Budget(d, flatTotal, e.Value) - Budget(d, flatTotal, 0);
     }
 
-    /// <summary>Joueurs de comparaison : ceux de la classe au niveau d'objet le plus proche (niveau 45) ; null sans échantillon.</summary>
-    public static List<BenchPlayer>? Peers(ResolvedProfile p, CharacterSnapshot c) =>
-        c.Level >= 45 && p.Class.Benchmark is { Players.Count: >= 6 } bench ? bench.Peers(c.ItemLevel) : null;
+    /// <summary>
+    /// Joueurs de comparaison : ceux de la classe au niveau d'objet le plus proche (niveau 45), avec leurs stats dans le mode de
+    /// l'analyse ; null sans échantillon (en JcJ : tant qu'il n'a pas été relevé en JcJ).
+    /// </summary>
+    public static List<BenchPlayer>? Peers(ResolvedProfile p, CharacterSnapshot c)
+    {
+        if (c.Level < 45 || p.Class.Benchmark is not { Players.Count: >= 6 } bench) return null;
+        var peers = bench.Peers(c.ItemLevel).Select(x => x.In(p.Mode)).ToList();
+        return peers.All(x => x is not null) ? peers.Select(x => x!).ToList() : null;
+    }
 
     /// <summary>Nombre de ces joueurs sous ta valeur de la stat.</summary>
     public static int Ahead(List<BenchPlayer> peers, StatTotal x) => peers.Count(o => o.Stats.GetValueOrDefault(x.Def.Key) < x.BenchValue - 1e-9);
@@ -290,8 +297,8 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
                 25 + 100 * w.Share));
         }
 
-        // 2 bis. Stats importantes sous la moyenne des joueurs de la classe à ton niveau d'objet (même calcul, JcE seulement :
-        // l'échantillon est en JcE). Pas tout l'échantillon : les stats montent avec le niveau d'objet.
+        // 2 bis. Stats importantes sous la moyenne des joueurs de la classe à ton niveau d'objet (même calcul, même mode).
+        // Pas tout l'échantillon : les stats montent avec le niveau d'objet.
         // Même compte que le badge de l'écran Stats ; à monter tout de suite : celles qu'on peut encore trouver (cases, stats
         // secondaires, titres), les autres viendront avec les prochaines pièces (même partage que les cartes des familles).
         var behindKeys = new HashSet<string>();

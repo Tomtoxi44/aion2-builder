@@ -1882,7 +1882,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                               "les guides, « le plus possible » pour une stat prioritaire, qui n'a pas de plafond. Ce que lisent les guides, pas ce que font les joueurs.");
         Define("Moyenne joueurs", cmp.PeersText is { } who
             ? $"{who[0].ToString().ToUpperInvariant()}{who[1..]}, stats totales calculées comme les tiennes. « Dans la moyenne » : à 3 % près."
-            : r.Mode == GameMode.PvE ? "pas d'échantillon de joueurs pour ta classe à ton niveau." : "relevée en JcE seulement : passe en vue JcE pour la voir.");
+            : $"pas d'échantillon de joueurs en {Mode} pour ta classe à ton niveau.");
 
         var blocks = new List<Control?> { Expander("Comment lire cette page", IsOpen("stats:how"), () => Toggle("stats:how"), () => Card(how, null)) };
         blocks.AddRange(cmp.Families.Where(f => f.Stats.Count > 0 || Math.Abs(f.Share.Gap) > tolerance).Select(f => FamilyCard(f, cmp, cmp.Families)));
@@ -1919,9 +1919,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
     /// <summary>
     /// Joueurs de comparaison : ceux de ta classe au niveau d'objet le plus proche du tien (les stats montent avec lui) ;
-    /// échantillon relevé en JcE, rien en JcJ.
+    /// leurs stats dans le mode de la vue (JcE ou JcJ).
     /// </summary>
-    List<BenchPlayer>? Peers => r.Mode == GameMode.PvE ? StatAnalyzer.Peers(r.Profile, r.Character) : null;
+    List<BenchPlayer>? Peers => StatAnalyzer.Peers(r.Profile, r.Character);
 
     /// <summary>Valeurs de la stat chez ces joueurs.</summary>
     List<double>? PlayersSample(StatTotal x) => Peers is { } peers ? ClassBenchmark.Sample(peers, x.Def.Key) : null;
@@ -1932,12 +1932,12 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     (string Text, IBrush Color, string Tip) PlayersRank(StatTotal x)
     {
         if (Peers is not { } peers || PlayersSample(x) is not { } sample)
-            return ("—", Tok.Faint, r.Mode == GameMode.PvE ? "Pas d'échantillon de joueurs pour ta classe à ton niveau." : "Joueurs relevés en JcE : passe en vue JcE.");
+            return ("—", Tok.Faint, $"Pas d'échantillon de joueurs en {Mode} pour ta classe à ton niveau.");
         var v = new StatVsPlayers(x, sample);
         var (words, color) = VsWords(v);
         return (words, x.Weight < 0.5 ? Tok.Muted : color,
             $"Toi {StatValue(x, v.Mine)}, moyenne {StatValue(x, v.Average)} : {StatAnalyzer.PeersText(r.Profile, r.Character, peers)}. " +
-            $"Tu en as plus que {v.Below} d'entre eux sur {sample.Count} (stats totales calculées comme les tiennes, en JcE).");
+            $"Tu en as plus que {v.Below} d'entre eux sur {sample.Count} (stats totales calculées comme les tiennes, en {Mode}).");
     }
 
     static Border TableHeader(string cols, params string[] titles) => new()
@@ -1980,7 +1980,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 $"Toi : {StatValue(x, x.BenchValue)} · moyenne : {StatValue(x, sample.Average())} · de {StatValue(x, sample.Min())} à {StatValue(x, sample.Max())}. " +
                 $"{new StatVsPlayers(x, sample).Verdict switch { > 0 => "Au-dessus de la moyenne", < 0 => "En dessous de la moyenne", _ => "Dans la moyenne" }} ; " +
                 $"tu en as plus que {StatAnalyzer.Ahead(Peers!, x)} sur {sample.Count}. " +
-                $"Joueurs : {StatAnalyzer.PeersText(r.Profile, r.Character, Peers!)} (même calcul, JcE).",
+                $"Joueurs : {StatAnalyzer.PeersText(r.Profile, r.Character, Peers!)} (même calcul, {Mode}).",
                 PlayersRank(x).Color));
         body.Children.Add(Field("Où la trouver", x.Def.Where.Count > 0 ? string.Join(", ", x.Def.Where) : "—", Tok.Text2));
         var sources = x.Sources.GroupBy(z => z.Source)
