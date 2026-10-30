@@ -1281,7 +1281,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var after = simulate(preset);
             var gearScore = after.Character.ItemLevel - r.Character.ItemLevel;
             var stats = Simulator.StatChanges(r, after);
-            static string Gain(StatTotal b, StatTotal a) => a.Def.Kind == StatKind.Percent || a.Flat == 0
+            // Une stat divine ajoute un % (« PV +0,4 % ») même à une stat en valeur plate : on montre ce qui a bougé.
+            static string Gain(StatTotal b, StatTotal a) => Math.Abs(a.Percent - b.Percent) > 1e-6
                 ? $"{a.Def.Name} {(a.Percent >= b.Percent ? "+" : "")}{Fmt.Num(a.Percent - b.Percent)} %"
                 : $"{a.Def.Name} {(a.Flat >= b.Flat ? "+" : "")}{Fmt.Num(a.Flat - b.Flat)}";
             var skills = Simulator.ArcanaChanges(db, r.Character, preset).Sum(x => x.ExtraSkills);
@@ -3823,7 +3824,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         }
         // Stats qui changent.
         var changes = Simulator.StatChanges(r, after);
-        const string cols = "*,130,130,90";
+        const string cols = "*,150,150,90";
         Control statChanges;
         if (changes.Count == 0)
             statChanges = Card(T("Aucune stat ne change : ce choix agit sur les niveaux de compétences ou sur la note seulement.", 12, Tok.Muted, wrap: true), "Stats qui changent · 0");
@@ -3835,7 +3836,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 return (Control)new Border
                 {
                     Padding = new Thickness(20, 5),
-                    Child = Columns(cols, T(a.Def.Name, 13), T(CompactTotal(b), 13, Tok.Muted, mono: true), T(CompactTotal(a), 13, up ? Tok.Good : Tok.Bad, FontWeight.SemiBold, mono: true),
+                    // Valeur plate et % : une stat divine (arcanes) ajoute un % à une stat plate comme les PV.
+                    Child = Columns(cols, T(a.Def.Name, 13), T(b.Display, 13, Tok.Muted, mono: true), T(a.Display, 13, up ? Tok.Good : Tok.Bad, FontWeight.SemiBold, mono: true),
                         T(a.Weight.ToString("0.00"), 12, Tok.Muted, mono: true)),
                 };
             }));
