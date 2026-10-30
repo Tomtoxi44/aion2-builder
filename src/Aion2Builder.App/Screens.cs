@@ -1700,7 +1700,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var targets = cmp.TargetsFor(x);
         if (targets.Count == 0)
             return x.Weight >= 0.8
-                ? ("le plus possible", Tok.Text2, $"Stat prioritaire pour un {r.Profile.Class.Name} en {Mode}, sans plafond connu : chaque point compte.")
+                ? ("le plus possible", Tok.Text2, $"Stat prioritaire pour un {r.Profile.Class.Name} en {GameDatabase.ModeName(r.Mode)}, sans plafond connu : chaque point compte.")
                 : ("—", Tok.Faint, "Pas de valeur conseillée par les guides pour cette stat.");
         var tip = "Conseillé par les guides (pas d'après les joueurs) :\n" + string.Join("\n", targets.Select(t =>
             $"{StatValue(x, t.Value)} · {t.Label}{(t.Cap ? " (au-delà, ne sert plus)" : "")} — {t.Source}"));
@@ -1876,13 +1876,13 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         void Define(string term, string text) => how.Children.Add(ColumnsSpaced("150,*", 12, T(term, 12, Tok.Text, FontWeight.SemiBold), T(text, 12, Tok.Text2, wrap: true)));
         Define("Part", "ce que tu as mis dans une famille, sur tes stats ajustables : stats secondaires des pièces, cases Daevanion, titres, stats divines. " +
                        "Les stats fixes des pièces (la DÉF d'une armure, l'ATQ d'une arme) n'y sont pas.");
-        Define("Part visée", $"la part visée par famille pour un {cls} ({r.Profile.Role.Name.ToLowerInvariant()}) en {Mode}, tirée des poids de stats de la classe : une base de réglage, pas une moyenne de joueurs. " +
+        Define("Part visée", $"la part visée par famille pour un {cls} ({r.Profile.Role.Name.ToLowerInvariant()}) en {GameDatabase.ModeName(r.Mode)}, tirée des poids de stats de la classe : une base de réglage, pas une moyenne de joueurs. " +
                              "Quand des joueurs sont comparés, ce sont eux qui décident : une famille sous sa part visée mais au niveau des joueurs ne manque de rien (ses stats viennent des stats fixes des pièces).");
         Define("Conseillé ▾", $"la valeur que visent les guides du {cls} pour chaque stat (Précision, CRIT…), triangle vert sur la ligne ; sans chiffre dans " +
                               "les guides, « le plus possible » pour une stat prioritaire, qui n'a pas de plafond. Ce que lisent les guides, pas ce que font les joueurs.");
         Define("Moyenne joueurs", cmp.PeersText is { } who
             ? $"{who[0].ToString().ToUpperInvariant()}{who[1..]}, stats totales calculées comme les tiennes. « Dans la moyenne » : à 3 % près."
-            : $"pas d'échantillon de joueurs en {Mode} pour ta classe à ton niveau.");
+            : $"pas d'échantillon de joueurs en {GameDatabase.ModeName(r.Mode)} pour ta classe à ton niveau.");
 
         var blocks = new List<Control?> { Expander("Comment lire cette page", IsOpen("stats:how"), () => Toggle("stats:how"), () => Card(how, null)) };
         blocks.AddRange(cmp.Families.Where(f => f.Stats.Count > 0 || Math.Abs(f.Share.Gap) > tolerance).Select(f => FamilyCard(f, cmp, cmp.Families)));
@@ -1932,12 +1932,12 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     (string Text, IBrush Color, string Tip) PlayersRank(StatTotal x)
     {
         if (Peers is not { } peers || PlayersSample(x) is not { } sample)
-            return ("—", Tok.Faint, $"Pas d'échantillon de joueurs en {Mode} pour ta classe à ton niveau.");
+            return ("—", Tok.Faint, $"Pas d'échantillon de joueurs en {GameDatabase.ModeName(r.Mode)} pour ta classe à ton niveau.");
         var v = new StatVsPlayers(x, sample);
         var (words, color) = VsWords(v);
         return (words, x.Weight < 0.5 ? Tok.Muted : color,
             $"Toi {StatValue(x, v.Mine)}, moyenne {StatValue(x, v.Average)} : {StatAnalyzer.PeersText(r.Profile, r.Character, peers)}. " +
-            $"Tu en as plus que {v.Below} d'entre eux sur {sample.Count} (stats totales calculées comme les tiennes, en {Mode}).");
+            $"Tu en as plus que {v.Below} d'entre eux sur {sample.Count} (stats totales calculées comme les tiennes, en {GameDatabase.ModeName(r.Mode)}).");
     }
 
     static Border TableHeader(string cols, params string[] titles) => new()
@@ -1980,7 +1980,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 $"Toi : {StatValue(x, x.BenchValue)} · moyenne : {StatValue(x, sample.Average())} · de {StatValue(x, sample.Min())} à {StatValue(x, sample.Max())}. " +
                 $"{new StatVsPlayers(x, sample).Verdict switch { > 0 => "Au-dessus de la moyenne", < 0 => "En dessous de la moyenne", _ => "Dans la moyenne" }} ; " +
                 $"tu en as plus que {StatAnalyzer.Ahead(Peers!, x)} sur {sample.Count}. " +
-                $"Joueurs : {StatAnalyzer.PeersText(r.Profile, r.Character, Peers!)} (même calcul, {Mode}).",
+                $"Joueurs : {StatAnalyzer.PeersText(r.Profile, r.Character, Peers!)} (même calcul, {GameDatabase.ModeName(r.Mode)}).",
                 PlayersRank(x).Color));
         body.Children.Add(Field("Où la trouver", x.Def.Where.Count > 0 ? string.Join(", ", x.Def.Where) : "—", Tok.Text2));
         var sources = x.Sources.GroupBy(z => z.Source)
