@@ -1274,18 +1274,30 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             todo.Children.Add(T(low.Item is { } w
                 ? $"Améliore d'abord le {low.Kind.ToLowerInvariant()} (« {w.Name} », {db.Grade(w.Grade).Name}, niveau {w.ItemLevel}) : c'est ta carte la plus basse."
                 : $"Remplis d'abord l'emplacement du {low.Kind.ToLowerInvariant()} : une carte vide ne donne rien.", 13, wrap: true).WithLineHeight(1.45));
-        // Et si : le gain d'une carte plus haute, calculé sur une copie de ton perso (même calcul que les notes).
+        // Et si : ce qu'une carte plus haute apporte (score d'équipement, stats de sa divinité, compétences bonus), calculé sur une
+        // copie de ton perso. La note d'équipement ne compte pas les arcanes : elle ne bouge pas, on ne la met pas en avant.
         foreach (var (label, preset) in ArcanaWhatIfs())
         {
             var after = simulate(preset);
+            var gearScore = after.Character.ItemLevel - r.Character.ItemLevel;
+            var stats = Simulator.StatChanges(r, after);
+            static string Gain(StatTotal b, StatTotal a) => a.Def.Kind == StatKind.Percent || a.Flat == 0
+                ? $"{a.Def.Name} {(a.Percent >= b.Percent ? "+" : "")}{Fmt.Num(a.Percent - b.Percent)} %"
+                : $"{a.Def.Name} {(a.Flat >= b.Flat ? "+" : "")}{Fmt.Num(a.Flat - b.Flat)}";
+            var skills = Simulator.ArcanaChanges(db, r.Character, preset).Sum(x => x.ExtraSkills);
+            var summary = string.Join(", ", stats.Take(3).Select(x => Gain(x.Before, x.After))) + (stats.Count > 3 ? "…" : "") +
+                          (skills > 0 ? $"{(stats.Count > 0 ? ", " : "")}+{Fmt.Plural(skills, "compétence bonus", "compétences bonus")} au hasard" : "");
             var delta = after.Scores.Overall - r.Scores.Overall;
-            todo.Children.Add(Tip(Clickable(ColumnsSpaced("40,*,Auto", 8,
-                    T(delta == 0 ? "=" : $"{(delta > 0 ? "+" : "")}{delta}", 13, delta > 0 ? Tok.Good : Tok.Muted, FontWeight.SemiBold, mono: true),
-                    T($"Et si : {label} (score d'équipement +{after.Character.ItemLevel - r.Character.ItemLevel})", 12, Tok.Text2, wrap: true),
-                    T($"→ {after.Scores.Overall}", 12, Tok.Score(after.Scores.Overall), mono: true)),
+            todo.Children.Add(Tip(Clickable(ColumnsSpaced("44,*,Auto", 8,
+                    T($"+{gearScore}", 13, Tok.Good, FontWeight.SemiBold, mono: true),
+                    T($"Et si : {label} · {summary}", 12, Tok.Text2, wrap: true),
+                    T(delta == 0 ? "note =" : $"note {r.Scores.Overall} → {after.Scores.Overall}", 12, delta > 0 ? Tok.Good : Tok.Muted, mono: true)),
                 () => update(st => { st.Screen = Screen.Simulate; st.Sim = preset; }), hover: Tok.Hover, padding: new Thickness(4, 3)),
-                $"Score global {r.Scores.Overall} → {after.Scores.Overall}, équipement {r.Scores.Gear} → {after.Scores.Gear}, stats {r.Scores.Stats} → {after.Scores.Stats}.\n" +
-                "Niveau d'objet et points de stat divine du grade, relevés sur des joueurs ; les compétences bonus en plus sont tirées au hasard, non comptées.\nClic : ouvrir la simulation."));
+                $"Score d'équipement {Fmt.Big(r.Character.ItemLevel)} → {Fmt.Big(after.Character.ItemLevel)} (+{gearScore}).\n" +
+                (stats.Count > 0 ? $"Stats : {string.Join(", ", stats.Select(x => Gain(x.Before, x.After)))}.\n" : "") +
+                (skills > 0 ? $"Compétences bonus : +{skills}, tirées au hasard (non comptées).\n" : "") +
+                $"Note globale {r.Scores.Overall} → {after.Scores.Overall} : la note d'équipement ne compte pas les arcanes.\n" +
+                "Niveau d'objet et points de stat divine du grade, relevés sur des joueurs.\nClic : ouvrir la simulation."));
         }
         if (lost > 0)
             todo.Children.Add(T($"Bonus perdus : {string.Join(", ", bonuses.Where(b => !b.Useful).Select(b => $"{b.SkillName} ({cards.First(a => a.Slot == b.Slot).Kind.ToLowerInvariant()})"))}. " +
