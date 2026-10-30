@@ -58,6 +58,7 @@ static int Help()
                  [--build joueurs|concu]                      build qui guide les conseils (joueurs ou conçu), gardé par personnage
                  [--md <fichier.md>]                          écrit le rapport en Markdown (à garder ou partager)
           simulate <nom> [--daevanion next|respec|route] [--n 20] [--skills] [--build joueurs|concu] [--gear] [--mode pvp]
+                 [--arcanes epique|unique] [--carte calice|manuscrit|boussole|cloche|miroir]
                                                               Et si… : notes, familles et stats avant → après
           progress <nom>                                      Imports successifs et ce qui a changé
           rotation <classe|nom> [--targets 4] [--duration 120] [--mode pvp]
@@ -200,7 +201,7 @@ static (CharacterStore Store, CharacterSnapshot Snapshot) Saved(Args cli, string
 
 static int Simulate(Args cli)
 {
-    var (store, snapshot) = Saved(cli, "Précise un personnage : simulate <nom> [--daevanion next|respec|route] [--n 20] [--skills] [--build joueurs|concu] [--gear]");
+    var (store, snapshot) = Saved(cli, "Précise un personnage : simulate <nom> [--daevanion next|respec|route] [--n 20] [--skills] [--build joueurs|concu] [--gear] [--arcanes epique|unique] [--carte miroir]");
     var db = GameDataStore.Load();
     var mode = (cli.Get("mode") ?? "pve").ToLowerInvariant() is "pvp" or "jcj" ? GameMode.PvP : GameMode.PvE;
     var inputs = store.LoadInputs(snapshot);
@@ -211,9 +212,14 @@ static int Simulate(Args cli)
         int.TryParse(cli.Get("n"), out var n) ? Math.Max(1, n) : 20,
         cli.Has("skills"),
         cli.Get("build")?.ToLowerInvariant() switch { "designed" or "concu" or "conçu" => true, "players" or "joueurs" => false, _ => null },
-        cli.Has("gear"));
-    if (!options.Any) throw new InvalidOperationException("Rien à simuler : --daevanion next|respec|route, --skills, --build joueurs|concu ou --gear.");
+        cli.Has("gear"),
+        cli.Get("arcanes")?.ToLowerInvariant() switch { "commun" or "common" => "Common", "rare" => "Rare", "epique" or "épique" or "legend" => "Legend", "unique" => "Unique", _ => null },
+        cli.Get("carte")?.ToLowerInvariant() switch { "calice" => "Arcana1", "manuscrit" => "Arcana2", "boussole" => "Arcana3", "cloche" => "Arcana4", "miroir" => "Arcana5", _ => null });
+    if (!options.Any) throw new InvalidOperationException("Rien à simuler : --daevanion next|respec|route, --skills, --build joueurs|concu, --gear ou --arcanes epique|unique.");
     var after = Simulator.Run(db, before, inputs, pets, options);
+    foreach (var x in Simulator.ArcanaChanges(db, snapshot, options))
+        Console.WriteLine($"Arcane {x.Before.Name} : {db.Grade(x.Before.Grade).Name} → {db.Grade(x.After.Grade).Name}, niveau {x.Before.ItemLevel} → {x.After.ItemLevel}" +
+                          (x.Divinity is null ? "" : $", {x.Divinity} {x.DivineBefore} → {x.DivineAfter}") + (x.ExtraSkills > 0 ? $", +{x.ExtraSkills} compétence(s) bonus au hasard (non comptées)" : ""));
 
     Console.WriteLine($"Simulation {snapshot.Name} ({GameDatabase.ModeName(mode)}) : {options}");
     string Line(string label, int b, int a) => $"  {label,-12} {b,3} → {a,3}  ({(a - b >= 0 ? "+" : "")}{a - b})";

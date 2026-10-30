@@ -9,19 +9,91 @@ public enum DaevanionChoice { None, Next, Respec, Route }
 /// <param name="NextNodes">Nombre de prochaines cases ouvertes par réserve (choix <see cref="DaevanionChoice.Next"/>).</param>
 /// <param name="Designed">Build suivi pendant la simulation (null = celui du personnage).</param>
 /// <param name="GearAtStage">Pièces vides, à remplacer ou en retard comptées au niveau du palier (note seulement).</param>
+/// <param name="ArcanaGrade">Grade visé pour les cartes d'arcane plus basses (null = telles quelles).</param>
+/// <param name="ArcanaSlot">La seule carte changée (Arcana1…5) ; null = toutes celles sous <paramref name="ArcanaGrade"/>.</param>
 public sealed record SimulationOptions(DaevanionChoice Daevanion = DaevanionChoice.None, int NextNodes = 20, bool Skills = false,
-    bool? Designed = null, bool GearAtStage = false)
+    bool? Designed = null, bool GearAtStage = false, string? ArcanaGrade = null, string? ArcanaSlot = null)
 {
-    public bool Any => Daevanion != DaevanionChoice.None || Skills || Designed is not null || GearAtStage;
+    public bool Any => Daevanion != DaevanionChoice.None || Skills || Designed is not null || GearAtStage || ArcanaGrade is not null;
 }
+
+/// <summary>
+/// Une carte d'arcane passée à un grade plus haut : la carte avant et après, sa divinité et ses points, et les compétences
+/// bonus qu'elle gagnerait (tirées au hasard : non simulées).
+/// </summary>
+public sealed record ArcanaChange(EquippedItem Before, EquippedItem After, string? Divinity, int DivineBefore, int DivineAfter, int ExtraSkills);
 
 /// <summary>
 /// « Et si… » : applique des changements à une copie du personnage (cases Daevanion ouvertes ou retirées, niveaux de
 /// compétences, build suivi) et relance toute l'analyse. Les stats sont recalculées à partir des effets réels des cases ;
-/// une pièce « au niveau du palier » ne change que la note d'équipement, ses stats futures étant inconnues.
+/// une pièce « au niveau du palier » ne change que la note d'équipement, ses stats futures étant inconnues. Une carte d'arcane
+/// d'un grade plus haut prend le niveau d'objet et les points de stat divine de ce grade (relevés sur des joueurs), sur sa divinité.
 /// </summary>
-public static class Simulator
+public static partial class Simulator
 {
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(?<name>.+\])\s*\+?(?<value>\d+)")]
+    private static partial System.Text.RegularExpressions.Regex DivineRegex();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\d+(?:[.,]\d+)?(?=\s*%?\s*$)")]
+    private static partial System.Text.RegularExpressions.Regex LastNumberRegex();
+
+    /// <summary>Les cartes que <see cref="SimulationOptions.ArcanaGrade"/> change (cartes posées sous ce grade ; un emplacement vide n'est pas simulé).</summary>
+    public static List<ArcanaChange> ArcanaChanges(GameDatabase db, CharacterSnapshot c, SimulationOptions o)
+    {
+        var rules = db.Progression.Arcana;
+        if (o.ArcanaGrade is not { } target || !rules.Grades.TryGetValue(target, out var to)) return [];
+        var rank = db.Grade(target).Rank;
+        return c.Equipment
+            .Where(i => i.Slot.StartsWith("Arcana", StringComparison.OrdinalIgnoreCase) && (o.ArcanaSlot is null || i.Slot == o.ArcanaSlot) && db.Grade(i.Grade).Rank < rank)
+            .Select(i =>
+            {
+                // « Illusion [Kaisinel] 12 » : la divinité de la carte reste la même, ses points passent à ceux du grade.
+                var divine = i.MainStats.Select(e => (Effect: e, Match: DivineRegex().Match(e.Raw))).FirstOrDefault(x => !x.Effect.IsStat && x.Match.Success);
+                var name = divine.Match?.Groups["name"].Value;
+                var points = divine.Effect is null ? 0 : (int)divine.Effect.Value;
+                var after = i with
+                {
+                    Grade = target,
+                    ItemLevel = to.ItemLevel,
+                    MainStats = i.MainStats.Select(e => e == divine.Effect ? e with { Raw = $"{name} {to.Divine}", Value = to.Divine } : e).ToList(),
+                };
+                var extra = Math.Max(0, Math.Min(rules.MaxSkills, to.Skills + i.EnchantLevel) - i.SubSkills.Count);
+                return new ArcanaChange(i, after, name, points, divine.Effect is null ? 0 : to.Divine, extra);
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Le personnage avec ces cartes : pièces remplacées, score d'équipement relevé de leurs niveaux d'objet, et total de chaque
+    /// divinité (stats principales) avec ses effets ramenés au nouveau total.
+    /// </summary>
+    static CharacterSnapshot WithArcana(CharacterSnapshot c, List<ArcanaChange> changes)
+    {
+        if (changes.Count == 0) return c;
+        var bySlot = changes.ToDictionary(x => x.Before.Slot, x => x.After);
+        var points = changes.Where(x => x.Divinity is not null).GroupBy(x => x.Divinity!).ToDictionary(g => g.Key, g => g.Sum(x => x.DivineAfter - x.DivineBefore));
+        var primary = c.PrimaryStats.Select(p =>
+        {
+            if (!points.TryGetValue(p.Name, out var add) || add == 0 || p.Value <= 0) return p;
+            var factor = (p.Value + add) / (double)p.Value;
+            return p with
+            {
+                Value = p.Value + add,
+                Effects = p.Effects.Select(e =>
+                {
+                    var value = Math.Round(e.Value * factor, 1);
+                    return e with { Value = value, Raw = LastNumberRegex().Replace(e.Raw, value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)) };
+                }).ToList(),
+            };
+        }).ToList();
+        return c with
+        {
+            Equipment = c.Equipment.Select(i => bySlot.GetValueOrDefault(i.Slot) ?? i).ToList(),
+            PrimaryStats = primary,
+            ItemLevel = c.ItemLevel + changes.Sum(x => x.After.ItemLevel - x.Before.ItemLevel),
+        };
+    }
+
     public static AdviceReport Run(GameDatabase db, AdviceReport before, PlayerInputs inputs, PetCollection? pets, SimulationOptions o)
     {
         var c = before.Character;
@@ -89,7 +161,7 @@ public static class Simulator
         if (bonus.Count > 0)
             skills = skills.Select(s => s.Acquired && bonus.TryGetValue(GameDatabase.NormalizeLabel(s.Name), out var d) && d != 0 ? s with { Level = s.Level + d } : s).ToList();
 
-        var simulated = c with { Boards = boards, Skills = skills };
+        var simulated = WithArcana(c, ArcanaChanges(db, c, o)) with { Boards = boards, Skills = skills };
         var simInputs = inputs with
         {
             UnspentSkillPoints = o.Skills ? 0 : inputs.UnspentSkillPoints,

@@ -75,6 +75,16 @@
     "safeLevel": 5,
     "transitionalMax": 3
   },
+  "arcana": {
+    "source": "Relevé sur 30 cartes de joueurs EU le 30/10/2026 : à +0, un grade de plus donne +20 de niveau d'objet, +4 points de stat divine et une compétence bonus de plus ; chaque niveau d'enchantement ajoute une compétence bonus, 4 au plus. La divinité de la carte est tirée au hasard. Orange et rouge pas encore vus.",
+    "maxSkills": 4,
+    "grades": {
+      "Common": { "itemLevel": 20, "divine": 8, "skills": 1 },
+      "Rare": { "itemLevel": 40, "divine": 12, "skills": 2 },
+      "Legend": { "itemLevel": 60, "divine": 16, "skills": 3 },
+      "Unique": { "itemLevel": 80, "divine": 20, "skills": 4 }
+    }
+  },
   "roadmap": {
     "_note": "Feuille de route au niveau 45 (serveurs Global, oct. 2026) d'après raidrelay.com (21/10), odealo.com (07/10), metabot.gg (15/10), expcarry.com et ateliergaming.fr. Noms de lieux traduits des guides anglais : à valider en jeu. 'gates' : score d'équipement (niveau d'objet du personnage) qui ouvre du contenu. 'tiers' : niveau d'objet d'une pièce et où la trouver, par groupe (Weapon = arme, Guard = main secondaire, Armor, Accessory) ; 'gate' = score qui ouvre ce contenu (absent = artisanat).",
     "maxLevel": 45,

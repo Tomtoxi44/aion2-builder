@@ -1192,6 +1192,29 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         : Arcana.OrderBy(a => a.Item is null ? -1 : db.Grade(a.Item.Grade).Rank).ThenBy(a => a.Item?.ItemLevel ?? 0).First();
 
     /// <summary>
+    /// « Et si » des arcanes : ta carte la plus basse au grade suivant, puis toutes tes cartes au plus haut grade relevé
+    /// (<c>progression.json</c> → <c>arcana</c>). Un emplacement vide n'est pas simulé (sa divinité serait tirée au hasard).
+    /// </summary>
+    List<(string Label, SimulationOptions Options)> ArcanaWhatIfs()
+    {
+        var grades = db.Progression.Arcana.Grades.Keys.Select(db.Grade).OrderBy(g => g.Rank).ToList();
+        var result = new List<(string Label, SimulationOptions Options)>();
+        if (grades.Count == 0) return result;
+        var filled = Arcana.Where(a => a.Item is not null).ToList();
+        var top = grades[^1];
+        var low = filled.OrderBy(a => db.Grade(a.Item!.Grade).Rank).ThenBy(a => a.Item!.ItemLevel).FirstOrDefault();
+        if (low.Item is { } item && grades.FirstOrDefault(g => g.Rank > db.Grade(item.Grade).Rank) is { } next)
+            result.Add(($"{low.Kind.ToLowerInvariant()} en {GradeWord(next)}", new SimulationOptions(ArcanaGrade: next.Code, ArcanaSlot: low.Slot)));
+        var below = filled.Count(a => db.Grade(a.Item!.Grade).Rank < top.Rank);
+        if (below > 0 && !(below == 1 && result.Count == 1 && result[0].Options.ArcanaGrade == top.Code))
+            result.Add(($"toutes en {GradeWord(top)}", new SimulationOptions(ArcanaGrade: top.Code)));
+        return result;
+    }
+
+    /// <summary>« Épique (bleu) » → « Épique ».</summary>
+    static string GradeWord(GradeDef g) => g.Name.Split(' ')[0];
+
+    /// <summary>
     /// Une stat divine d'une carte (« Temps [Siel] 20 ») : des points qui s'ajoutent à ceux du Panthéon et des autres cartes. Le
     /// site officiel donne le total par divinité et ses effets (stats principales), comptés dans l'analyse des stats.
     /// </summary>
@@ -1251,6 +1274,19 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             todo.Children.Add(T(low.Item is { } w
                 ? $"Améliore d'abord le {low.Kind.ToLowerInvariant()} (« {w.Name} », {db.Grade(w.Grade).Name}, niveau {w.ItemLevel}) : c'est ta carte la plus basse."
                 : $"Remplis d'abord l'emplacement du {low.Kind.ToLowerInvariant()} : une carte vide ne donne rien.", 13, wrap: true).WithLineHeight(1.45));
+        // Et si : le gain d'une carte plus haute, calculé sur une copie de ton perso (même calcul que les notes).
+        foreach (var (label, preset) in ArcanaWhatIfs())
+        {
+            var after = simulate(preset);
+            var delta = after.Scores.Overall - r.Scores.Overall;
+            todo.Children.Add(Tip(Clickable(ColumnsSpaced("40,*,Auto", 8,
+                    T(delta == 0 ? "=" : $"{(delta > 0 ? "+" : "")}{delta}", 13, delta > 0 ? Tok.Good : Tok.Muted, FontWeight.SemiBold, mono: true),
+                    T($"Et si : {label} (score d'équipement +{after.Character.ItemLevel - r.Character.ItemLevel})", 12, Tok.Text2, wrap: true),
+                    T($"→ {after.Scores.Overall}", 12, Tok.Score(after.Scores.Overall), mono: true)),
+                () => update(st => { st.Screen = Screen.Simulate; st.Sim = preset; }), hover: Tok.Hover, padding: new Thickness(4, 3)),
+                $"Score global {r.Scores.Overall} → {after.Scores.Overall}, équipement {r.Scores.Gear} → {after.Scores.Gear}, stats {r.Scores.Stats} → {after.Scores.Stats}.\n" +
+                "Niveau d'objet et points de stat divine du grade, relevés sur des joueurs ; les compétences bonus en plus sont tirées au hasard, non comptées.\nClic : ouvrir la simulation."));
+        }
         if (lost > 0)
             todo.Children.Add(T($"Bonus perdus : {string.Join(", ", bonuses.Where(b => !b.Useful).Select(b => $"{b.SkillName} ({cards.First(a => a.Slot == b.Slot).Kind.ToLowerInvariant()})"))}. " +
                                 "À remplacer en priorité quand tu changes ou relances la carte (survole un bonus pour sa raison).", 12, Tok.Warn, wrap: true).WithLineHeight(1.45));
@@ -3683,6 +3719,13 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             ("tel quel", !o.GearAtStage, () => Sim(x => x with { GearAtStage = false })),
             ("pièces en retard remises à niveau", o.GearAtStage, () => Sim(x => x with { GearAtStage = true })),
         ])));
+        var arcana = ArcanaWhatIfs();
+        if (arcana.Count > 0)
+            options.Children.Add(ColumnsSpaced("110,*", 12, T("Arcanes", 13, weight: FontWeight.Medium), Choice([
+                ("telles quelles", o.ArcanaGrade is null, () => Sim(x => x with { ArcanaGrade = null, ArcanaSlot = null })),
+                .. arcana.Select(a => (a.Label, o.ArcanaGrade == a.Options.ArcanaGrade && o.ArcanaSlot == a.Options.ArcanaSlot,
+                    (Action)(() => Sim(x => x with { ArcanaGrade = a.Options.ArcanaGrade, ArcanaSlot = a.Options.ArcanaSlot })))),
+            ])));
         var choices = Card(options, "Ce que tu changes", o.Any ? reset : null);
 
         if (!o.Any)
@@ -3750,6 +3793,13 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         if (o.Designed is { } designed) cost.Children.Add(T($"Build : suivre le build {(designed ? "conçu" : "des joueurs")} (écran Build).", 12, Tok.Text2));
         if (o.GearAtStage)
             cost.Children.Add(T($"Équipement : {Fmt.Plural(r.Gear.Slots.Count(x => x.Status is SlotStatus.Empty or SlotStatus.Replace or SlotStatus.Weak), "pièce")} à remplacer ou monter (note seulement : leurs stats futures sont inconnues).", 12, Tok.Text2));
+        foreach (var x in Simulator.ArcanaChanges(db, r.Character, o))
+        {
+            var kind = ArcanaSlots.FirstOrDefault(a => a.Slot == x.Before.Slot).Kind?.ToLowerInvariant() ?? x.Before.Name;
+            var extra = x.ExtraSkills > 0 ? $", et {Fmt.Plural(x.ExtraSkills, "compétence bonus tirée", "compétences bonus tirées")} au hasard (non comptée{(x.ExtraSkills > 1 ? "s" : "")})" : "";
+            cost.Children.Add(T($"Arcanes : {kind} {GradeWord(db.Grade(x.Before.Grade))} → {GradeWord(db.Grade(x.After.Grade))}, niveau d'objet {x.Before.ItemLevel} → {x.After.ItemLevel}" +
+                                (x.Divinity is null ? "" : $", {x.Divinity} {x.DivineBefore} → {x.DivineAfter} points") + extra + ".", 12, Tok.Text2, wrap: true));
+        }
         // Familles de stats avant → après.
         var families = new StackPanel { Spacing = 8 };
         foreach (var (b, a) in r.Stats.Categories.Zip(after.Stats.Categories))
@@ -3792,6 +3842,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 T("Les changements choisis sont appliqués à une copie de ton personnage, puis toute l'analyse est refaite : notes, familles de stats, stats.", 13, Tok.Text2, wrap: true).WithLineHeight(1.5),
                 T("Daevanion : les stats viennent des effets réels des cases ouvertes ou retirées. Compétences : les niveaux de la répartition conseillée. Build : les priorités du build choisi.", 13, Tok.Text2, wrap: true).WithLineHeight(1.5),
                 T("Équipement : une pièce « remise à niveau » ne change que la note d'équipement ; ses stats futures ne sont pas connues, elles ne sont donc pas ajoutées.", 13, Tok.Text2, wrap: true).WithLineHeight(1.5),
+                T("Arcanes : une carte d'un grade plus haut prend le niveau d'objet et les points de stat divine de ce grade (relevés sur des joueurs), sur la même divinité ; " +
+                  "ses compétences bonus en plus sont tirées au hasard, elles ne sont pas comptées.", 13, Tok.Text2, wrap: true).WithLineHeight(1.5),
                 T("Rien n'est enregistré : ton personnage et tes conseils ne changent pas.", 12, Tok.Muted, wrap: true).WithLineHeight(1.45),
             },
         });

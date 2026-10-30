@@ -201,8 +201,21 @@ public sealed record ProgressionFile
     public Dictionary<string, SlotRule> SlotRules { get; init; } = [];
     public required EnchantRules Enchant { get; init; }
     public RoadmapRules Roadmap { get; init; } = new();
+    public ArcanaRules Arcana { get; init; } = new();
     public List<ProgressionStage> Stages { get; init; } = [];
 }
+
+/// <summary>Arcanes (cartes de Transcendance) : ce que donne une carte de chaque grade à +0, relevé sur des joueurs.</summary>
+public sealed record ArcanaRules
+{
+    public string Source { get; init; } = "";
+    /// <summary>Compétences bonus au plus sur une carte : chaque niveau d'enchantement en ajoute une jusque-là.</summary>
+    public int MaxSkills { get; init; } = 4;
+    public Dictionary<string, ArcanaGrade> Grades { get; init; } = [];
+}
+
+/// <summary>Une carte d'un grade : niveau d'objet, points de stat divine (1 point = 0,1 % de chaque effet de la divinité), compétences bonus.</summary>
+public sealed record ArcanaGrade(int ItemLevel, int Divine, int Skills);
 
 /// <summary>Feuille de route au niveau maximum : seuils de score d'équipement, paliers de pièces et où les trouver.</summary>
 public sealed record RoadmapRules

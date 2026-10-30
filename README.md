@@ -69,7 +69,7 @@ Commandes du CLI :
 | `advise <nom ou fichier.json> [--mode pve\|pvp\|both] [--refresh] [--json]` | Analyse et conseils, avec la rotation du build suivi |
 | `advise <nom> --build joueurs\|concu` | Choisit le build qui guide les conseils (gardé par personnage) |
 | `advise <nom> --md <fichier.md>` | Écrit le rapport en Markdown (à garder ou partager) |
-| `simulate <nom> [--daevanion next\|respec\|route] [--n 20] [--skills] [--build joueurs\|concu] [--gear]` | Et si… : notes, familles et stats avant → après |
+| `simulate <nom> [--daevanion next\|respec\|route] [--n 20] [--skills] [--build joueurs\|concu] [--gear] [--arcanes epique\|unique] [--carte miroir]` | Et si… : notes, familles et stats avant → après |
 | `progress <nom>` | Imports successifs du personnage et ce qui a changé |
 | `rotation <classe\|nom> [--targets 4] [--duration 120] [--mode pvp]` | Rotations simulées : celle des joueurs contre la conçue, sort par sort |
 | `combat <nom> [mots.tsv…]` | Combat NotMeter lu sur des captures : lancers face aux recharges, buffs, sorts jamais lancés |
@@ -104,6 +104,10 @@ L'interface est organisée comme un éditeur :
   ou route conçue, répartition des compétences conseillée, build joueurs ou conçu, pièces en retard au niveau du palier) et
   l'analyse est refaite : notes avant → après, familles de stats et stats qui changent (calculées à partir des effets réels
   des cases), et ce que ça demande en jeu. Une pièce « au niveau du palier » ne change que la note (ses stats sont inconnues).
+  Arcanes : ta carte la plus basse au grade suivant, ou toutes au grade Unique ; une carte prend le niveau d'objet et les
+  points de stat divine de son grade (`progression.json` → `arcana`, relevés sur des joueurs : 20/40/60/80 de niveau,
+  8/12/16/20 points du blanc au jaune), sur la même divinité. Ses compétences bonus en plus, tirées au hasard, ne sont pas
+  comptées. La page Équipement → Arcanes montre le gain de ces deux choix, un clic ouvre la simulation.
 - **Progression** : courbes du niveau d'objet, de la puissance et du score, et pour chaque import ce qui a changé (pièces,
   niveaux de compétences, cases Daevanion ouvertes).
 - **Build et rotation** : le build des joueurs et le build conçu côte à côte (priorités, niveaux visés, ≠ là où ils
