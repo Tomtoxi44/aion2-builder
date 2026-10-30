@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Relancé par « Joueurs de comparaison » après le relevé de la semaine : son push ne déclenche pas celui-ci.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,12 +21,12 @@ jobs:
           dotnet-version: 10.0.x
       - run: dotnet build Aion2Builder.slnx -c Release
 
-  # À chaque push sur main : exe autonome (sans .NET à installer), version 1.1.<numéro du run> (1.1 : dépôt recréé, le compteur
+  # À chaque push sur main (ou relance manuelle) : exe autonome (sans .NET à installer), version 1.1.<numéro du run> (1.1 : dépôt recréé, le compteur
   # de runs est reparti de 1 ; il faut rester au-dessus des 1.0.x déjà installées pour que la mise à jour les voie),
   # publié en version GitHub et déposé sur Aion 2 Todo, où l'application vérifie et télécharge ses mises à jour.
   # Sous Windows : l'icône de l'exe ne s'ajoute que par une compilation Windows.
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: windows-latest
     timeout-minutes: 30

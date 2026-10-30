@@ -1,0 +1,55 @@
+name: Joueurs de comparaison
+
+# Chaque jeudi (après la maintenance du mercredi) : refait les joueurs de comparaison de chaque classe (benchmark.json)
+# d'après le site officiel, l'enregistre sur main et relance Build, qui publie la version du Builder qui les embarque
+# (un push fait par un workflow ne déclenche pas les autres). Le fichier ne garde ni nom ni serveur.
+on:
+  schedule:
+    - cron: '41 3 * * 4'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Enregistrer sur main et publier (sinon, relevé seul, gardé en artefact)
+        type: boolean
+        default: true
+
+permissions:
+  contents: write # enregistrer benchmark.json
+  actions: write # relancer Build
+
+concurrency:
+  group: benchmark
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Relevé
+        run: dotnet run --project src/Aion2Builder.Cli -c Release -- bench --out src/Aion2Builder.Core/GameData/Defaults/benchmark.json
+
+      - name: Fichier relevé
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark
+          path: src/Aion2Builder.Core/GameData/Defaults/benchmark.json
+          retention-days: 7
+
+      - name: Enregistrement et publication
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/Aion2Builder.Core/GameData/Defaults/benchmark.json
+          if git diff --cached --quiet; then echo "Rien de changé."; exit 0; fi
+          git commit -m "Joueurs de comparaison relevés le $(date -u +%d/%m/%Y)"
+          git pull --rebase
+          git push
+          gh workflow run build.yml --ref main

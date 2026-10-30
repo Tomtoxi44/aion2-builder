@@ -130,6 +130,12 @@ public sealed record ClassBenchmark
 /// <summary>Un joueur de l'échantillon : niveau d'objet et stats totales par clé (le % pour une stat en %, la valeur plate sinon).</summary>
 public sealed record BenchPlayer(int ItemLevel, Dictionary<string, double> Stats);
 
+/// <summary>
+/// benchmark.json : les joueurs de comparaison de chaque classe (par code de classe), relevés chaque semaine sur le site
+/// officiel par la commande « bench » ; ils remplacent ceux de classes.json.
+/// </summary>
+public sealed record BenchmarkFile(string Updated, Dictionary<string, ClassBenchmark> Classes);
+
 public sealed record DesignedBuild
 {
     public string Summary { get; init; } = "";
@@ -410,12 +416,15 @@ public sealed class GameDatabase
     readonly Dictionary<string, StatDef> byApiId;
     readonly Dictionary<string, StatDef> byLabel;
 
-    public GameDatabase(StatCatalogFile stats, ClassesFile classes, ProgressionFile progression, SettingsFile settings, SpellsFile? spells = null)
+    public GameDatabase(StatCatalogFile stats, ClassesFile classes, ProgressionFile progression, SettingsFile settings, SpellsFile? spells = null,
+        BenchmarkFile? benchmark = null)
     {
         Spells = spells?.Spells ?? [];
         Stats = stats.Stats;
         Roles = classes.Roles;
-        Classes = classes.Classes;
+        Classes = classes.Classes
+            .Select(c => benchmark?.Classes.GetValueOrDefault(c.Code) is { } b ? c with { Benchmark = b } : c)
+            .ToList();
         Progression = progression;
         Settings = settings;
         byKey = Stats.ToDictionary(s => s.Key, StringComparer.OrdinalIgnoreCase);

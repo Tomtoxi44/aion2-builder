@@ -38,8 +38,12 @@ public static class GameDataStore
             Read<ClassesFile>("classes.json", overrideDir),
             Read<ProgressionFile>("progression.json", overrideDir),
             Read<SettingsFile>("settings.json", overrideDir),
-            Read<SpellsFile>("spells.json", overrideDir));
+            Read<SpellsFile>("spells.json", overrideDir),
+            // Toujours celui de l'application : relevé chaque semaine, une copie gardée dans le dossier utilisateur le figerait.
+            JsonSerializer.Deserialize<BenchmarkFile>(ReadEmbedded(BenchmarkFileName), Json));
     }
+
+    public const string BenchmarkFileName = "benchmark.json";
 
     /// <summary>Indique, pour chaque fichier, s'il vient du dossier utilisateur ou de l'application.</summary>
     public static IEnumerable<(string File, bool Overridden)> Sources(string? overrideDir = null)

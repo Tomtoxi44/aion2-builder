@@ -61,8 +61,23 @@ public sealed class ArmoryClient(HttpClient http) : IDisposable
             serverId = Find(servers) ?? Find(await Servers(region, ct, "en-US"))
                        ?? throw new ArmoryException($"Serveur « {serverName} » inconnu en région {region}. Serveurs : {string.Join(", ", servers.Select(s => s.Name))}");
         }
-        var url = $"https://api-search.plaync.com/aion2global/search/v2/character?keyword={Uri.EscapeDataString(name.Trim())}" +
-                  $"&serverId={serverId}&page=1&size=20&region={Region(region)}&localeInfo=en-US";
+        var hits = await SearchPage(region, $"keyword={Uri.EscapeDataString(name.Trim())}&serverId={serverId}&page=1", ct);
+        return hits
+            .OrderByDescending(h => h.Name.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(h => h.Level)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Joueurs d'un niveau et d'un pcId (classe × genre × race) dont le nom contient <paramref name="keyword"/>, tous serveurs
+    /// de la région : la recherche du site filtre elle-même (20 par page).
+    /// </summary>
+    public Task<List<SearchHit>> SearchLevel(string region, string keyword, int level, int pcId, int page = 1, CancellationToken ct = default) =>
+        SearchPage(region, $"keyword={Uri.EscapeDataString(keyword)}&serverId=&level={level}&pcId={pcId}&page={page}", ct);
+
+    async Task<List<SearchHit>> SearchPage(string region, string query, CancellationToken ct)
+    {
+        var url = $"https://api-search.plaync.com/aion2global/search/v2/character?{query}&size=20&region={Region(region)}&localeInfo=en-US";
         using var doc = JsonDocument.Parse(await Get(url, ct));
         if (!doc.RootElement.TryGetProperty("list", out var list) || list.ValueKind != JsonValueKind.Array) return [];
         return list.EnumerateArray()
@@ -74,8 +89,6 @@ public sealed class ArmoryClient(HttpClient http) : IDisposable
                 c.GetProperty("serverName").GetString() ?? "",
                 ArmoryMapper.ClassFromPcId(c.GetProperty("pcId").GetInt32()),
                 c.GetProperty("race").GetInt32() == 1 ? "Élyséen" : "Asmodien"))
-            .OrderByDescending(h => h.Name.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase))
-            .ThenByDescending(h => h.Level)
             .ToList();
     }
 

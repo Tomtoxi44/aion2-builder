@@ -53,6 +53,10 @@ public static partial class ArmoryMapper
     public static string? ClassFromPcId(int pcId) =>
         pcId >= 5 && (pcId - 5) / 4 < ClassByPcBlock.Length ? ClassByPcBlock[(pcId - 5) / 4] : null;
 
+    /// <summary>Les 4 pcId d'une classe (genre × race), pour chercher ses joueurs.</summary>
+    public static IEnumerable<int> PcIds(string classCode) =>
+        System.Array.IndexOf(ClassByPcBlock, classCode) is var i and >= 0 ? Enumerable.Range(5 + 4 * i, 4) : [];
+
     public static CharacterSnapshot Map(RawCharacter raw, GameDatabase data)
     {
         var parser = new EffectParser(data);
