@@ -267,11 +267,18 @@ static class Ui
         };
     }
 
-    /// <summary>Ligne « nom · barre · valeur », cliquable si <paramref name="onClick"/> est donné.</summary>
+    /// <summary>Ligne « [icône] nom · barre · valeur », cliquable si <paramref name="onClick"/> est donné.</summary>
     public static Control BarRow(string name, double ratio, string value, IBrush fill, double nameWidth = 170, Action? onClick = null, string? tip = null,
-        bool selected = false)
+        bool selected = false, Control? icon = null)
     {
-        var row = ColumnsSpaced($"{nameWidth},*,48", 10, T(name, 13, selected ? Accent.Main : null), RoundBar(ratio, fill),
+        Control label = T(name, 13, selected ? Accent.Main : null);
+        if (icon is not null)
+        {
+            icon.Margin = new Thickness(0, 0, 7, 0);
+            DockPanel.SetDock(icon, Dock.Left);
+            label = new DockPanel { Children = { icon, label } };
+        }
+        var row = ColumnsSpaced($"{nameWidth},*,48", 10, label, RoundBar(ratio, fill),
             T(value, 12, Tok.Text2, mono: true).AlignRight());
         Control result = onClick is null ? row : Clickable(row, onClick, hover: Tok.Hover, padding: new Thickness(0, 2));
         return tip is null ? result : Tip(result, tip);

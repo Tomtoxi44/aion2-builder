@@ -567,11 +567,62 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
     IBrush GradeBrush(EquippedItem? item) => item is null ? Tok.B("#6A6A72") : Tok.B(db.Grade(item.Grade).Color);
 
+    // ----- Icônes officielles (CDN du jeu, voir IconCache) -----
+
+    /// <summary>Icône d'une pièce, cadre et fond à la couleur de son grade comme sur le site officiel ; case grise pour un emplacement vide.</summary>
+    Border ItemIcon(EquippedItem? item, double size = 20)
+    {
+        var color = GradeBrush(item);
+        return IconCache.Box(item?.Icon, size, color, Tok.Alpha(color, 0.18));
+    }
+
+    /// <summary>Icône d'une compétence (cadre neutre : les compétences n'ont pas de grade), pâlie tant qu'elle n'est pas apprise.</summary>
+    static Border SkillIcon(SkillInfo skill, double size = 20)
+    {
+        var box = IconCache.Box(skill.Icon, size, Tok.Border, Tok.Frame);
+        if (!skill.Acquired) box.Opacity = 0.45;
+        return box;
+    }
+
+    /// <summary>
+    /// Icône de la compétence du perso qui porte ce nom ; si elle n'est pas dans l'import, une place vide de même taille (les
+    /// noms restent alignés dans un tableau), ou rien quand <paramref name="keepPlace"/> est faux.
+    /// </summary>
+    Control? SkillIcon(string name, double size = 20, bool keepPlace = true) =>
+        OwnSkill(name) is { } k ? SkillIcon(k, size) : keepPlace ? new Border { Width = size, Height = size } : null;
+
+    /// <summary>Compétence de l'import par son nom (casse et apostrophes ignorées), sinon par le code du sort de ce nom (noms des combats du Pet Meter).</summary>
+    SkillInfo? OwnSkill(string name)
+    {
+        if (ownSkills is null)
+        {
+            ownSkills = [];
+            foreach (var k in r.Character.Skills) ownSkills.TryAdd(GameDatabase.NormalizeLabel(k.Name), k);
+            var byId = r.Character.Skills.GroupBy(k => k.Id).ToDictionary(g => g.Key, g => g.First());
+            foreach (var (code, spell) in db.Spells)
+                if (byId.GetValueOrDefault(code / 10000 * 10000) is { } k)
+                    ownSkills.TryAdd(GameDatabase.NormalizeLabel(spell.Name), k);
+        }
+        return ownSkills.GetValueOrDefault(GameDatabase.NormalizeLabel(name));
+    }
+    Dictionary<string, SkillInfo>? ownSkills;
+
+    /// <summary>Icône puis texte ; le texte garde ses points de suspension (DockPanel, pas StackPanel).</summary>
+    static Control WithIcon(Control? icon, Control text, double gap = 7)
+    {
+        if (icon is null) return text;
+        icon.Margin = new Thickness(0, 0, gap, 0);
+        DockPanel.SetDock(icon, Dock.Left);
+        return new DockPanel { Children = { icon, text } };
+    }
+
     Border SlotTile(SlotPlan p, bool selected)
     {
         var (code, color) = StatusCode(p.Status);
         var engraving = r.Engravings.For(p.Slot);
-        var bar = new Border { Width = 3, Height = 30, Background = GradeBrush(p.Item), Margin = new Thickness(0, 0, 9, 0) };
+        // Icône de la pièce, cadre à la couleur de son grade (remplace le liseré de grade).
+        var bar = ItemIcon(p.Item, 24);
+        bar.Margin = new Thickness(0, 0, 9, 0);
         // « G » : gravures d'âme ou pierres à revoir, en plus du statut de la pièce.
         var codeText = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(9, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         if (engraving is { NeedsWork: true }) codeText.Children.Add(T("G", 11, Tok.Warn, FontWeight.SemiBold, mono: true));
@@ -1042,7 +1093,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         const string cols = "120,*,70,46,*,46";
         var selected = SelectedSlot?.Slot;
         var rows = plan.Slots.Where(x => !x.Special).OrderByDescending(x => x.Gain).ThenBy(x => x.Power).Select(x => (Control)Tip(TableRow(Columns(cols,
-                T(x.SlotName, 13), T(x.Item?.Name ?? "vide", 13, x.Item is null ? Tok.Bad : GradeBrush(x.Item)),
+                T(x.SlotName, 13), WithIcon(ItemIcon(x.Item), T(x.Item?.Name ?? "vide", 13, x.Item is null ? Tok.Bad : GradeBrush(x.Item))),
                 T(x.Item is null ? "—" : $"{x.Item.ItemLevel} +{x.Item.EnchantLevel}", 12, Tok.Text2, mono: true),
                 T(x.Target is { } t ? $"{t.ItemLevel}" : "—", 13, x.Gain > 0 ? Tok.Warn : Tok.Muted, mono: true),
                 T(x.Where, 12, x.Gain > 0 ? Tok.Text : Tok.Muted, wrap: true),
@@ -1054,7 +1105,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
         var special = new StackPanel { Spacing = 6 };
         foreach (var x in plan.Slots.Where(x => x.Special))
-            special.Children.Add(ColumnsSpaced("120,90,*", 10, T(x.SlotName, 13),
+            special.Children.Add(ColumnsSpaced("140,90,*", 10, WithIcon(ItemIcon(x.Item), T(x.SlotName, 13)),
                 T(x.Item is null ? "vide" : $"{x.Item.ItemLevel} +{x.Item.EnchantLevel}", 12, x.Item is null ? Tok.Bad : Tok.Text2, mono: true),
                 T(x.Where, 12, Tok.Text2, wrap: true)));
 
@@ -1169,13 +1220,13 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             Badge($"{filled}/{cards.Count} cartes", filled < cards.Count ? Tok.Warn : Tok.Text2),
             lost > 0 ? Badge(Fmt.Plural(lost, "bonus perdu", "bonus perdus"), Tok.Warn) : bonuses.Count > 0 ? Badge("✓ bonus utiles", Tok.Good) : null);
 
-        const string cols = "110,120,70,160,*";
+        const string cols = "180,110,70,160,*";
         var rows = new List<Control>();
         foreach (var (slot, kind, item) in cards)
         {
             if (item is null)
             {
-                rows.Add(TableRow(Columns(cols, T(kind, 13), T("vide", 12, Tok.Bad), T("—", 12, Tok.Muted, mono: true), T("—", 12, Tok.Muted),
+                rows.Add(TableRow(Columns(cols, WithIcon(ItemIcon(null, 24), T(kind, 13)), T("vide", 12, Tok.Bad), T("—", 12, Tok.Muted, mono: true), T("—", 12, Tok.Muted),
                     T("emplacement à remplir", 12, Tok.Bad)), false, () => { }));
                 continue;
             }
@@ -1186,7 +1237,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 skills.Children.Add(Tip(T($"{b.SkillName} +{b.Levels}", 12, !b.Useful ? Tok.Bad : b.Strong ? Tok.Good : Tok.Text2), b.Verdict).WithMargin(0, 0, 12, 2));
             if (skills.Children.Count == 0) skills.Children.Add(T("aucune compétence bonus", 12, Tok.Muted));
             rows.Add(TableRow(Columns(cols,
-                    new StackPanel { Spacing = 1, Children = { T(kind, 13), T(item.Name, 11, Tok.Muted) } },
+                    WithIcon(ItemIcon(item, 24), new StackPanel { Spacing = 1, Children = { T(kind, 13), T(item.Name, 11, Tok.Muted) } }),
                     T(grade.Name, 12, Tok.B(grade.Color)),
                     T($"{item.ItemLevel} +{item.EnchantLevel}", 12, Tok.Text2, mono: true),
                     divine.Length > 0 ? Tip(T(divine, 12, Tok.Text2), DivineTip(divine)) : T("—", 12, Tok.Muted),
@@ -1432,11 +1483,11 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var item = p.Item;
         var grade = item is null ? null : db.Grade(item.Grade);
         var body = new StackPanel { Spacing = 14, Margin = new Thickness(14) };
-        body.Children.Add(new StackPanel
+        body.Children.Add(WithIcon(ItemIcon(item, 36), new StackPanel
         {
             Spacing = 4,
             Children = { T(p.SlotName, 12, Tok.Muted), T(item?.Name ?? "Emplacement vide", 17, item is null ? Tok.Muted : GradeBrush(item), FontWeight.SemiBold, wrap: true) },
-        });
+        }, 10));
         body.Children.Add(KeyValue(
         [
             ("rareté", grade?.Name ?? "—", null),
@@ -1953,6 +2004,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 Orientation = Orientation.Horizontal, Spacing = 8,
                 Children =
                 {
+                    SkillIcon(group.Key.Skill),
                     T($"+{moves.Sum(m => m.Points)}  {group.Key.Skill.Name}", 13, Tok.Good, FontWeight.SemiBold),
                     T("←", 13, Tok.Muted),
                     T(sources, 13, moves.All(m => m.From is null) ? Tok.Text2 : Tok.Bad),
@@ -1965,7 +2017,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         {
             list.Children.Add(Label("Pourquoi elles cèdent des points").WithMargin(6, 10, 0, 2));
             foreach (var d in donors)
-                list.Children.Add(Entry(T($"−{-d.Delta}  {d.Skill.Name}", 13, Tok.Bad, FontWeight.SemiBold), d.Decision, d.Skill.Name));
+                list.Children.Add(Entry(WithIcon(SkillIcon(d.Skill), T($"−{-d.Delta}  {d.Skill.Name}", 13, Tok.Bad, FontWeight.SemiBold), 8), d.Decision, d.Skill.Name));
         }
         return list;
     }
@@ -1979,7 +2031,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var color = !b.Useful ? Tok.Bad : b.Strong ? Tok.Good : Tok.Text2;
             list.Children.Add(Clickable(ColumnsSpaced("190,190,*", 8,
                     T(b.Arcana ? $"Arcane · {b.Item}" : db.SlotName(b.Slot), 12, Tok.Muted),
-                    T($"{b.SkillName} +{b.Levels}", 13, b.Useful ? null : Tok.Bad),
+                    WithIcon(SkillIcon(b.SkillName), T($"{b.SkillName} +{b.Levels}", 13, b.Useful ? null : Tok.Bad)),
                     T(b.Verdict, 12, color, wrap: true)),
                 () => { if (b.Skill is { } a) update(st => st.Skill = a.Skill.Name); }, hover: Tok.Hover, padding: new Thickness(6, 3)));
         }
@@ -2014,7 +2066,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var name = x.Skill.Skill.Name;
             list.Children.Add(Clickable(ColumnsSpaced("54,*,Auto", 8,
                     T(x.Points == 1 ? $"{first}" : $"{first}–{total}", 12, Tok.Muted, mono: true),
-                    T($"{name}   {x.From} → {x.To}", 13, x.BeyondTarget ? Tok.Text2 : null),
+                    WithIcon(SkillIcon(x.Skill.Skill), T($"{name}   {x.From} → {x.To}", 13, x.BeyondTarget ? Tok.Text2 : null)),
                     tags),
                 () => update(st => st.Skill = name), hover: Tok.Hover, padding: new Thickness(6, 3)));
         }
@@ -2145,14 +2197,15 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 ? ColumnsSpaced("*,38", 6, Bar(a.DamageShare / max, Accent.Main, 6), T(SharePct(a.DamageShare), 12, Tok.Text2, mono: true).AlignRight())
                 : (Control)T("—", 12, Tok.Faint, mono: true);
             list.Children.Add(Tip(TableRow(Columns(cols,
-                    T(name, 13, a.Skill.Acquired ? null : Tok.Muted), share, LevelPips(a), T(Todo(a), 12, TodoColor(a))),
+                    WithIcon(SkillIcon(a.Skill), T(name, 13, a.Skill.Acquired ? null : Tok.Muted)), share, LevelPips(a), T(Todo(a), 12, TodoColor(a))),
                 name == selected, () => update(st => st.Skill = name)), a.Decision));
             // Suites d'enchaînement de ce sort : déjà comptées dans sa part, montrées en dessous.
             foreach (var c in sk.Chains.Where(c => GameDatabase.NormalizeLabel(c.Parent) == GameDatabase.NormalizeLabel(name)))
                 list.Children.Add(Tip(new Border
                 {
                     Padding = new Thickness(20, 3, 20, 3),
-                    Child = Columns(cols, T($"  ↳ {c.Skill}", 12, Tok.Muted),
+                    // La flèche sous le nom du sort, après la place de son icône.
+                    Child = Columns(cols, T($"↳ {c.Skill}", 12, Tok.Muted).WithMargin(27, 0, 0, 0),
                         ColumnsSpaced("*,38", 6, Bar(c.Share / max, Accent.Dim, 6), T(SharePct(c.Share), 12, Tok.Muted, mono: true).AlignRight()),
                         new Border(), T("sa suite", 12, Tok.Faint)),
                 }, $"Le meter l'affiche à part. Elle suit {Fmt.Pct(c.Regular)} des lancers de {name}{(c.Via is null ? "" : $" (après {c.Via})")}, " +
@@ -2257,7 +2310,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         {
             var (label, color) = g.Recommended ? (g.Slotted ? ("Garder", Tok.Good) : ("Mettre", Tok.Info)) : ("Retirer", Tok.Bad);
             panel.Children.Add(TableRow(Columns(stigmaCols,
-                    T(label, 12, color, FontWeight.SemiBold, mono: true), T(g.Skill.Name, 13, g.Skill.Acquired ? null : Tok.Muted), T(g.Role, 13, Tok.Text2),
+                    T(label, 12, color, FontWeight.SemiBold, mono: true), WithIcon(SkillIcon(g.Skill), T(g.Skill.Name, 13, g.Skill.Acquired ? null : Tok.Muted)), T(g.Role, 13, Tok.Text2),
                     T(g.Recommended ? $"{g.Skill.Level} → {g.Target}" : $"{g.Skill.Level}", 13, mono: true),
                     T(g.ShardsToTarget > 0 ? $"{g.ShardsToTarget} fragments" : "", 13, Tok.Muted, mono: true)),
                 g.Skill.Name == selected, () => update(st => st.Skill = g.Skill.Name)));
@@ -2272,9 +2325,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 var name = x.Stigma.Skill.Name;
                 panel.Children.Add(Clickable(ColumnsSpaced("24,*,Auto", 8,
                         T($"{++i}.", 12, Tok.Muted, mono: true),
-                        db.Spell(x.Stigma.Skill.Id)?.Specs.FirstOrDefault(sp => sp.Level == x.To) is { } effect
+                        WithIcon(SkillIcon(x.Stigma.Skill), db.Spell(x.Stigma.Skill.Id)?.Specs.FirstOrDefault(sp => sp.Level == x.To) is { } effect
                             ? new StackPanel { Spacing = 2, Children = { T($"{name}   {x.From} → {x.To}", 13), T($"débloque : {effect.Text}", 11, Tok.Text2, wrap: true) } }
-                            : T($"{name}   {x.From} → {x.To}", 13),
+                            : T($"{name}   {x.From} → {x.To}", 13)),
                         T($"{x.Shards} fragments · palier {x.To}", 12, Tok.Muted, mono: true)),
                     () => update(st => st.Skill = name), hover: Tok.Hover, padding: new Thickness(20, 4)));
             }
@@ -2338,7 +2391,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     Tip(new Border { [DockPanel.DockProperty] = Dock.Right, Background = Brushes.Transparent, Child = Pips(p.Slots, total, 10, 8) },
                         $"Emplacements de spécialisation : {p.Slots} ouvert{(p.Slots > 1 ? "s" : "")} sur {total} (vert = ouvert, orange = encore fermé). " +
                         $"Ils s'ouvrent aux niveaux {string.Join(", ", db.Settings.Skills.SpecialtySlots)} de la compétence."),
-                    T($"{name} · niv. {p.Level}", 13, name == SelectedSkillName ? Accent.Main : Tok.Text, FontWeight.SemiBold),
+                    WithIcon(SkillIcon(p.Skill.Skill), T($"{name} · niv. {p.Level}", 13, name == SelectedSkillName ? Accent.Main : Tok.Text, FontWeight.SemiBold)),
                 },
             },
             () => update(st => st.Skill = name), hover: Tok.Hover, padding: new Thickness(0, 2));
@@ -2368,7 +2421,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var body = new StackPanel { Spacing = 14, Margin = new Thickness(14) };
         if (r.Skills.Skills.FirstOrDefault(a => a.Skill.Name == name) is { } a)
         {
-            body.Children.Add(T(a.Skill.Name, 17, weight: FontWeight.SemiBold, wrap: true));
+            body.Children.Add(WithIcon(SkillIcon(a.Skill, 32), T(a.Skill.Name, 17, weight: FontWeight.SemiBold, wrap: true), 10));
             body.Children.Add(Field("Décision", a.Decision, a.Delta > 0 ? Tok.Good : a.Delta < 0 ? Tok.Bad : Tok.Text2));
             // Ce que contient sa part quand le meter montre ses suites d'enchaînement à part.
             var chains = r.Skills.Chains.Where(c => GameDatabase.NormalizeLabel(c.Parent) == GameDatabase.NormalizeLabel(a.Skill.Name)).ToList();
@@ -2427,7 +2480,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         }
         else if (r.Skills.Stigmas.FirstOrDefault(x => x.Skill.Name == name) is { } g)
         {
-            body.Children.Add(T(g.Skill.Name, 17, weight: FontWeight.SemiBold, wrap: true));
+            body.Children.Add(WithIcon(SkillIcon(g.Skill, 32), T(g.Skill.Name, 17, weight: FontWeight.SemiBold, wrap: true), 10));
             body.Children.Add(KeyValue(
             [
                 ("type", "Stigma", null),
@@ -2465,7 +2518,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 var name = a.Skill.Name;
                 var share = T(Fmt.Pct(a.DamageShare), 11, Tok.Text2, mono: true);
                 DockPanel.SetDock(share, Dock.Right);
-                rows.Children.Add(Clickable(new DockPanel { Children = { share, T(name, 12, Tok.Text2) } },
+                rows.Children.Add(Clickable(new DockPanel { Children = { share, WithIcon(SkillIcon(a.Skill), T(name, 12, Tok.Text2)) } },
                     () => update(st => st.Skill = name), hover: Tok.Hover, padding: new Thickness(4, 3)));
             }
             body.Children.Add(new StackPanel { Spacing = 6, Children = { Label("Ce qui fait tes dégâts"), rows } });
@@ -2670,8 +2723,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var max = cr.Skills.Select(x => x.Skill.Share).DefaultIfEmpty(1).Max();
         var damage = new StackPanel { Spacing = 8 };
         foreach (var x in cr.Skills.OrderByDescending(x => x.Skill.Share).Take(8))
-            damage.Children.Add(BarRow(x.Skill.Name, x.Skill.Share / Math.Max(0.0001, max), Fmt.Pct(x.Skill.Share), Accent.Main, onClick: () => Select(x.Skill.Name),
-                tip: x.Verdict, selected: x.Skill.Name == s.CombatSkill));
+            damage.Children.Add(BarRow(x.Skill.Name, x.Skill.Share / Math.Max(0.0001, max), Fmt.Pct(x.Skill.Share), Accent.Main, 190, onClick: () => Select(x.Skill.Name),
+                tip: x.Verdict, selected: x.Skill.Name == s.CombatSkill, icon: SkillIcon(x.Skill.Name)));
         var rest = cr.Skills.OrderByDescending(x => x.Skill.Share).Skip(8).ToList();
         if (rest.Count > 0) damage.Children.Add(T($"{rest.Count} autre{(rest.Count > 1 ? "s" : "")} sort{(rest.Count > 1 ? "s" : "")} : {Fmt.Pct(rest.Sum(x => x.Skill.Share))} · clic sur un sort = son détail à droite", 12, Tok.Muted));
         var timed = cr.Skills.Where(x => x.Possible is not null).OrderByDescending(x => x.Spell?.Cooldown ?? 0).ToList();
@@ -2681,7 +2734,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var done = x.Skill.Uses;
             var possible = x.Possible!.Value;
             var color = done >= possible ? Tok.Good : done >= 0.8 * possible || x.Situational ? Tok.Text2 : Tok.Warn;
-            var row = ColumnsSpaced("190,*,58", 10, T(x.Skill.Name, 13, x.Skill.Name == s.CombatSkill ? Accent.Main : null), Pips(done, possible),
+            var row = ColumnsSpaced("190,*,58", 10, WithIcon(SkillIcon(x.Skill.Name), T(x.Skill.Name, 13, x.Skill.Name == s.CombatSkill ? Accent.Main : null)), Pips(done, possible),
                 T($"{done} / {possible}", 12, color, mono: true).AlignRight());
             recharge.Children.Add(Tip(Clickable(row, () => Select(x.Skill.Name), hover: Tok.Hover, padding: new Thickness(0, 2)), x.Verdict));
         }
@@ -2701,7 +2754,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             {
                 var track = new TimelineTrack(log.Duration);
                 foreach (var t in casts.Where(cast => NotMeterReader.Key(cast.Name) == NotMeterReader.Key(x.Skill.Name))) track.Dot(t.T, colors[i % colors.Length]);
-                frise.Children.Add(ColumnsSpaced("190,*", 10, T(x.Skill.Name, 12, Tok.Text2), new Border { Background = Tok.Frame, CornerRadius = new CornerRadius(3), Child = track }));
+                frise.Children.Add(ColumnsSpaced("190,*", 10, WithIcon(SkillIcon(x.Skill.Name), T(x.Skill.Name, 12, Tok.Text2)), new Border { Background = Tok.Frame, CornerRadius = new CornerRadius(3), Child = track }));
             }
             var pauses = new TimelineTrack(log.Duration);
             var gaps = 0;
@@ -2817,7 +2870,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var name = x.Skill.Name;
             var uses = x.Possible is { } max ? $"{x.Skill.Uses} / {max}" : x.Skill.Uses > 0 ? $"{x.Skill.Uses}" : "—";
             panel.Children.Add(TableRow(Columns(cols,
-                    Tip(T(name, 13, x.Spell is null ? Tok.Text2 : null), x.Verdict), T(x.Skill.Level?.ToString() ?? "—", 12, Tok.Muted, mono: true),
+                    WithIcon(SkillIcon(name), Tip(T(name, 13, x.Spell is null ? Tok.Text2 : null), x.Verdict)), T(x.Skill.Level?.ToString() ?? "—", 12, Tok.Muted, mono: true),
                     T(Fmt.Big(x.Skill.Damage), 12, mono: true), T(Fmt.Pct(x.Skill.Share), 12, Tok.Text, FontWeight.SemiBold, mono: true),
                     T(x.Simulated is { } sim ? Fmt.Pct(sim) : "—", 12, Tok.Muted, mono: true),
                     Tip(T(uses, 12, x.Level <= Severity.Advice ? LevelColor(x.Level) : Tok.Text2, mono: true), x.Verdict),
@@ -2848,7 +2901,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var name = s.CombatSkill ?? cr?.Skills.Where(x => x.Level <= Severity.Advice).Select(x => x.Skill.Name).FirstOrDefault() ?? cr?.Skills.FirstOrDefault()?.Skill.Name;
         if (cr?.Skills.FirstOrDefault(x => x.Skill.Name == name) is { } x)
         {
-            body.Children.Add(T(x.Skill.Name, 17, weight: FontWeight.SemiBold, wrap: true));
+            body.Children.Add(WithIcon(SkillIcon(x.Skill.Name, 32, false), T(x.Skill.Name, 17, weight: FontWeight.SemiBold, wrap: true), 10));
             body.Children.Add(Field("Verdict", x.Verdict, x.Level <= Severity.Advice ? LevelColor(x.Level) : Tok.Text2));
             body.Children.Add(KeyValue(
             [
@@ -2949,7 +3002,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     var top = sim.Casts.Take(7).ToList();
                     var max = Math.Max(1e-9, top.Max(c => c.Damage));
                     foreach (var c in top)
-                        col.Children.Add(ColumnsSpaced("150,*,40,44", 8, T(c.Triggered ? $"{c.Name} (déclenché)" : c.Name, 12, Tok.Text2), RoundBar(c.Damage / max, Accent.Main, 6),
+                        col.Children.Add(ColumnsSpaced("180,*,40,44", 8, WithIcon(SkillIcon(c.Name), T(c.Triggered ? $"{c.Name} (déclenché)" : c.Name, 12, Tok.Text2)), RoundBar(c.Damage / max, Accent.Main, 6),
                             T($"×{c.Casts}", 11, Tok.Muted, mono: true).AlignRight(), T(Fmt.Pct(c.Damage / sim.Damage), 11, Tok.Muted, mono: true).AlignRight()));
                     foreach (var x in sim.Skipped) col.Children.Add(T($"écarté : {x}", 11, Tok.Faint, wrap: true));
                 }
@@ -3005,7 +3058,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 var p = k.Priority.GetValueOrDefault(r.Mode);
                 var differs = Differs(k);
                 box.Children.Add(Tip(ColumnsSpaced("*,60,32,14", 6,
-                    T(k.Name, 12, p >= 0.5 ? Tok.Text : Tok.Muted),
+                    WithIcon(SkillIcon(k.Name), T(k.Name, 12, p >= 0.5 ? Tok.Text : Tok.Muted)),
                     RoundBar(p, p >= 0.85 ? Accent.Main : p >= 0.5 ? Tok.Text2 : Tok.Faint, 4),
                     T($"→ {k.Target.GetValueOrDefault(r.Mode)}", 11, Tok.Muted, mono: true),
                     T(differs ? "≠" : "", 12, Accent.Main, FontWeight.Bold)), $"importance {p:0.00} · {k.Role} — {k.Why}"));
@@ -3036,10 +3089,11 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             for (var i = 0; i < phase.Steps.Count; i++)
             {
                 if (i > 0) chips.Children.Add(T("→", 12, Tok.Muted).WithMargin(4, 2));
+                var icon = SkillIcon(phase.Steps[i], 20, false);
                 var chip = new Border
                 {
                     Background = Tok.Frame, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3),
-                    Padding = new Thickness(7, 2), Margin = new Thickness(0, 2), Child = T(phase.Steps[i], 12),
+                    Padding = new Thickness(icon is null ? 7 : 2, 2, 7, 2), Margin = new Thickness(0, 2), Child = WithIcon(icon, T(phase.Steps[i], 12), 6),
                 };
                 chips.Children.Add(chip);
             }
