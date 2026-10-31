@@ -148,6 +148,13 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    compétences utiles pas encore au maximum : une fois les conseils suivis, la répartition ne bouge plus (« ✓ points bien
    placés »). À importance égale, le sort qui fait le plus de dégâts passe d'abord. Chaque décision est écrite en clair
    (« Monte à 10 : indispensable en JcE, 24 % des dégâts simulés (n° 1). Points pris à … : ils rapportent moins là-bas. »).
+   Compétences → **Macro** : la macro en jeu conseillée (K → Macro). Elle appuie sur des lignes de raccourcis tant que sa
+   touche est tenue ; une ligne empile jusqu'à 4 compétences sur une touche, la plus prioritaire qui est prête part
+   (priorité 0 d'abord), une compétence en recharge est sautée (d'après les guides de joueurs). Les lignes viennent de la
+   rotation du build suivi : dans chacune, ce qui ne part qu'après un autre sort d'abord, puis les recharges par
+   importance, une seule compétence sans recharge en dernier ; les compétences de situation, buffs, mantras, sorts à charger
+   ou à longue recharge (60 s et plus) et l'ouverture restent à la main, chacun avec sa raison. Seuls tes sorts appris et
+   tes stigmas équipés y entrent ; la mise en place (touche, délai de 10 ms, clic gauche tenu) est écrite sur la page.
    L'écran Compétences montre :
    - **Focus dégâts** : la part de chaque sort dans la rotation simulée du build suivi (2 min, une cible), son niveau total
      et d'où il vient (points, cases Daevanion, arcanes, équipement), le prochain moyen de le monter (points jusqu'à 10,

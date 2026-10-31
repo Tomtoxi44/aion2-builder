@@ -43,7 +43,7 @@ public sealed class CombatAnalyzer(GameDatabase db)
     ];
 
     /// <summary>Le rôle du sort pour ta classe s'il en fait un sort de situation ; null sinon.</summary>
-    static string? SituationalRole(ResolvedProfile p, string name) =>
+    internal static string? SituationalRole(ResolvedProfile p, string name) =>
         p.Skill(name)?.Role is { Length: > 0 } role && SituationalRoles.Any(k => role.StartsWith(k, StringComparison.OrdinalIgnoreCase)) ? role : null;
 
     /// <summary>Sort de la classe par nom ; un nom coupé par NotMeter (« Position d'attaque sur... ») se reconnaît par son début.</summary>

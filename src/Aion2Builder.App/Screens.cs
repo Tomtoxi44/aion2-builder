@@ -21,7 +21,7 @@ enum Screen { Import, Home, Stats, Gear, Skills, Build, Combat, Daeva, Pets, Sim
 enum GearPage { Overview, Roadmap, Pieces, Enchant, Stones, Arcana }
 
 /// <summary>Sous-pages de l'écran Compétences.</summary>
-enum SkillPage { Overview, Specs, Moves, Stigmas }
+enum SkillPage { Overview, Specs, Moves, Stigmas, Macro }
 
 /// <summary>Sous-pages de l'écran Build.</summary>
 enum BuildPage { Compare, Rotations, Differences }
@@ -97,7 +97,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     public static readonly (SkillPage Page, string Title)[] SkillPages =
     [
         (SkillPage.Overview, "Vue d'ensemble"), (SkillPage.Specs, "Spécialisations"), (SkillPage.Moves, "Déplacements"),
-        (SkillPage.Stigmas, "Stigmas"),
+        (SkillPage.Stigmas, "Stigmas"), (SkillPage.Macro, "Macro"),
     ];
 
     public static readonly (BuildPage Page, string Title)[] BuildPages =
@@ -910,6 +910,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var equipped = sk.Stigmas.Count(x => x.Slotted);
         Page(Icons.Shield, SkillPage.Stigmas, $"{equipped}/{db.Settings.Stigmas.Slots}", Tok.Text2,
             sk.NextShards.Count > 0 ? $"{Fmt.Plural(sk.NextShards.Count, "palier")} de fragments" : "stigmas au niveau visé");
+        var macro = MacroAdvisor.Plan(db, r);
+        Page(Icons.Play, SkillPage.Macro, macro.Lines.Count > 0 ? $"{macro.Lines.Count}" : "—", Accent.Main,
+            macro.Lines.Count > 0 ? "les lignes et la macro à préparer en jeu" : "pas de rotation connue");
         return new SidePanel("Compétences", null, body);
     }
 
@@ -2301,6 +2304,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 : Card(T("Rien à déplacer : tes points sont bien placés.", 13, Tok.Good), "Déplacements")),
             SkillPage.Stigmas => Page($"Compétences · stigmas ({db.Settings.Stigmas.Slots} emplacements) · {Mode}", null, StigmasBlock(sk)),
             SkillPage.Specs => SpecsPage(),
+            SkillPage.Macro => MacroPage(),
             _ => SkillsOverview(),
         };
     }
@@ -2395,6 +2399,69 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     /// Une carte par compétence active (ce qui fait les dégâts d'abord) : ses 5 spécialisations dans l'ordre du jeu, celles à
     /// équiper numérotées, celle du prochain emplacement marquée « ensuite », les verrouillées avec leur niveau.
     /// </summary>
+    /// <summary>
+    /// Macro en jeu conseillée (<see cref="MacroAdvisor"/>) : les lignes de raccourcis à préparer (priorité 0 à 3 par touche),
+    /// chacune une étape de la macro, comment la mettre en place, ce qui reste à la main et pourquoi.
+    /// </summary>
+    Control MacroPage()
+    {
+        var m = MacroAdvisor.Plan(db, r);
+        var title = $"Compétences · macro en jeu · {Mode}";
+        if (m.Lines.Count == 0)
+            return Page(title, null, T("Pas de rotation connue pour ce build et ce mode : pas de macro à proposer.", 13, Tok.Muted));
+        var badges = Badges(
+            Badge(Fmt.Plural(m.Lines.Count, "ligne"), Accent.Main),
+            m.Manual.Count > 0 ? Badge($"{m.Manual.Count} à la main", Tok.Text2) : null,
+            Tip(Badge("à vérifier en jeu", Tok.Info), "Le fonctionnement des macros vient des guides de joueurs (pas de documentation officielle) : " +
+                                                     "vérifie sur le mannequin d'entraînement avec l'analyse de combat (Ctrl+X)."));
+        var blocks = new List<Control?>
+        {
+            T("La macro appuie pour toi sur des lignes de raccourcis tant que tu tiens sa touche. Une ligne empile jusqu'à 4 compétences sur une touche : " +
+              "à chaque appui, la plus prioritaire qui est prête part (0 d'abord) ; une compétence en recharge est sautée.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4),
+        };
+        if (r.Mode == GameMode.PvP)
+            blocks.Add(T("En JcJ, une macro ne réagit pas à l'adversaire : garde-la pour le farm et les boss, joue tes contrôles et tes défenses à la main.",
+                12, Tok.Warn, wrap: true).WithLineHeight(1.4));
+        const string cols = "70,220,*";
+        for (var i = 0; i < m.Lines.Count; i++)
+        {
+            var line = m.Lines[i];
+            var rows = line.Slots.Select(sl => (Control)new Border
+            {
+                Padding = new Thickness(20, 6),
+                Child = Columns(cols, T($"{sl.Priority}", 13, sl.Priority == 0 ? Accent.Main : Tok.Text2, FontWeight.SemiBold, mono: true),
+                    sl.Detail is { Length: > 0 } detail ? Tip(T(sl.Skill, 13), detail) : T(sl.Skill, 13),
+                    T(sl.Why, 12, Tok.Text2, wrap: true)),
+            });
+            blocks.Add(TableCard($"Ligne {i + 1} · {line.Name}", T($"étape {i + 1} de la macro", 11, Tok.Muted, mono: true),
+                TableHeader(cols, "Priorité", "Compétence", "Pourquoi là"), rows));
+        }
+
+        var setup = new StackPanel { Spacing = 8 };
+        void Step(string n, string text) => setup.Children.Add(ColumnsSpaced("24,*", 8, T(n, 13, Accent.Main, FontWeight.Bold, mono: true),
+            T(text, 13, wrap: true).WithLineHeight(1.45)));
+        Step("1", "Range les compétences de chaque ligne sur une même touche de raccourci, dans l'ordre des priorités ci-dessus (fenêtre des compétences, K).");
+        Step("2", $"K → Macro → ajouter une macro, puis {(m.Lines.Count == 1 ? "la ligne 1" : $"les lignes 1 à {m.Lines.Count}, dans cet ordre")} " +
+                  "(une étape par ligne). Délai : 10 ms, 40 à 50 ms si ton ping dépasse 80 à 100 ms.");
+        Step("3", "Lie une touche à la macro : Réglages → Touches → Général → Jeu → Macro. Elle est vide au départ : sans touche, la macro ne fait rien.");
+        Step("4", "En combat, tiens la touche (la macro s'arrête dès que tu la lâches) et tiens aussi le clic gauche : les attaques de base s'intercalent entre les compétences.");
+        Step("5", "Une compétence lancée à la main passe avant la macro : lance tes buffs et ton burst par-dessus, sans lâcher la touche.");
+        blocks.Add(Card(setup, "Mettre la macro en place"));
+
+        if (m.Manual.Count > 0)
+        {
+            var list = new StackPanel { Spacing = 6 };
+            foreach (var x in m.Manual)
+                list.Children.Add(ColumnsSpaced("220,*", 12, T(x.Skill, 13), T(x.Why, 12, Tok.Text2, wrap: true).WithLineHeight(1.4)));
+            blocks.Add(Card(list, $"À la main · {m.Manual.Count}"));
+        }
+        if (m.Missing.Count > 0)
+            blocks.Add(T($"Hors de ta macro faute de les avoir (pas apprises, ou stigmas pas équipés) : {string.Join(", ", m.Missing)}.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        blocks.Add(T($"D'après les {m.Source}. Dans une ligne : ce qui ne part qu'après un autre sort d'abord, puis les recharges par importance, " +
+                     "et une seule compétence sans recharge, en dernier (toujours prête, elle bloquerait celles d'après).", 11, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        return Page(title, badges, blocks.ToArray());
+    }
+
     Control SpecsPage()
     {
         var plans = Specs;
