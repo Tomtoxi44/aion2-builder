@@ -203,7 +203,9 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    (v0.7.0 ou plus) enregistre tes combats en lisant le trafic du jeu, et l'écran Combat les reprend tout seuls à
    l'ouverture du perso (même nom) : en plus de ce qui suit, tes **lancers chronométrés** (combos ratés d'après les
    conditions de `spells.json`, temps morts de plus de 2,5 s) et les **dégâts subis face aux soins**. Le boss est nommé
-   d'après `bosses.json` (le même fichier que le Pet Meter : « Désir de Kromede » au lieu de « Boss (code 2300371) »). Les combats
+   d'après `bosses.json` (le même fichier que le Pet Meter : « Désir de Kromede » au lieu de « Boss (code 2300371) »).
+   En tête de l'historique, **par boss** : tes essais sur une même cible, ton meilleur DPS, le dernier face à lui et la
+   suite de tes DPS (le plus ancien à gauche), pour voir si tu progresses. Les combats
    enregistrés par NotMeter, eux, sont chiffrés : ils ne se lisent pas. À la place, l'écran lit les captures de sa
    fenêtre « Détails du combat » ([NotMeter](https://notmeter.com), en français) : une capture par écran de la liste
    des compétences, importées ensemble. Le texte est lu sur le PC par la reconnaissance de texte de Windows (rien n'est envoyé). Pour chaque sort :

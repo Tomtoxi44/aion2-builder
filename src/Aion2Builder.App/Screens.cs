@@ -2615,6 +2615,14 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var profile = db.Resolve(r.Character.ClassCode, GameMode.PvE, inputs.UsesDesigned);
         var analyzer = new CombatAnalyzer(db);
         var best = combats.Count > 0 ? combats.Max(x => x.Log.Dps) : 0;
+        // Par boss : tes essais sur une même cible (au moins deux), pour voir si tu progresses d'un essai à l'autre.
+        var byBoss = combats.Select((c, i) => (c.Log, Index: i))
+            .Where(x => x.Log.Target.Length > 0 && x.Log.Target is not ("Monstres" or "Joueur"))
+            .GroupBy(x => x.Log.Target)
+            .Where(g => g.Count() >= 2)
+            .OrderByDescending(g => g.Count()).ThenByDescending(g => g.Max(x => x.Log.ImportedAtUtc))
+            .ToList();
+        if (byBoss.Count > 0) list.Children.Add(BossTrials(byBoss));
         for (var g = 0; g < CombatSessions.Count; g++)
         {
             var session = CombatSessions[g];
@@ -2652,6 +2660,52 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         list.Children.Add(T($"Seuls les boss, le mannequin et le JcJ sont gardés (les {CombatStore.Keep} derniers) ; une séance = même carte et moins de 10 min entre deux combats (un donjon). Clic = le détail.",
             11, Tok.Muted, wrap: true));
         return list;
+    }
+
+    /// <summary>
+    /// Tes essais par boss : nombre, meilleur DPS, dernier face au meilleur, et la suite de tes DPS (le plus ancien à gauche,
+    /// le meilleur en vert, le dernier en couleur) ; survol : chaque essai ; clic : le dernier.
+    /// </summary>
+    Control BossTrials(List<IGrouping<string, (CombatLog Log, int Index)>> groups)
+    {
+        const string cols = "*,56,130,130,150";
+        var rows = new List<Control>();
+        foreach (var g in groups)
+        {
+            var tries = g.OrderBy(x => x.Log.ImportedAtUtc).ToList();
+            var bestTry = tries.MaxBy(x => x.Log.Dps);
+            var lastTry = tries[^1];
+            var gap = bestTry.Log.Dps > 0 ? lastTry.Log.Dps / bestTry.Log.Dps - 1 : 0;
+            var (lastText, lastColor) = lastTry.Index == bestTry.Index ? ($"{Fmt.Big(lastTry.Log.Dps)} · record", Tok.Good)
+                : ($"{Fmt.Big(lastTry.Log.Dps)} ({gap * 100:0} %)", gap >= -0.05 ? Tok.Text2 : Tok.Warn);
+            var tip = $"{g.Key} : {Fmt.Plural(tries.Count, "essai")} parmi tes combats gardés.\n" +
+                      string.Join("\n", tries.Select(x => $"{x.Log.ImportedAtUtc.ToLocalTime():dd/MM HH:mm} · {Duration(x.Log.Duration)} · {Fmt.Big(x.Log.Dps)} DPS" +
+                                                          (x.Index == bestTry.Index ? " (meilleur)" : ""))) +
+                      "\nClic : ton dernier essai.";
+            var index = lastTry.Index;
+            rows.Add(Tip(TableRow(Columns(cols,
+                    T(g.Key, 13), T($"{tries.Count}", 12, Tok.Text2, mono: true),
+                    T($"{Fmt.Big(bestTry.Log.Dps)} · {bestTry.Log.ImportedAtUtc.ToLocalTime():dd/MM}", 12, Accent.Main, FontWeight.SemiBold, mono: true),
+                    T(lastText, 12, lastColor, mono: true),
+                    Spark(tries.Select(x => x.Log.Dps).ToList(), tries.IndexOf(bestTry))),
+                false, () => update(st => { st.CombatIndex = index; st.CombatGroup = null; st.CombatSkill = null; st.CombatList = false; })), tip));
+        }
+        return TableCard($"Par boss · {Fmt.Plural(groups.Count, "cible")}", T("le plus ancien à gauche", 11, Tok.Muted, mono: true),
+            TableHeader(cols, "Boss", "Essais", "Meilleur DPS", "Dernier", "Tes DPS"), rows);
+    }
+
+    /// <summary>Petite suite de barres, une par valeur (la plus ancienne à gauche) : la meilleure en vert, la dernière en couleur.</summary>
+    static Control Spark(List<double> values, int best)
+    {
+        var max = Math.Max(1, values.Max());
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center, Height = 18 };
+        for (var i = 0; i < values.Count; i++)
+            panel.Children.Add(new Border
+            {
+                Width = 6, Height = Math.Max(2, 18 * values[i] / max), VerticalAlignment = VerticalAlignment.Bottom, CornerRadius = new CornerRadius(1),
+                Background = i == best ? Tok.Good : i == values.Count - 1 ? Accent.Main : Tok.Faint,
+            });
+        return panel;
     }
 
     static IBrush LevelColor(Severity level) => level switch { Severity.Critical => Tok.Bad, Severity.Important => Tok.Warn, Severity.Advice => Tok.Info, _ => Tok.Text2 };
