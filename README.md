@@ -197,7 +197,8 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    ta répartition ; l'espèce conseillée est celle dont un familier au niveau 3 sert le plus ta classe (relevée si sa
    famille de stats est en manque), avec les familiers les plus proches du niveau suivant.
 8. **Build conçu.** Pour chaque classe, un second build est construit sans guide ni profil de joueur, à partir des
-   données des sorts au niveau 1 (metabot.gg) : dégâts par seconde = % d'ATQ ÷ temps de recharge (× nombre de cibles),
+   données des sorts au niveau 1 ([metabot.gg](https://metabot.gg/fr_FR/aion-2/skills), avec les spécialisations de
+   chaque sort) : dégâts par seconde = % d'ATQ ÷ temps de recharge (× nombre de cibles),
    pondérés par leurs conditions (cible renversée, ralentie, déséquilibrée, sous dégâts sur la durée…), buffs et
    affaiblissements comptés par leur temps actif (durée ÷ recharge). Il ne remplace que les compétences où le calcul
    diverge des joueurs (`classes.json` → `designed` : priorités, niveaux visés, raison chiffrée), avec sa propre
@@ -209,9 +210,8 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
 9. **Combat (Pet Meter, NotMeter).** Le plus simple : le [Pet Meter](https://github.com/Tomtoxi44/aion2-pet-meter)
    (v0.7.0 ou plus) enregistre tes combats en lisant le trafic du jeu, et l'écran Combat les reprend tout seuls à
    l'ouverture du perso (même nom) : en plus de ce qui suit, tes **lancers chronométrés** (combos ratés d'après les
-   conditions de `spells.json`, temps morts de plus de 2,5 s) et les **dégâts subis face aux soins**. Le boss est nommé
-   d'après `bosses.json` (le même fichier que le Pet Meter : « Désir de Kromede » au lieu de « Boss (code 2300371) »).
-   En tête de l'historique, **par boss** : tes essais sur une même cible, ton meilleur DPS, le dernier face à lui et la
+   conditions de `spells.json`, temps morts de plus de 2,5 s) et les **dégâts subis face aux soins**. Le jeu ne donne
+   qu'un code de créature : un boss s'affiche « Boss (code 2300371) ». En tête de l'historique, **par boss** : tes essais sur une même cible, ton meilleur DPS, le dernier face à lui et la
    suite de tes DPS (le plus ancien à gauche), pour voir si tu progresses. Les combats
    enregistrés par NotMeter, eux, sont chiffrés : ils ne se lisent pas. À la place, l'écran lit les captures de sa
    fenêtre « Détails du combat » ([NotMeter](https://notmeter.com), en français) : une capture par écran de la liste
