@@ -997,6 +997,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var over = x.Cap is { } cap && x.Now > cap * 1.02;
             var missing = x.Target is { } t && x.Now < t - 1e-9;
             var (verdict, color) = over ? ($"en trop : plafond {Show(x.Def, x.Cap!.Value)}", Tok.Warn)
+                : missing && x.Weight < 0.5 ? ("sous la cible, peu utile pour toi", Tok.Muted)
                 : missing ? ($"il manque {Show(x.Def, x.Target!.Value - x.Now)}", x.Weight >= 0.85 ? Tok.Bad : Tok.Warn)
                 : x.Target is not null ? ("✓ à la cible", Tok.Good) : ("pas de cible connue", Tok.Muted);
             return (Control)new Border
