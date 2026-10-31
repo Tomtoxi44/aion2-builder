@@ -163,10 +163,13 @@ public sealed record GearOptionsFile
     /// <summary>Par sorte de pierre (« mana », « âme »), puis par stat : valeur par grade.</summary>
     public Dictionary<string, Dictionary<string, Dictionary<string, double>>> Stones { get; init; } = [];
 
-    /// <summary>Valeur à 100 % de lien d'âme d'une option sur ce type de pièce, au niveau d'objet relevé le plus proche ; null si jamais vue au maximum.</summary>
+    /// <summary>
+    /// Valeur à 100 % de lien d'âme d'une option sur ce type de pièce, au niveau d'objet relevé le plus proche (4 niveaux d'écart
+    /// au plus : les paliers de pièces sont 8 niveaux plus loin) ; null si elle n'a pas été vue au maximum à ce niveau.
+    /// </summary>
     public double? MaxValue(string category, string stat, int itemLevel) =>
         Soul.GetValueOrDefault(category)?.GetValueOrDefault(stat) is { Max.Count: > 0 } o
-            ? o.Max.MinBy(x => Math.Abs(x.Key - itemLevel)).Value : null;
+        && o.Max.MinBy(x => Math.Abs(x.Key - itemLevel)) is var near && Math.Abs(near.Key - itemLevel) <= 4 ? near.Value : null;
 }
 
 /// <param name="Count">Lignes vues chez les joueurs.</param>
