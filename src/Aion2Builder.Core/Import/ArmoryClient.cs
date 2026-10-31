@@ -92,6 +92,15 @@ public sealed class ArmoryClient(HttpClient http) : IDisposable
             .ToList();
     }
 
+    /// <summary>Puissance de combat d'un perso (profil seulement : un appel) ; null si le site ne la donne pas.</summary>
+    public async Task<int?> CombatPower(string region, int serverId, string characterId, CancellationToken ct = default)
+    {
+        var id = Uri.EscapeDataString(Uri.UnescapeDataString(characterId));
+        using var doc = JsonDocument.Parse(await Get($"{Site}/api/character/info?region={Region(region)}&lang={Lang}&characterId={id}&serverId={serverId}", ct));
+        return doc.RootElement.TryGetProperty("profile", out var profile) && profile.TryGetProperty("combatPower", out var cp) && cp.ValueKind == JsonValueKind.Number
+            ? cp.GetInt32() : null;
+    }
+
     /// <summary>Lit tout le build : profil, équipement, fiche de chaque pièce et plateaux Daevanion.</summary>
     public async Task<RawCharacter> FetchRaw(string region, int serverId, string characterId,
         IProgress<string>? progress = null, CancellationToken ct = default)

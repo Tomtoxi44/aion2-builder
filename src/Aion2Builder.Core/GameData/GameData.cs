@@ -119,6 +119,13 @@ public sealed record ClassBenchmark
     /// </summary>
     public List<BenchPlayer> Players { get; init; } = [];
 
+    /// <summary>
+    /// Top de la classe : les joueurs à la plus forte puissance de combat parmi tous ceux trouvés niveau 45 dans la semaine
+    /// (pas seulement l'échantillon), sans nom.
+    /// </summary>
+    public List<BenchPlayer> Top { get; init; } = [];
+    public string TopSource { get; init; } = "";
+
     /// <summary>Joueurs de comparaison : les <paramref name="count"/> au niveau d'objet le plus proche.</summary>
     public List<BenchPlayer> Peers(int itemLevel, int count = 8) =>
         Players.OrderBy(p => Math.Abs(p.ItemLevel - itemLevel)).Take(count).OrderBy(p => p.ItemLevel).ToList();
@@ -133,6 +140,14 @@ public sealed record ClassBenchmark
 /// </summary>
 public sealed record BenchPlayer(int ItemLevel, Dictionary<string, double> Stats, Dictionary<string, double>? PvpStats = null)
 {
+    /// <summary>Puissance de combat (site officiel).</summary>
+    public int? CombatPower { get; init; }
+    /// <summary>Note globale du Builder pour ce joueur, en JcE et en JcJ (même calcul que la tienne) : la qualité de son build.</summary>
+    public int? Score { get; init; }
+    public int? PvpScore { get; init; }
+    /// <summary>Nom : seulement pour un joueur de ta liste (gardée sur ton PC), jamais dans l'échantillon publié.</summary>
+    public string? Name { get; init; }
+
     /// <summary>Le même joueur vu dans un mode : en JcJ, ses stats JcE corrigées de celles qui changent ; null sans relevé JcJ.</summary>
     public BenchPlayer? In(GameMode mode)
     {
@@ -431,6 +446,10 @@ public sealed record SettingsFile
 public sealed record ResolvedProfile(ClassProfile Class, RoleProfile Role, GameMode Mode, ModeProfile Base, IReadOnlyDictionary<string, double> Weights,
     bool UsesDesigned = false)
 {
+    /// <summary>À qui comparer les stats (<see cref="PlayerInputs.Comparison"/>) et ta liste de joueurs de la classe.</summary>
+    public string PeerBasis { get; init; } = "level";
+    public IReadOnlyList<BenchPlayer> MyPeers { get; init; } = [];
+
     public double Weight(string statKey) => Weights.TryGetValue(statKey, out var w) ? w : Base.DefaultWeight;
     public double Target(StatCategory c) => Base.Targets.GetValueOrDefault(c);
 

@@ -318,7 +318,7 @@ public sealed class MainWindow : Window
             combats = combatStore.List(k);
             if (fresh > 0) Toast($"{fresh} combat{(fresh > 1 ? "s" : "")} du Pet Meter", "Écran Combat : lancers, combos, temps morts, dégâts subis.");
         }
-        try { report = new Advisor(db).Analyze(current, prefs.Mode, inputs, pets.Collection, combats.Select(x => x.Log).ToList()); }
+        try { report = new Advisor(db).Analyze(current, prefs.Mode, inputs with { MyPeers = peerStore.For(current.ClassCode) }, pets.Collection, combats.Select(x => x.Log).ToList()); }
         catch (InvalidOperationException ex) { report = null; SetStatus(ex.Message, error: true); state.Screen = Screen.Import; }
         if (report is not null) store.RecordScores(current, prefs.Mode, report.Scores, ProgressPoint.Todos(report.Findings));
         progress = store.Progress(current);
@@ -938,7 +938,8 @@ public sealed class MainWindow : Window
     {
         var views = new ScreenViews(db, r, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key), progress,
             o => Simulator.Run(db, r, inputs, pets.Collection, o),
-            combats, () => _ = ImportCombatAsync(), DeleteCombat, ReloadCombats, () => _ = RefreshAsync());
+            combats, () => _ = ImportCombatAsync(), DeleteCombat, ReloadCombats, () => _ = RefreshAsync(),
+            peerStore.Load(), (name, server) => _ = AddPeerAsync(name, server), RemovePeer);
         var (content, inspector) = views.Build();
         side = views.Side();
         var grid = new Grid { RowDefinitions = new RowDefinitions("36,*") };
@@ -1578,6 +1579,39 @@ public sealed class MainWindow : Window
             await ImportAsync(best.Name, (client, progress) => client.Fetch(db, RegionCode, best.ServerId, best.CharacterId, progress), best.CharacterId);
         else
             await ImportAsync(name, async (client, progress) => (await client.FetchByName(db, RegionCode, name, ServerFilter, progress)).Snapshot);
+    }
+
+    readonly PeerStore peerStore = new();
+
+    /// <summary>Ajoute un joueur à ta liste de comparaison : lu sur le site officiel (région de ton perso), mesuré comme toi.</summary>
+    async Task AddPeerAsync(string name, string server)
+    {
+        if (current is null || string.IsNullOrWhiteSpace(name)) return;
+        var region = current.Region;
+        SetStatus($"Ajout de {name.Trim()} à ta liste…");
+        try
+        {
+            using var client = ArmoryClient.Create();
+            var (snapshot, _) = await client.FetchByName(db, region, name.Trim(), string.IsNullOrWhiteSpace(server) ? null : server.Trim(),
+                new Progress<string>(m => SetStatus(m)));
+            var (player, _) = await Task.Run(() => PeerMeasure.Measure(db, snapshot));
+            peerStore.Put(new SavedPeer(snapshot.Name, snapshot.ServerName, region, snapshot.ServerId, snapshot.CharacterId, snapshot.ClassCode, DateTime.UtcNow, player));
+            SetStatus($"{snapshot.Name} ajouté à ta liste");
+            Toast($"{snapshot.Name} ajouté à ta liste", $"{db.FindClass(snapshot.ClassCode)?.Name} · niveau d'objet {snapshot.ItemLevel}" +
+                  (snapshot.ClassCode == current.ClassCode ? "" : " : une autre classe, il servira pour tes persos de cette classe"));
+            Recompute();
+        }
+        catch (ArmoryException ex)
+        {
+            SetStatus(ex.Message, error: true);
+            Toast($"Ajout de {name.Trim()} impossible", ex.Message, error: true);
+        }
+    }
+
+    void RemovePeer(string characterId)
+    {
+        peerStore.Remove(characterId);
+        Recompute();
     }
 
     async Task RefreshAsync()

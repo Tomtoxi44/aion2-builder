@@ -23,7 +23,10 @@ static class BenchCommand
     // Un import à la fois et une pause entre deux : on reste raisonnable avec le site officiel.
     static readonly TimeSpan Pause = TimeSpan.FromSeconds(1);
 
-    sealed record Measured(int ItemLevel, int CombatPower, int DaevanionNodes, Dictionary<string, double> Stats, Dictionary<string, double> PvpStats);
+    sealed record Measured(BenchPlayer Player, int DaevanionNodes);
+    /// <summary>Top de la classe : les plus fortes puissances de combat parmi tous les joueurs trouvés, mesurés en entier.</summary>
+    const int TopCount = 8;
+    static readonly TimeSpan ShortPause = TimeSpan.FromMilliseconds(300);
 
     /// <summary>
     /// Options d'âme et pierres vues sur les pièces de tous les joueurs relevés (gear-options.json) : par type de pièce, les
@@ -95,13 +98,13 @@ static class BenchCommand
         foreach (var c in db.Classes)
         {
             if (only is not null && db.FindClass(only) != c) { classes.Add((c.Code, c.Benchmark)); continue; }
-            var (players, found, skipped, error) = await Sample(client, db, advisor, gear, cli.Region, c.Code, count);
+            var (players, top, found, skipped, error) = await Sample(client, db, gear, cli.Region, c.Code, count);
             // Trop peu de joueurs (site en maintenance, adresse changée) : on garde l'échantillon précédent de la classe.
             var keep = players.Count < Math.Max(6, count / 2);
             Console.WriteLine($"{c.Name} : {players.Count} joueurs relevés sur {found} trouvés, {skipped} écartés" +
                               (keep ? " — trop peu, l'échantillon précédent est gardé" : "") + (error is null ? "" : $" (dernière erreur : {error})"));
             if (keep) { classes.Add((c.Code, c.Benchmark)); continue; }
-            classes.Add((c.Code, Build(c, players, cli.Region, today)));
+            classes.Add((c.Code, Build(c, players, top.Count >= 3 ? top : c.Benchmark?.Top ?? [], found, cli.Region, today)));
             refreshed++;
         }
         if (refreshed == 0)
@@ -134,8 +137,8 @@ static class BenchCommand
         return 0;
     }
 
-    static async Task<(List<Measured> Players, int Found, int Skipped, string? Error)> Sample(
-        ArmoryClient client, GameDatabase db, Advisor advisor, GearCollector gear, string region, string classCode, int count)
+    static async Task<(List<Measured> Players, List<BenchPlayer> Top, int Found, int Skipped, string? Error)> Sample(
+        ArmoryClient client, GameDatabase db, GearCollector gear, string region, string classCode, int count)
     {
         string? error = null;
         var hits = new List<SearchHit>();
@@ -153,6 +156,7 @@ static class BenchCommand
             .ToList();
 
         var players = new List<Measured>();
+        var measured = new Dictionary<string, BenchPlayer>();
         var skipped = 0;
         foreach (var hit in candidates)
         {
@@ -164,7 +168,9 @@ static class BenchCommand
                 if (s.Level != Level || s.Equipment.Count(i => i.HasDetail) < 10) skipped++;
                 else
                 {
-                    players.Add(Measure(db, advisor.Analyze(s, GameMode.PvE)));
+                    var (player, nodes) = PeerMeasure.Measure(db, s);
+                    players.Add(new Measured(player, nodes));
+                    measured[Uri.UnescapeDataString(hit.CharacterId)] = player;
                     gear.Add(s);
                 }
             }
@@ -175,38 +181,49 @@ static class BenchCommand
             }
             await Task.Delay(Pause);
         }
-        return (players, candidates.Count, skipped, error);
+        // Top de la classe : la puissance de combat de chaque joueur trouvé (un appel léger chacun), puis les plus forts en entier.
+        var powers = new List<(SearchHit Hit, int Power)>();
+        foreach (var hit in candidates)
+        {
+            try { if (await client.CombatPower(region, hit.ServerId, hit.CharacterId) is { } cp) powers.Add((hit, cp)); }
+            catch (ArmoryException ex) { error = ex.Message; }
+            await Task.Delay(ShortPause);
+        }
+        var top = new List<BenchPlayer>();
+        foreach (var (hit, _) in powers.OrderByDescending(x => x.Power))
+        {
+            if (top.Count >= TopCount) break;
+            if (measured.TryGetValue(Uri.UnescapeDataString(hit.CharacterId), out var known)) { top.Add(known); continue; }
+            try
+            {
+                var s = await client.Fetch(db, region, hit.ServerId, hit.CharacterId);
+                if (s.Level == Level && s.Equipment.Count(i => i.HasDetail) >= 10) top.Add(PeerMeasure.Measure(db, s).Player);
+            }
+            catch (Exception ex) when (ex is ArmoryException or InvalidDataException or JsonException or KeyNotFoundException or InvalidOperationException)
+            {
+                error = ex.Message;
+            }
+            await Task.Delay(Pause);
+        }
+        return (players, top, candidates.Count, skipped, error);
     }
 
-    /// <summary>
-    /// Ce que l'appli compare : niveau d'objet, puissance, cases Daevanion et stats totales (le % pour une stat en %) en JcE, et
-    /// en JcJ les seules stats qui changent (même calcul, effets réservés à chaque mode).
-    /// </summary>
-    static Measured Measure(GameDatabase db, AdviceReport r)
+    static ClassBenchmark Build(ClassProfile c, List<Measured> measured, List<BenchPlayer> top, int found, string region, DateTime date)
     {
-        static Dictionary<string, double> Totals(StatProfile sp) => sp.Stats.Where(x => Math.Abs(x.BenchValue) >= 0.05)
-            .OrderBy(x => x.Def.Key, StringComparer.Ordinal).ToDictionary(x => x.Def.Key, x => Math.Round(x.BenchValue, 1));
-        var pve = Totals(r.Stats);
-        var pvp = Totals(new StatAnalyzer(db).Profile(r.Character, db.Resolve(r.Character.ClassCode, GameMode.PvP)));
-        var changed = pve.Keys.Union(pvp.Keys).Where(k => Math.Abs(pve.GetValueOrDefault(k) - pvp.GetValueOrDefault(k)) > 1e-9)
-            .OrderBy(k => k, StringComparer.Ordinal).ToDictionary(k => k, k => pvp.GetValueOrDefault(k));
-        return new(r.Character.ItemLevel, r.Character.CombatPower,
-            r.Daevanion.Boards.Where(b => b.Pool == DaevanionPlanner.NormalPool).Sum(b => b.Board.OpenNodes), pve, changed);
-    }
-
-    static ClassBenchmark Build(ClassProfile c, List<Measured> players, string region, DateTime date)
-    {
-        var rows = players.OrderBy(p => p.ItemLevel).ToList();
-        var keys = rows.SelectMany(p => p.Stats.Keys).Distinct().OrderBy(k => k, StringComparer.Ordinal);
+        var rows = measured.OrderBy(p => p.Player.ItemLevel).ToList();
+        var keys = rows.SelectMany(p => p.Player.Stats.Keys).Distinct().OrderBy(k => k, StringComparer.Ordinal);
         return new ClassBenchmark
         {
             Source = $"{rows.Count} {c.Name}s niveau {Level} des serveurs {region.ToUpperInvariant()}, trouvés par la recherche du site officiel " +
                      $"et relevés le {date:dd/MM/yyyy} (mis à jour chaque semaine)",
-            ItemLevel = rows.Select(p => p.ItemLevel).Order().ToList(),
-            CombatPower = rows.Select(p => p.CombatPower).Order().ToList(),
+            ItemLevel = rows.Select(p => p.Player.ItemLevel).Order().ToList(),
+            CombatPower = rows.Select(p => p.Player.CombatPower ?? 0).Order().ToList(),
             DaevanionNodes = rows.Select(p => p.DaevanionNodes).Order().ToList(),
-            Stats = keys.ToDictionary(k => k, k => rows.Select(p => p.Stats.GetValueOrDefault(k)).Order().ToList()),
-            Players = rows.Select(p => new BenchPlayer(p.ItemLevel, p.Stats, p.PvpStats)).ToList(),
+            Stats = keys.ToDictionary(k => k, k => rows.Select(p => p.Player.Stats.GetValueOrDefault(k)).Order().ToList()),
+            Players = rows.Select(p => p.Player).ToList(),
+            Top = top.OrderByDescending(p => p.CombatPower).ToList(),
+            TopSource = top.Count == 0 ? "" : $"les {top.Count} {c.Name}s à la plus forte puissance de combat ({top.Min(p => p.CombatPower):N0} à {top.Max(p => p.CombatPower):N0}) " +
+                                              $"parmi les {found} niveau {Level} trouvés le {date:dd/MM/yyyy}",
         };
     }
 }

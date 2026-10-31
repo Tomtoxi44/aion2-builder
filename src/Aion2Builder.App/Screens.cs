@@ -78,7 +78,8 @@ sealed class UiState
 sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, UiState s,
     Action<Action<UiState>> update, Action<PlayerInputs> onInputs, string? petKeyHint, Action<string?> onPets,
     IReadOnlyList<ProgressPoint> progress, Func<SimulationOptions, AdviceReport> simulate,
-    IReadOnlyList<(string Path, CombatLog Log)> combats, Action importCombat, Action<string> deleteCombat, Action reloadCombats, Action refresh)
+    IReadOnlyList<(string Path, CombatLog Log)> combats, Action importCombat, Action<string> deleteCombat, Action reloadCombats, Action refresh,
+    IReadOnlyList<SavedPeer> savedPeers, Action<string, string> addPeer, Action<string> removePeer)
 {
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
@@ -1753,14 +1754,14 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         {
             case < 0:
                 return x.Weight >= 0.6
-                    ? ("En dessous de la moyenne des joueurs de ton niveau d'objet : à monter.", Tok.Bad)
+                    ? ("En dessous de la moyenne des joueurs comparés : à monter.", Tok.Bad)
                     : ($"En dessous de la moyenne des joueurs, mais {importance} pour ta classe : pas prioritaire.", Tok.Text2);
             case 0:
-                return ("Dans la moyenne des joueurs de ton niveau d'objet : rien à faire.", Tok.Good);
+                return ("Dans la moyenne des joueurs comparés : rien à faire.", Tok.Good);
             case > 0:
                 return x.Weight < 0.5
                     ? ($"Au-dessus de la moyenne des joueurs et {importance} pour ta classe : de la place à reprendre.", Tok.Warn)
-                    : ("Au-dessus de la moyenne des joueurs de ton niveau d'objet : rien à faire.", Tok.Good);
+                    : ("Au-dessus de la moyenne des joueurs comparés : rien à faire.", Tok.Good);
         }
         if (x.ExpectedShare - x.Share > 0.02)
             return ($"Il te manque environ {Pts(x.ExpectedShare - x.Share)} points de part : à augmenter.", Tok.Bad);
@@ -2037,13 +2038,82 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             ? $"{who[0].ToString().ToUpperInvariant()}{who[1..]}, stats totales calculées comme les tiennes. « Dans la moyenne » : à 3 % près."
             : $"pas d'échantillon de joueurs en {GameDatabase.ModeName(r.Mode)} pour ta classe à ton niveau.");
 
-        var blocks = new List<Control?> { Expander("Comment lire cette page", IsOpen("stats:how"), () => Toggle("stats:how"), () => Card(how, null)) };
+        var blocks = new List<Control?> { Expander("Comment lire cette page", IsOpen("stats:how"), () => Toggle("stats:how"), () => Card(how, null)), ComparedPlayers() };
         blocks.AddRange(cmp.Families.Where(f => f.Stats.Count > 0 || Math.Abs(f.Share.Gap) > tolerance).Select(f => FamilyCard(f, cmp, cmp.Families)));
         blocks.Add(DivineCard());
         blocks.Add(Clickable(T(s.AllStats ? "▴ masquer le tableau de toutes les stats" : "▾ toutes les stats en tableau (part, part visée, poids)", 12, Accent.Main),
             () => update(st => st.AllStats = !st.AllStats), hover: Tok.Hover, padding: new Thickness(4, 6)));
         if (s.AllStats) blocks.Add(AllStatsTable());
         return Page($"Stats · {Mode}", badges, blocks.ToArray());
+    }
+
+    /// <summary>
+    /// « Comparé à » : le choix des joueurs de comparaison (ton niveau par défaut : rien à régler), la liste des joueurs comparés
+    /// (sans nom, sauf ceux de ta liste), et ta liste à toi : ajouter un joueur par nom et serveur, en retirer.
+    /// </summary>
+    Control ComparedPlayers()
+    {
+        var basis = StatAnalyzer.Basis(r.Profile);
+        var mine = savedPeers.Where(x => x.ClassCode == r.Character.ClassCode).ToList();
+        var bench = r.Profile.Class.Benchmark;
+        void Set(string value) => onInputs(inputs with { Comparison = value });
+        var choice = Choice([
+            ("ton niveau", inputs.Comparison is not ("best" or "top" or "mine"), () => Set("level")),
+            ("les mieux bâtis", inputs.Comparison == "best", () => Set("best")),
+            ("top de la classe", inputs.Comparison == "top", () => Set("top")),
+            ($"ma liste ({mine.Count})", inputs.Comparison == "mine", () => Set("mine")),
+        ]);
+        var head = ColumnsSpaced("110,*", 12, T("Comparé à", 13, weight: FontWeight.Medium), choice);
+        var note = inputs.Comparison != basis && inputs.Comparison != "level"
+            ? T(inputs.Comparison == "mine" ? $"Ta liste n'a pas encore de {r.Profile.Class.Name} : comparaison aux joueurs de ton niveau en attendant."
+                : inputs.Comparison == "top" ? "Pas encore de top pour cette classe (il arrive avec le relevé du jeudi) : comparaison aux joueurs de ton niveau."
+                : "Pas assez de joueurs notés pour cette classe : comparaison aux joueurs de ton niveau.", 12, Tok.Warn, wrap: true)
+            : null;
+        return Expander($"Joueurs comparés · {Peers?.Count ?? 0}", IsOpen("stats:peers"), () => Toggle("stats:peers"), () =>
+        {
+            var panel = new StackPanel { Spacing = 10 };
+            panel.Children.Add(head);
+            if (note is not null) panel.Children.Add(note);
+            panel.Children.Add(T(basis switch
+            {
+                "best" => "Les mieux bâtis : parmi les 16 joueurs de ta classe au niveau d'objet le plus proche du tien, les 8 dont le build a la meilleure note du Builder (même calcul que ta note).",
+                "top" => $"Top de la classe : {bench?.TopSource}. Leur niveau d'objet peut être bien au-dessus du tien : un objectif, pas une comparaison à équipement égal.",
+                "mine" => "Ta liste : les joueurs que tu as ajoutés, gardés sur ton PC seulement.",
+                _ => "Les joueurs de ta classe au niveau d'objet le plus proche du tien, relevés chaque semaine au hasard de la recherche du site officiel : des builds ordinaires, pas forcément optimisés.",
+            }, 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+            if (Peers is { Count: > 0 } peers)
+            {
+                const string cols = "*,110,120,110";
+                var rows = peers.Select((x, i) => (Control)new Border
+                {
+                    Padding = new Thickness(20, 4),
+                    Child = Columns(cols, T(x.Name ?? $"Joueur {i + 1}", 13, x.Name is null ? Tok.Text2 : Tok.Text),
+                        T(Fmt.Big(x.ItemLevel), 12, Tok.Text2, mono: true), T(x.CombatPower is { } cp ? Fmt.Big(cp) : "—", 12, Tok.Text2, mono: true),
+                        T((r.Mode == GameMode.PvP ? x.PvpScore : x.Score) is { } sc ? $"{sc}" : "—", 12, Tok.Text2, mono: true)),
+                });
+                panel.Children.Add(TableCard("Les joueurs de la comparaison", T("sans nom, sauf ta liste", 11, Tok.Muted, mono: true),
+                    TableHeader(cols, "Joueur", "Niv. d'objet", "Puissance", "Note Builder"), rows));
+            }
+
+            // Ta liste : ajouter par nom et serveur (région de ton perso), retirer.
+            var name = new TextBox { Watermark = "nom du perso", Width = 170, FontSize = 12 };
+            var server = new TextBox { Watermark = "serveur (facultatif)", Width = 150, FontSize = 12 };
+            var add = Clickable(T("+ ajouter à ma liste", 12, Accent.Main, FontWeight.SemiBold, mono: true), () => addPeer(name.Text ?? "", server.Text ?? ""),
+                hover: Tok.HoverStrong, padding: new Thickness(8, 4));
+            panel.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { T("Ma liste", 13, weight: FontWeight.Medium).WithMargin(0, 4, 18, 0), name, server, add } });
+            if (savedPeers.Count > 0)
+                foreach (var x in savedPeers.OrderBy(x => x.ClassCode != r.Character.ClassCode).ThenBy(x => x.Name))
+                {
+                    var id = x.CharacterId;
+                    panel.Children.Add(ColumnsSpaced("*,Auto", 8,
+                        T($"{x.Name} · {x.ServerName} · {db.FindClass(x.ClassCode)?.Name} · niv. d'objet {Fmt.Big(x.Player.ItemLevel)} · relevé le {x.FetchedAtUtc.ToLocalTime():dd/MM}",
+                            12, x.ClassCode == r.Character.ClassCode ? Tok.Text2 : Tok.Muted),
+                        Clickable(T("retirer", 11, Tok.Bad, mono: true), () => removePeer(id), hover: Tok.HoverStrong, padding: new Thickness(6, 0))));
+                }
+            else panel.Children.Add(T("Ta liste est vide : ajoute des joueurs que tu sais bien équipés (guilde, joueurs connus). Ils ne servent que si tu choisis « ma liste ».",
+                12, Tok.Muted, wrap: true));
+            return Card(panel, null);
+        });
     }
 
     /// <summary>Toutes les stats en tableau (part, part visée, poids), pour qui veut le détail.</summary>
@@ -2129,7 +2199,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             Child = T(verdict, 13, wrap: true).WithLineHeight(1.5),
         });
         if (PlayersSample(x) is { } sample)
-            body.Children.Add(Field("Face aux joueurs de ton niveau d'objet",
+            body.Children.Add(Field("Face aux joueurs comparés",
                 $"Toi : {StatValue(x, x.BenchValue)} · moyenne : {StatValue(x, sample.Average())} · de {StatValue(x, sample.Min())} à {StatValue(x, sample.Max())}. " +
                 $"{new StatVsPlayers(x, sample).Verdict switch { > 0 => "Au-dessus de la moyenne", < 0 => "En dessous de la moyenne", _ => "Dans la moyenne" }} ; " +
                 $"tu en as plus que {StatAnalyzer.Ahead(Peers!, x)} sur {sample.Count}. " +

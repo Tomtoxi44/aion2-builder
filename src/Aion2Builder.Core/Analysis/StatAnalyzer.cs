@@ -188,10 +188,31 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
     /// </summary>
     public static List<BenchPlayer>? Peers(ResolvedProfile p, CharacterSnapshot c)
     {
-        if (c.Level < 45 || p.Class.Benchmark is not { Players.Count: >= 6 } bench) return null;
-        var peers = bench.Peers(c.ItemLevel).Select(x => x.In(p.Mode)).ToList();
+        if (c.Level < 45) return null;
+        var bench = p.Class.Benchmark;
+        // Selon ton choix : ta liste, le top de la classe, les mieux bâtis de ton niveau (note du Builder, dans le mode de la vue),
+        // sinon (et par défaut) les joueurs de ton niveau d'objet.
+        var pool = p.PeerBasis switch
+        {
+            "mine" when p.MyPeers.Count > 0 => p.MyPeers.ToList(),
+            "top" when bench is { Top.Count: >= 3 } => bench.Top,
+            "best" when bench is { Players.Count: >= 12 } => bench.Players.OrderBy(x => Math.Abs(x.ItemLevel - c.ItemLevel)).Take(16)
+                .OrderByDescending(x => (p.Mode == GameMode.PvP ? x.PvpScore : x.Score) ?? 0).Take(8).OrderBy(x => x.ItemLevel).ToList(),
+            _ => bench is { Players.Count: >= 6 } ? bench.Peers(c.ItemLevel) : null,
+        };
+        if (pool is null) return null;
+        var peers = pool.Select(x => x.In(p.Mode)).ToList();
         return peers.All(x => x is not null) ? peers.Select(x => x!).ToList() : null;
     }
+
+    /// <summary>La base de comparaison réellement utilisée (ta liste vide ou un top absent retombent sur ton niveau).</summary>
+    public static string Basis(ResolvedProfile p) => p.PeerBasis switch
+    {
+        "mine" when p.MyPeers.Count > 0 => "mine",
+        "top" when p.Class.Benchmark is { Top.Count: >= 3 } => "top",
+        "best" when p.Class.Benchmark is { Players.Count: >= 12 } => "best",
+        _ => "level",
+    };
 
     /// <summary>Nombre de ces joueurs sous ta valeur de la stat.</summary>
     public static int Ahead(List<BenchPlayer> peers, StatTotal x) => peers.Count(o => o.Stats.GetValueOrDefault(x.Def.Key) < x.BenchValue - 1e-9);
@@ -201,8 +222,17 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
         (Ahead(peers, x) + 0.5 * peers.Count(o => Math.Abs(o.Stats.GetValueOrDefault(x.Def.Key) - x.BenchValue) <= 1e-9)) / Math.Max(1, peers.Count);
 
     /// <summary>« les 8 Templiers niveau 45 au niveau d'objet le plus proche du tien (1860 à 2631 ; toi 2182) ».</summary>
-    public static string PeersText(ResolvedProfile p, CharacterSnapshot c, List<BenchPlayer> peers) =>
-        $"les {peers.Count} {p.Class.Name}s niveau 45 au niveau d'objet le plus proche du tien ({peers.Min(o => o.ItemLevel)} à {peers.Max(o => o.ItemLevel)} ; toi {c.ItemLevel})";
+    public static string PeersText(ResolvedProfile p, CharacterSnapshot c, List<BenchPlayer> peers)
+    {
+        var range = $"{peers.Min(o => o.ItemLevel)} à {peers.Max(o => o.ItemLevel)} ; toi {c.ItemLevel}";
+        return Basis(p) switch
+        {
+            "mine" => $"les {peers.Count} joueurs de ta liste (niveau d'objet {range})",
+            "top" => $"le top {p.Class.Name} : les {peers.Count} plus fortes puissances de combat trouvées cette semaine (niveau d'objet {range})",
+            "best" => $"les {peers.Count} {p.Class.Name}s les mieux bâtis (note du Builder) parmi les 16 de ton niveau d'objet ({range})",
+            _ => $"les {peers.Count} {p.Class.Name}s niveau 45 au niveau d'objet le plus proche du tien ({range})",
+        };
+    }
 
     /// <summary>Où ce personnage peut encore trouver chaque stat : cases Daevanion fermées, stats secondaires de ses pièces, titres.</summary>
     sealed class Availability

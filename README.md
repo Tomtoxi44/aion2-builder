@@ -257,7 +257,12 @@ la raison affichée ; les entrées « à valider » ne sont pas documentées par
 classe servent aussi de repère (`benchmark.json`, sans nom ni serveur : niveau d'objet, puissance, cases Daevanion
 ouvertes, et leurs totaux par stat calculés par le Builder, comme les tiens, en JcE et en JcJ). Ils sont relevés à nouveau chaque
 jeudi par le workflow « Joueurs de comparaison » (commande `bench` : recherche du site officiel, un import à la fois),
-qui publie ensuite la version du Builder qui les embarque. Ils servent à situer un personnage dans sa classe : colonne « vs joueurs » de l'écran
+qui publie ensuite la version du Builder qui les embarque. Chaque joueur relevé reçoit aussi la note globale du Builder en
+JcE et en JcJ (la qualité de son build, même calcul que la tienne), et chaque classe a son **top** : les 8 plus fortes
+puissances de combat parmi les ~300 joueurs niveau 45 trouvés dans la semaine. Écran Stats → « Joueurs comparés » (replié) :
+**comparé à** ton niveau (par défaut, rien à régler), aux mieux bâtis de ton niveau (les 8 meilleures notes parmi les 16
+plus proches), au top de la classe, ou à **ta liste** (joueurs ajoutés par nom et serveur, gardés sur ton PC dans
+`comparison.json`, jamais publiés) ; la liste des joueurs comparés (niveau d'objet, puissance, note), sans nom sauf ta liste. Ils servent à situer un personnage dans sa classe : colonne « vs joueurs » de l'écran
 Stats (part des joueurs que tu dépasses), médiane et quartiles dans l'inspecteur, conseil quand une stat importante est
 sous 75 % des joueurs. Le Rôdeur n'a pas de guide JcJ : ses priorités JcJ sont déduites des effets
 des sorts. Deux compétences de l'Aède s'appellent « Coup fracassant » (attaque de base et stigma) : le type les départage.

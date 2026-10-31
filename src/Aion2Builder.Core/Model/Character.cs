@@ -124,6 +124,14 @@ public sealed record PlayerInputs
     [System.Text.Json.Serialization.JsonIgnore] public bool UsesDesigned => Build == "designed";
 
     /// <summary>
+    /// À qui comparer tes stats : « level » (les joueurs de ton niveau d'objet, par défaut), « best » (les mieux bâtis de ton
+    /// niveau, d'après la note du Builder), « top » (le top de la classe), « mine » (ta liste).
+    /// </summary>
+    public string Comparison { get; init; } = "level";
+    /// <summary>Ta liste de joueurs de la classe : relue par l'appli (comparison.json), pas enregistrée avec tes réglages.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public List<GameData.BenchPlayer> MyPeers { get; init; } = [];
+
+    /// <summary>
     /// Conseils cochés « fait » (par titre), valables pour l'import <see cref="DoneFor"/> : au prochain import,
     /// le site dit lui-même ce qui a été fait, et la liste repart de zéro.
     /// </summary>
