@@ -175,6 +175,8 @@ static class Ui
     /// Compteur « − N + » : clic ±1, Maj+clic ±10, molette ±1 (Maj : ±10) ; clic sur le nombre pour le taper (Entrée ou clic
     /// ailleurs valide, Échap annule). Chaque changement appelle <paramref name="onChange"/> tout de suite.
     /// </summary>
+    const string AzertyDigits = "&é\"'(-è_çà";
+
     public static Border Stepper(int value, Action<int> onChange, IBrush? background = null)
     {
         void Change(int v)
@@ -215,7 +217,10 @@ static class Ui
             {
                 if (done) return;
                 done = true;
-                if (apply && int.TryParse(box.Text?.Trim(), out var typed) && Math.Max(0, typed) != value) onChange(Math.Max(0, typed));
+                // Clavier AZERTY : les touches du haut sans Maj (& é " ' ( - è _ ç à) valent 1 à 0 ; le reste est ignoré.
+                var digits = new string((box.Text ?? "").Select(ch => AzertyDigits.IndexOf(ch) is var i and >= 0 ? (char)('0' + (i + 1) % 10) : ch)
+                    .Where(char.IsAsciiDigit).ToArray());
+                if (apply && int.TryParse(digits, out var typed) && typed != value) onChange(typed);
                 else number.Child = T(value.ToString(), 12, Tok.Text, FontWeight.SemiBold, mono: true).Centered();
             }
             box.KeyDown += (_, k) =>
