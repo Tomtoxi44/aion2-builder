@@ -189,6 +189,15 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    celles possibles sur ce type de pièce (`progression.json` → `engraving`, complété par celles vues sur tes pièces),
    classées par importance et relevées si leur famille de stats est en manque. Les pierres comptent dans ta répartition
    de stats. Écran Équipement : code **G** sur une pièce à revoir, tableau des gravures sous la silhouette.
+   **Optimisation des stats** (bouton « ⚡ Optimiser mes stats » d'Équipement, page Optimisation) : le perso est relu sur
+   le site officiel, puis toutes les pièces sont réglées ensemble. Chaque stat vaut son poids pour ta classe jusqu'à sa
+   cible (prochaine valeur des guides de la classe, au moins la moyenne des joueurs de ton niveau d'objet), à 35 % au-delà,
+   et plus rien au-delà de son plafond ; chaque échange possible (option d'âme d'une pièce gardée sous 100 % de lien,
+   pierre, emplacement libre) est essayé, le plus rentable retenu, les totaux refaits, et ainsi de suite : une stat qui
+   atteint sa cible n'est plus visée ailleurs (pas de CRIT partout), ce qui dépasse un plafond est rendu. Pièce par pièce :
+   chaque ligne à garder ou à changer, la stat visée et sa valeur attendue, d'autres choix acceptables (une
+   synchronisation tombe au hasard), pourquoi ; les compétences à un niveau d'une spécialisation (une option « +1 » les
+   débloquerait) ; un tuto du lien d'âme et des pierres d'après les guides.
 7. **Familiers.** Chaque familier obtenu donne des stats selon son espèce et son niveau 1 à 3 (« effets de possession »,
    `progression.json` → `pets`, valeurs communautaires) : Cogni = PV, CRIT ; Fera = Précision ; Natura = RÉS aux CRIT ;
    Varian = Esquive (+ une stat principale au niveau 3, déjà dans les totaux du site officiel, donc pas recomptée). La

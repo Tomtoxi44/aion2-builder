@@ -18,7 +18,7 @@ namespace Aion2Builder.App;
 enum Screen { Import, Home, Stats, Gear, Skills, Build, Combat, Daeva, Pets, Simulate, Progress, Details }
 
 /// <summary>Sous-pages de l'écran Équipement (sous-menu du rail).</summary>
-enum GearPage { Overview, Roadmap, Pieces, Enchant, Stones, Arcana }
+enum GearPage { Overview, Roadmap, Pieces, Enchant, Stones, Arcana, Optimize }
 
 /// <summary>Sous-pages de l'écran Compétences.</summary>
 enum SkillPage { Overview, Specs, Moves, Stigmas, Macro }
@@ -78,7 +78,7 @@ sealed class UiState
 sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, UiState s,
     Action<Action<UiState>> update, Action<PlayerInputs> onInputs, string? petKeyHint, Action<string?> onPets,
     IReadOnlyList<ProgressPoint> progress, Func<SimulationOptions, AdviceReport> simulate,
-    IReadOnlyList<(string Path, CombatLog Log)> combats, Action importCombat, Action<string> deleteCombat, Action reloadCombats)
+    IReadOnlyList<(string Path, CombatLog Log)> combats, Action importCombat, Action<string> deleteCombat, Action reloadCombats, Action refresh)
 {
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
@@ -92,6 +92,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     [
         (GearPage.Overview, "Vue d'ensemble", "Vue"), (GearPage.Roadmap, "Feuille de route", "Route"), (GearPage.Pieces, "Pièces et sources", "Pièces"),
         (GearPage.Enchant, "Enchantement", "Enchant."), (GearPage.Stones, "Pierres et gravures", "Pierres"), (GearPage.Arcana, "Arcanes", "Arcanes"),
+        (GearPage.Optimize, "Optimisation des stats", "Optim."),
     ];
 
     public static readonly (SkillPage Page, string Title)[] SkillPages =
@@ -786,6 +787,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         GearPage.Enchant => GearEnchantPage(),
         GearPage.Stones => GearStonesPage(),
         GearPage.Arcana => GearArcanaPage(),
+        GearPage.Optimize => GearOptimizePage(),
         _ => GearOverview(),
     };
 
@@ -814,6 +816,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var lost = r.Skills.GearBonuses.Count(b => b.Arcana && !b.Useful);
         Page(Icons.Card, GearPage.Arcana, lost > 0 ? $"{lost}" : $"{cards.Count(a => a.Item is not null)}/{cards.Count}", lost > 0 ? Tok.Warn : Tok.Text2,
             WeakestArcana is { } low ? $"d'abord : {low.Kind.ToLowerInvariant()}{(low.Item is { } i ? $" ({db.Grade(i.Grade).Name.Split(' ')[0].ToLowerInvariant()})" : " (vide)")}" : "cartes de Transcendance");
+        var optim = Optimization.Items.Sum(i => i.Changes);
+        Page(Icons.Star, GearPage.Optimize, optim > 0 ? $"{optim}" : "✓", optim > 0 ? Tok.Warn : Tok.Good, "les bonnes stats, pièce par pièce");
         return new SidePanel("Équipement", null, body);
     }
 
@@ -942,7 +946,147 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     }
 
     /// <summary>Vue d'ensemble : la silhouette, puis les trois actions les plus rentables (les sous-pages sont dans la barre secondaire).</summary>
-    Control GearOverview() => Page($"Équipement · {Mode}", GearBadges(), Doll(), TodoCards(Area.Gear, Area.Enchant));
+    Control GearOverview() => Page($"Équipement · {Mode}", GearBadges(), OptimizeButton(), Doll(), TodoCards(Area.Gear, Area.Enchant));
+
+    OptimizationPlan? optimization;
+    /// <summary>Optimisation des stats de l'équipement (calculée une fois par affichage).</summary>
+    OptimizationPlan Optimization => optimization ??= new StatOptimizer(db).Plan(r);
+
+    /// <summary>« Optimiser mes stats » : relit le perso sur le site officiel, puis ouvre la page d'optimisation.</summary>
+    Control OptimizeButton()
+    {
+        var button = Clickable(T("⚡ Optimiser mes stats", 13, Tok.OnAccent, FontWeight.SemiBold), () =>
+        {
+            update(st => st.GearPage = GearPage.Optimize);
+            refresh();
+        }, Accent.Main, padding: new Thickness(14, 6));
+        button.CornerRadius = new CornerRadius(4);
+        button.HorizontalAlignment = HorizontalAlignment.Left;
+        return Tip(button, "Relit ton perso sur le site officiel, puis cherche les bonnes stats pour chaque pièce : options d'âme et pierres à garder ou à changer, " +
+                           "pour combler ce qui manque sans dépasser les plafonds.");
+    }
+
+    /// <summary>
+    /// Optimisation des stats (<see cref="StatOptimizer"/>) : tes stats face à leur cible (guides, joueurs) et leur plafond, avant
+    /// et après les échanges conseillés ; puis pièce par pièce chaque option d'âme et chaque pierre, à garder ou à changer
+    /// (stat visée, valeur attendue, autres choix possibles, pourquoi) ; le tuto du lien d'âme ; la méthode.
+    /// </summary>
+    Control GearOptimizePage()
+    {
+        var plan = Optimization;
+        var changes = plan.Items.Sum(i => i.Changes);
+        var reload = Clickable(T("↻ relire mon perso", 11, Accent.Main, FontWeight.SemiBold, mono: true), refresh, hover: Tok.HoverStrong, padding: new Thickness(6, 0));
+        var badges = Badges(
+            Badge(changes > 0 ? Fmt.Plural(changes, "ligne à changer", "lignes à changer") : "✓ rien à changer", changes > 0 ? Tok.Warn : Tok.Good),
+            Tip(Badge($"données du {r.Character.FetchedAtUtc.ToLocalTime():dd/MM HH:mm}", Tok.Text2), "Lues sur le site officiel à cette heure-là : « ↻ relire mon perso » les relit."),
+            reload);
+        var blocks = new List<Control?>
+        {
+            T("Toutes tes pièces ensemble : ce qui manque est cherché là où ça rapporte le plus, une stat qui atteint sa cible n'est plus visée ailleurs, " +
+              "ce qui dépasse un plafond est rendu. Les valeurs sont celles de tes lignes d'aujourd'hui (le lien d'âme les fera monter).", 12, Tok.Muted, wrap: true).WithLineHeight(1.4),
+        };
+
+        // Les stats : toi, la cible, après les échanges, et ce qu'il en dit.
+        const string statCols = "*,110,170,110,*";
+        string Show(StatDef d, double v) => d.Kind == StatKind.Percent ? $"{Fmt.Num(Math.Round(v, 1))} %" : Fmt.Num(Math.Round(v));
+        var statRows = plan.Stats.Select(x =>
+        {
+            var over = x.Cap is { } cap && x.Now > cap * 1.02;
+            var missing = x.Target is { } t && x.Now < t - 1e-9;
+            var (verdict, color) = over ? ($"en trop : plafond {Show(x.Def, x.Cap!.Value)}", Tok.Warn)
+                : missing ? ($"il manque {Show(x.Def, x.Target!.Value - x.Now)}", x.Weight >= 0.85 ? Tok.Bad : Tok.Warn)
+                : x.Target is not null ? ("✓ à la cible", Tok.Good) : ("pas de cible connue", Tok.Muted);
+            return (Control)new Border
+            {
+                Padding = new Thickness(20, 5),
+                Child = Columns(statCols, T(x.Def.Name, 13), T(Show(x.Def, x.Now), 13, Tok.Text2, mono: true),
+                    T(x.Target is { } tv ? $"{Show(x.Def, tv)} · {x.TargetLabel}" : "—", 12, Tok.Muted, wrap: true),
+                    T(Math.Abs(x.After - x.Now) > 1e-6 ? Show(x.Def, x.After) : "=", 13, x.After > x.Now + 1e-6 ? Tok.Good : x.After < x.Now - 1e-6 ? Tok.Warn : Tok.Muted, mono: true),
+                    T(verdict, 12, color, wrap: true)),
+            };
+        });
+        blocks.Add(TableCard("Tes stats : ce qui manque, ce qui déborde", T(GameDatabase.ModeName(r.Mode), 11, Tok.Muted, mono: true),
+            TableHeader(statCols, "Stat", "Toi", "Cible", "Après", "Verdict"), statRows));
+        if (plan.SkillNotes.Count > 0)
+            blocks.Add(Card(new StackPanel { Spacing = 6, Children = { new ItemsControl { ItemsSource = plan.SkillNotes.Select(n => T(n, 12, Tok.Text2, wrap: true)).ToList() } } },
+                "Compétences à un niveau d'une spécialisation"));
+
+        // Pièce par pièce : d'abord celles où les échanges rapportent le plus.
+        const string cols = "70,230,*";
+        foreach (var item in plan.Items.Where(i => i.Changes > 0))
+        {
+            Control Row(OptLine l)
+            {
+                var label = l.Kind == "pierre" ? "pierre" : "âme";
+                Control advice = l.Advice switch
+                {
+                    OptAdvice.Change or OptAdvice.Fill => new StackPanel
+                    {
+                        Spacing = 1,
+                        Children =
+                        {
+                            T($"{(l.Advice == OptAdvice.Fill ? "grave" : "→ vise")} {db.StatName(l.Target!)} ≈ {Show(db.Stat(l.Target!)!, l.TargetValue)}" +
+                              (l.Alternatives.Count > 0 ? $"  (ou {string.Join(", ", l.Alternatives.Select(db.StatName))})" : ""), 12, Tok.Warn, FontWeight.SemiBold, wrap: true),
+                            T(l.Why, 11, Tok.Muted, wrap: true),
+                        },
+                    },
+                    _ => T(l.Why, 12, Tok.Muted, wrap: true),
+                };
+                return new Border
+                {
+                    Padding = new Thickness(20, 5),
+                    Child = Columns(cols, T(label, 11, Tok.Muted, mono: true),
+                        T(l.Current.Length > 0 ? l.Current : "emplacement libre", 13, l.Advice is OptAdvice.Change ? Tok.Text : Tok.Text2, wrap: true), advice),
+                };
+            }
+            var head = $"{item.SlotName} · {item.Item.Name}" + (item.Rate is { } rate ? $" · lien d'âme {Fmt.Num(rate)} %" : "");
+            var rows = item.Soul.Concat(item.Stones).Select(Row).ToList();
+            if (item.Note is { } note) rows.Insert(0, T(note, 12, Tok.Muted, wrap: true).WithMargin(20, 6, 20, 0));
+            blocks.Add(TableCard(head, T(Fmt.Plural(item.Changes, "ligne à changer", "lignes à changer"), 11, Tok.Warn, mono: true),
+                TableHeader(cols, "Ligne", "Aujourd'hui", "Conseil"), rows));
+        }
+        var fine = plan.Items.Where(i => i.Changes == 0).ToList();
+        if (fine.Count > 0)
+            blocks.Add(T($"Rien à changer sur : {string.Join(", ", fine.Select(i => i.SlotName + (i.Note is not null ? $" ({(i.Rate >= 100 ? "verrouillée" : i.Note.StartsWith("Pièce à remplacer") ? "à remplacer" : "provisoire")})" : "")))}.",
+                12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+
+        blocks.Add(Expander("Tuto : changer une option d'âme, monter le lien d'âme, graver une pierre", IsOpen("optim:tuto"), () => Toggle("optim:tuto"), () => Card(SoulTutorial(), null)));
+        blocks.Add(Expander("Comment c'est calculé", IsOpen("optim:how"), () => Toggle("optim:how"), () =>
+            T("Chaque stat vaut son poids pour ta classe, entièrement jusqu'à sa cible (la prochaine valeur des guides de ta classe, au moins la moyenne des joueurs " +
+              "de ton niveau d'objet), à 35 % au-delà, et plus du tout au-delà de son plafond. Chaque échange possible est essayé : une option d'âme vers une stat " +
+              "possible sur ce type de pièce (pièce gardée, lien d'âme sous 100 %), une pierre vers une autre stat du même grade, un emplacement libre. Le plus " +
+              "rentable est retenu, les totaux refaits, et on recommence tant qu'un échange rapporte au moins un quart d'une ligne : une stat qui atteint sa " +
+              "cible n'est plus visée sur les pièces suivantes. Valeur visée : celle de tes autres lignes de la pièce (ou de tes pierres du même grade). Les " +
+              "options possibles par type de pièce sont relevées sur des pièces réelles (liste incomplète).", 12, Tok.Text2, wrap: true).WithLineHeight(1.45).WithMargin(22, 0, 0, 0)));
+        return Page($"Équipement · optimisation des stats · {Mode}", badges, blocks.ToArray());
+    }
+
+    /// <summary>Tuto du lien d'âme et des pierres, d'après les guides (noms anglais et coréens : le jeu en français peut les nommer autrement).</summary>
+    static Control SoulTutorial()
+    {
+        var steps = new StackPanel { Spacing = 8 };
+        void Step(string n, string title, string text) => steps.Children.Add(ColumnsSpaced("24,*", 8, T(n, 13, Accent.Main, FontWeight.Bold, mono: true),
+            new StackPanel { Spacing = 2, Children = { T(title, 13, weight: FontWeight.SemiBold), T(text, 12, Tok.Text2, wrap: true).WithLineHeight(1.45) } }));
+        Step("1", "Où", "Menu d'amélioration de l'équipement → gravure d'âme (lien d'âme). Choisis la pièce, puis l'action à côté de son portrait.");
+        Step("2", "Changer une option : synchronisation",
+             "Choisis la ligne à changer : elle est relancée au hasard parmi les options possibles de la pièce. Coût : une autre pièce unique (ou une pierre de synchronisation). " +
+             "Une option précise ne sort qu'environ 2 fois sur 100 : vise plusieurs options acceptables (celles proposées ici) et arrête-toi à la première qui convient.");
+        Step("3", "Tout relancer : réinitialisation",
+             "Relance toutes les lignes d'un coup (3 livres de réinitialisation et 300 000 Kinah). Matériau rare : à garder pour une pièce de fin de jeu qui a plusieurs mauvaises lignes.");
+        Step("4", "Monter les valeurs : lien d'âme",
+             "Les livres de gravure font monter toutes les lignes jusqu'à leur maximum, sans échec, avec un coût qui grimpe (de 30 000 Kinah et 10 livres à 632 000 Kinah et 102 livres, " +
+             "2,13 millions et 408 livres en tout). À 100 %, les lignes sont verrouillées : règle-les avant de monter le lien.");
+        Step("5", "Une ligne de plus : fusion d'âme",
+             "À 100 %, ajoute une ligne (2 pierres philosophales : révélation et 1 million de Kinah). Elle ne suit pas un transfert : seulement sur une pièce que tu gardes.");
+        Step("6", "L'astuce des joueurs",
+             "Relance les lignes sur une pièce unique bon marché (bas niveau d'objet), monte-la, puis transfère-la sur ta vraie pièce (pierre de transfert du bon type) : " +
+             "le transfert garde les lignes d'âme et l'enchantement.");
+        Step("7", "Les pierres",
+             "Pierres de mana sur l'arme et l'armure, pierres d'âme sur les accessoires : grave la stat visée, au plus haut grade que tu as. Elles sont perdues au transfert : " +
+             "pas sur une pièce provisoire.");
+        steps.Children.Add(T("D'après les guides de joueurs (aion2vault.com, Purple Lounge de NCSOFT, game8) : coûts et noms peuvent changer avec les mises à jour.", 11, Tok.Muted, wrap: true));
+        return steps;
+    }
 
     /// <summary>
     /// Feuille de route : le score d'équipement sur la piste des paliers, puis les actions chiffrées (enchantement garanti,

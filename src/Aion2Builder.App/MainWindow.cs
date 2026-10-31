@@ -938,7 +938,7 @@ public sealed class MainWindow : Window
     {
         var views = new ScreenViews(db, r, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key), progress,
             o => Simulator.Run(db, r, inputs, pets.Collection, o),
-            combats, () => _ = ImportCombatAsync(), DeleteCombat, ReloadCombats);
+            combats, () => _ = ImportCombatAsync(), DeleteCombat, ReloadCombats, () => _ = RefreshAsync());
         var (content, inspector) = views.Build();
         side = views.Side();
         var grid = new Grid { RowDefinitions = new RowDefinitions("36,*") };
