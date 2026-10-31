@@ -171,26 +171,80 @@ static class Ui
         return holder;
     }
 
-    /// <summary>Compteur « − N + » : chaque clic appelle <paramref name="onChange"/> tout de suite.</summary>
+    /// <summary>
+    /// Compteur « − N + » : clic ±1, Maj+clic ±10, molette ±1 (Maj : ±10) ; clic sur le nombre pour le taper (Entrée ou clic
+    /// ailleurs valide, Échap annule). Chaque changement appelle <paramref name="onChange"/> tout de suite.
+    /// </summary>
     public static Border Stepper(int value, Action<int> onChange, IBrush? background = null)
     {
-        Border Button(string text, int delta) => Clickable(T(text, 12, Accent.Main, mono: true),
-            () => onChange(Math.Max(0, value + delta)), hover: Tok.HoverStrong, padding: new Thickness(9, 3));
-        return new Border
+        void Change(int v)
+        {
+            v = Math.Max(0, v);
+            if (v != value) onChange(v);
+        }
+        static int Step(KeyModifiers keys) => keys.HasFlag(KeyModifiers.Shift) ? 10 : 1;
+
+        Border Button(string text, int sign)
+        {
+            var button = new Border { Background = Brushes.Transparent, Child = T(text, 12, Accent.Main, mono: true), Cursor = Hand, Padding = new Thickness(9, 3) };
+            button.PointerEntered += (_, _) => button.Background = Tok.HoverStrong;
+            button.PointerExited += (_, _) => button.Background = Brushes.Transparent;
+            button.PointerPressed += (_, e) =>
+            {
+                if (!e.GetCurrentPoint(button).Properties.IsLeftButtonPressed) return;
+                e.Handled = true;
+                Change(value + sign * Step(e.KeyModifiers));
+            };
+            return button;
+        }
+
+        // Le nombre : un clic le remplace par une zone de saisie.
+        var number = new Border { MinWidth = 24, Cursor = new Cursor(StandardCursorType.Ibeam), Background = Brushes.Transparent };
+        number.Child = T(value.ToString(), 12, Tok.Text, FontWeight.SemiBold, mono: true).Centered();
+        number.PointerPressed += (_, e) =>
+        {
+            if (!e.GetCurrentPoint(number).Properties.IsLeftButtonPressed || number.Child is TextBox) return;
+            e.Handled = true;
+            var box = new TextBox
+            {
+                Text = value.ToString(), MinWidth = 52, FontSize = 12, FontFamily = Fonts.Mono, Padding = new Thickness(4, 1),
+                MinHeight = 0, VerticalContentAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center,
+            };
+            var done = false;
+            void Finish(bool apply)
+            {
+                if (done) return;
+                done = true;
+                if (apply && int.TryParse(box.Text?.Trim(), out var typed) && Math.Max(0, typed) != value) onChange(Math.Max(0, typed));
+                else number.Child = T(value.ToString(), 12, Tok.Text, FontWeight.SemiBold, mono: true).Centered();
+            }
+            box.KeyDown += (_, k) =>
+            {
+                if (k.Key == Key.Enter) { k.Handled = true; Finish(true); }
+                else if (k.Key == Key.Escape) { k.Handled = true; Finish(false); }
+            };
+            box.LostFocus += (_, _) => Finish(true);
+            number.Child = box;
+            Dispatcher.UIThread.Post(() => { box.Focus(); box.SelectAll(); });
+        };
+
+        var stepper = new Border
         {
             BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3),
             Background = background ?? Tok.Panel, VerticalAlignment = VerticalAlignment.Center,
-            Child = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Children =
-                {
-                    Button("−", -1),
-                    new Border { MinWidth = 24, Child = T(value.ToString(), 12, Tok.Text, FontWeight.SemiBold, mono: true).Centered() },
-                    Button("+", 1),
-                },
-            },
+            Child = new StackPanel { Orientation = Orientation.Horizontal, Children = { Button("−", -1), number, Button("+", 1) } },
         };
+        // Molette sur le compteur : ±1 par cran (Maj : ±10) ; la page ne défile pas pendant ce temps. Maj+molette peut
+        // arriver en défilement horizontal : on prend l'axe qui bouge.
+        stepper.PointerWheelChanged += (_, e) =>
+        {
+            var delta = e.Delta.Y != 0 ? e.Delta.Y : e.Delta.X;
+            if (delta == 0 || number.Child is TextBox) return;
+            e.Handled = true;
+            Change(value + Math.Sign(delta) * Step(e.KeyModifiers));
+        };
+        ToolTip.SetTip(stepper, "Clic : ±1 · Maj+clic : ±10 · molette : ±1 (Maj : ±10) · clic sur le nombre pour le taper");
+        return stepper;
     }
 
     /// <summary>Pastille de conseil : texte coloré sur fond de la même couleur à 15 %.</summary>
