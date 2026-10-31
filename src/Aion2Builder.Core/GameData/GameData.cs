@@ -150,6 +150,30 @@ public sealed record BenchPlayer(int ItemLevel, Dictionary<string, double> Stats
 /// </summary>
 public sealed record BenchmarkFile(string Updated, Dictionary<string, ClassBenchmark> Classes);
 
+/// <summary>
+/// gear-options.json : options d'âme et pierres vues sur les pièces des joueurs du relevé hebdomadaire (commande « bench »),
+/// toutes classes : quelles options sortent sur chaque type de pièce, et leur valeur à 100 % de lien d'âme.
+/// </summary>
+public sealed record GearOptionsFile
+{
+    public string Updated { get; init; } = "";
+    public string Source { get; init; } = "";
+    /// <summary>Par type de pièce (catégorie du site officiel : « Casques »…), puis par stat.</summary>
+    public Dictionary<string, Dictionary<string, SoulOption>> Soul { get; init; } = [];
+    /// <summary>Par sorte de pierre (« mana », « âme »), puis par stat : valeur par grade.</summary>
+    public Dictionary<string, Dictionary<string, Dictionary<string, double>>> Stones { get; init; } = [];
+
+    /// <summary>Valeur à 100 % de lien d'âme d'une option sur ce type de pièce, au niveau d'objet relevé le plus proche ; null si jamais vue au maximum.</summary>
+    public double? MaxValue(string category, string stat, int itemLevel) =>
+        Soul.GetValueOrDefault(category)?.GetValueOrDefault(stat) is { Max.Count: > 0 } o
+            ? o.Max.MinBy(x => Math.Abs(x.Key - itemLevel)).Value : null;
+}
+
+/// <param name="Count">Lignes vues chez les joueurs.</param>
+/// <param name="Percent">Option en % (sinon valeur plate).</param>
+/// <param name="Max">Valeur à 100 % de lien d'âme, par niveau d'objet de la pièce.</param>
+public sealed record SoulOption(int Count, bool Percent, Dictionary<int, double> Max);
+
 public sealed record DesignedBuild
 {
     public string Summary { get; init; } = "";
@@ -444,9 +468,10 @@ public sealed class GameDatabase
     readonly Dictionary<string, StatDef> byLabel;
 
     public GameDatabase(StatCatalogFile stats, ClassesFile classes, ProgressionFile progression, SettingsFile settings, SpellsFile? spells = null,
-        BenchmarkFile? benchmark = null)
+        BenchmarkFile? benchmark = null, GearOptionsFile? gearOptions = null)
     {
         Spells = spells?.Spells ?? [];
+        GearOptions = gearOptions;
         Stats = stats.Stats;
         Roles = classes.Roles;
         Classes = classes.Classes
@@ -472,6 +497,9 @@ public sealed class GameDatabase
     public SettingsFile Settings { get; }
     /// <summary>Données des sorts par identifiant officiel (recharge, % d'ATQ, cibles).</summary>
     public Dictionary<long, SpellData> Spells { get; }
+
+    /// <summary>Options d'âme et pierres vues chez les joueurs du relevé hebdomadaire ; null avant le premier relevé.</summary>
+    public GearOptionsFile? GearOptions { get; }
 
     /// <summary>Sort d'un code de compétence, y compris un code de combat (variante dans les 4 derniers chiffres).</summary>
     public SpellData? Spell(long code) => Spells.GetValueOrDefault(code) ?? Spells.GetValueOrDefault(code / 10000 * 10000);

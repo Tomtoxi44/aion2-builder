@@ -40,8 +40,13 @@ public static class GameDataStore
             Read<SettingsFile>("settings.json", overrideDir),
             Read<SpellsFile>("spells.json", overrideDir),
             // Toujours celui de l'application : relevé chaque semaine, une copie gardée dans le dossier utilisateur le figerait.
-            JsonSerializer.Deserialize<BenchmarkFile>(ReadEmbedded(BenchmarkFileName), Json));
+            JsonSerializer.Deserialize<BenchmarkFile>(ReadEmbedded(BenchmarkFileName), Json),
+            // Relevé avec les joueurs de comparaison, chaque semaine ; absent avant le premier relevé.
+            typeof(GameDataStore).Assembly.GetManifestResourceInfo($"Aion2Builder.Defaults.{GearOptionsFileName}") is null ? null
+                : JsonSerializer.Deserialize<GearOptionsFile>(ReadEmbedded(GearOptionsFileName), Json));
     }
+
+    public const string GearOptionsFileName = "gear-options.json";
 
     public const string BenchmarkFileName = "benchmark.json";
 

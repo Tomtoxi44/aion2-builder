@@ -33,11 +33,13 @@ jobs:
       - name: Relevé
         run: dotnet run --project src/Aion2Builder.Cli -c Release -- bench --out src/Aion2Builder.Core/GameData/Defaults/benchmark.json
 
-      - name: Fichier relevé
+      - name: Fichiers relevés
         uses: actions/upload-artifact@v4
         with:
           name: benchmark
-          path: src/Aion2Builder.Core/GameData/Defaults/benchmark.json
+          path: |
+            src/Aion2Builder.Core/GameData/Defaults/benchmark.json
+            src/Aion2Builder.Core/GameData/Defaults/gear-options.json
           retention-days: 7
 
       - name: Enregistrement et publication
@@ -47,7 +49,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/Aion2Builder.Core/GameData/Defaults/benchmark.json
+          git add -- src/Aion2Builder.Core/GameData/Defaults/benchmark.json src/Aion2Builder.Core/GameData/Defaults/gear-options.json 2>/dev/null || git add -- src/Aion2Builder.Core/GameData/Defaults/benchmark.json
           if git diff --cached --quiet; then echo "Rien de changé."; exit 0; fi
           git commit -m "Joueurs de comparaison relevés le $(date -u +%d/%m/%Y)"
           git pull --rebase

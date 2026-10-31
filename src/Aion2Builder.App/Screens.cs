@@ -1031,6 +1031,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                         Children =
                         {
                             T($"{(l.Advice == OptAdvice.Fill ? "grave" : "→ vise")} {db.StatName(l.Target!)} ≈ {Show(db.Stat(l.Target!)!, l.TargetValue)}" +
+                              (l.TargetMax is { } mx && mx > l.TargetValue * 1.05 ? $" (jusqu'à {Show(db.Stat(l.Target!)!, mx)} à 100 %)" : "") +
                               (l.Alternatives.Count > 0 ? $"  (ou {string.Join(", ", l.Alternatives.Select(db.StatName))})" : ""), 12, Tok.Warn, FontWeight.SemiBold, wrap: true),
                             T(l.Why, 11, Tok.Muted, wrap: true),
                         },

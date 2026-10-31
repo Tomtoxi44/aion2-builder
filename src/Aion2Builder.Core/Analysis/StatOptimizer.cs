@@ -14,7 +14,11 @@ public enum OptAdvice { Keep, Change, Fill, Locked, Skip }
 /// <param name="Alternatives">Autres stats qui feraient presque aussi bien : un tirage au hasard peut aussi tomber dessus.</param>
 /// <param name="Gain">Ce que l'échange rapporte (sert à l'ordre), 0 pour une ligne gardée.</param>
 public sealed record OptLine(string Kind, string Current, string? StatKey, OptAdvice Advice, string? Target, double TargetValue,
-    List<string> Alternatives, double Gain, string Why);
+    List<string> Alternatives, double Gain, string Why)
+{
+    /// <summary>Option d'âme visée : sa valeur à 100 % de lien d'âme (relevée chez les joueurs), null si inconnue.</summary>
+    public double? TargetMax { get; init; }
+}
 
 /// <summary>Une pièce : ses options d'âme et ses pierres, chacune avec son conseil.</summary>
 public sealed record OptItem(string Slot, string SlotName, EquippedItem Item, double? Rate, string? Note, List<OptLine> Soul, List<OptLine> Stones)
@@ -55,6 +59,8 @@ public sealed class StatOptimizer(GameDatabase db)
         public double RemoveValue;
         public double PrimaryValue;
         public required Dictionary<string, double> Candidates;
+        /// <summary>Valeur à 100 % de lien d'âme de chaque stat possible (option d'âme, relevée chez les joueurs).</summary>
+        public Dictionary<string, double> Max = [];
         public string? Target;
         public double Gain;
         public List<string> Alternatives = [];
@@ -105,6 +111,8 @@ public sealed class StatOptimizer(GameDatabase db)
             return s.Def.Kind == StatKind.Percent ? (e.IsPercent ? e.Value : 0) : e.IsPercent ? e.Value / 100 * s.Flat : e.Value;
         }
         double LineBudget(Effect e) => byKey.TryGetValue(e.StatKey ?? "", out var s) ? Contribution(e) / Unit(s.Def) : 0;
+        double ContributionOf(string key, double value, bool percent) => Contribution(new Effect("", key, StatScope.All, value, percent));
+        var options = db.GearOptions;
         static double Median(IEnumerable<double> values)
         {
             var list = values.Where(v => v > 0).OrderBy(v => v).ToList();
@@ -150,39 +158,55 @@ public sealed class StatOptimizer(GameDatabase db)
             {
                 var pool = new HashSet<string>(item.Category is { } cat && rules.SoulPools.TryGetValue(cat, out var known) ? known : slot.Slot == "MainHand" ? rules.WeaponPool : []);
                 if (item.Category is { } category && observed.TryGetValue(category, out var mine)) pool.UnionWith(mine);
+                // Options vues chez les joueurs du relevé hebdomadaire sur ce type de pièce.
+                if (item.Category is { } seenCat && options?.Soul.GetValueOrDefault(seenCat) is { } seen) pool.UnionWith(seen.Keys);
                 pool.RemoveWhere(k => !byKey.ContainsKey(k));
                 var budget = Median(soul[i].Select(LineBudget)) is var m && m > 0 ? m : globalLine;
-                Dictionary<string, double> Candidates() => pool.ToDictionary(k => k, k => budget * Unit(byKey[k].Def));
+                // Où en est la pièce : ses lignes face à leur valeur à 100 % (relevée chez les joueurs) ; sinon son taux de lien d'âme.
+                var cat2 = item.Category ?? "";
+                var progress = Median(soul[i].Where(e => e.IsStat).Select(e =>
+                    options?.Soul.GetValueOrDefault(cat2)?.GetValueOrDefault(e.StatKey!) is { } o && o.Percent == e.IsPercent && options.MaxValue(cat2, e.StatKey!, item.ItemLevel) is { } max && max > 0
+                        ? e.Value / max : 0)) is var pr && pr > 0 ? Math.Clamp(pr, 0.2, 1) : Math.Max(0.3, (item.SoulBindRate ?? 100) / 100);
+                var maxima = pool.Select(k => (Key: k, Option: options?.Soul.GetValueOrDefault(cat2)?.GetValueOrDefault(k), Max: options?.MaxValue(cat2, k, item.ItemLevel)))
+                    .Where(x => x.Option is not null && x.Max is > 0).ToDictionary(x => x.Key, x => ContributionOf(x.Key, x.Max!.Value, x.Option!.Percent));
+                // Valeur attendue aujourd'hui : le maximum relevé, au point où en est la pièce ; sinon comme ses autres lignes.
+                Dictionary<string, double> Candidates() => pool.ToDictionary(k => k, k => maxima.TryGetValue(k, out var mx) ? mx * progress : budget * Unit(byKey[k].Def));
                 for (var j = 0; j < soul[i].Count; j++)
                 {
                     var e = soul[i][j];
                     moves.Add(new Move
                     {
                         Item = i, Kind = "âme", Index = j, Remove = e.IsStat && byKey.ContainsKey(e.StatKey!) ? e.StatKey : null,
-                        RemoveValue = Contribution(e), PrimaryValue = e.IsStat ? PrimaryValue(e) : 0, Candidates = Candidates(),
+                        RemoveValue = Contribution(e), PrimaryValue = e.IsStat ? PrimaryValue(e) : 0, Candidates = Candidates(), Max = maxima,
                     });
                 }
                 // Niveaux de compétence (lignes d'âme aussi) : une compétence peu utile pour toi est une ligne perdue.
                 var bonuses = r.Skills.GearBonuses.Where(b => !b.Arcana && b.Slot == slot.Slot).ToList();
                 for (var j = 0; j < bonuses.Count; j++)
                     if (!bonuses[j].Useful)
-                        moves.Add(new Move { Item = i, Kind = "compétence", Index = j, Candidates = Candidates() });
+                        moves.Add(new Move { Item = i, Kind = "compétence", Index = j, Candidates = Candidates(), Max = maxima });
             }
             // Pierres : sur une pièce gardée, chaque pierre peut changer de stat (même grade), un emplacement libre se remplit.
             if (keepStones[i] && item.MagicStoneSlots > 0)
             {
+                // Pierres d'âme sur les accessoires, de mana ailleurs : stats et valeurs par grade vues chez les joueurs.
+                var kind = stones[i].Count > 0 ? (item.Stones[0].IsSoulStone ? "âme" : "mana") : slot.Group == "Accessory" ? "âme" : "mana";
+                var seenStones = options?.Stones.GetValueOrDefault(kind);
+                var stonePool = rules.StonePool.Concat(seenStones?.Keys.AsEnumerable() ?? []).Distinct().Where(byKey.ContainsKey).ToList();
+                double Stone(string key, string grade) => seenStones?.GetValueOrDefault(key)?.GetValueOrDefault(grade) is { } v && v > 0
+                    ? ContributionOf(key, v, false) : StoneValue(key, grade);
                 for (var j = 0; j < stones[i].Count; j++)
                 {
                     var (e, grade) = stones[i][j];
                     moves.Add(new Move
                     {
                         Item = i, Kind = "pierre", Index = j, Remove = e.IsStat && byKey.ContainsKey(e.StatKey!) ? e.StatKey : null,
-                        RemoveValue = Contribution(e), Candidates = rules.StonePool.Where(byKey.ContainsKey).ToDictionary(k => k, k => StoneValue(k, grade)),
+                        RemoveValue = Contribution(e), Candidates = stonePool.ToDictionary(k => k, k => Stone(k, grade)),
                     });
                 }
                 var best = stones[i].Select(x => x.Grade).OrderByDescending(g => db.Grade(g).Rank).FirstOrDefault() ?? "Rare";
                 for (var j = stones[i].Count; j < item.MagicStoneSlots; j++)
-                    moves.Add(new Move { Item = i, Kind = "pierre", Index = j, Candidates = rules.StonePool.Where(byKey.ContainsKey).ToDictionary(k => k, k => StoneValue(k, best)) });
+                    moves.Add(new Move { Item = i, Kind = "pierre", Index = j, Candidates = stonePool.ToDictionary(k => k, k => Stone(k, best)) });
             }
         }
 
@@ -282,7 +306,10 @@ public sealed class StatOptimizer(GameDatabase db)
                     idle switch { OptAdvice.Locked => "verrouillée (lien d'âme à 100 %)", OptAdvice.Skip => current.Length == 0 ? "emplacement libre" : "pièce à remplacer ou provisoire", _ => keepWhy });
             var why = (m.Remove is { } r2 && goals.GetValueOrDefault(r2).Cap is { } cap && now[r2] > cap * 1.02 ? $"{db.StatName(r2)} déjà au-delà de son plafond ; "
                        : m.Remove is null && current.Length > 0 && kind == "âme" ? "ligne qui ne te sert pas ; " : "") + Why(target);
-            return new(kind, current, key, current.Length == 0 ? OptAdvice.Fill : OptAdvice.Change, target, m.Candidates[target], m.Alternatives, m.Gain, why);
+            return new(kind, current, key, current.Length == 0 ? OptAdvice.Fill : OptAdvice.Change, target, m.Candidates[target], m.Alternatives, m.Gain, why)
+            {
+                TargetMax = m.Max.TryGetValue(target, out var mx) ? mx : null,
+            };
         }
 
         // Stats : avant → après, celles qui comptent ou qui bougent.
