@@ -225,6 +225,16 @@ public sealed class StatOptimizer(GameDatabase db)
 
         // Pièce par pièce : chaque ligne gardée ou à changer, et pourquoi.
         string Show(string key, double value) => byKey[key].Def.Kind == StatKind.Percent ? $"{Fmt.Num(Math.Round(value, 1))} %" : Fmt.Num(Math.Round(value));
+        // Une ligne gardée : sa stat et où elle en est.
+        string KeepWhy(string key)
+        {
+            var (t, label, c) = goals.GetValueOrDefault(key);
+            var x = now[key];
+            if (c is { } cap && x > cap * 1.02) return $"garde pour l'instant : {db.StatName(key)} au-delà de son plafond, mais rien de mieux à la place";
+            if (t is { } target && x < target) return $"garde : {db.StatName(key)}, il en manque encore {Show(key, target - x)} pour {Show(key, target)} ({label})";
+            if (t is not null) return $"garde : {db.StatName(key)} à sa cible, rien de mieux à la place";
+            return $"garde : {db.StatName(key)} utile pour ta classe";
+        }
         string Why(string key)
         {
             var (t, label, c) = goals.GetValueOrDefault(key);
@@ -243,7 +253,7 @@ public sealed class StatOptimizer(GameDatabase db)
                 var e = soul[i][j];
                 var m = moves.FirstOrDefault(x => x.Item == i && x.Kind == "âme" && x.Index == j);
                 soulLines.Add(Line("âme", e.Raw, e.StatKey, m, skipped[i] ? OptAdvice.Skip : locked[i] ? OptAdvice.Locked : OptAdvice.Keep,
-                    e.IsStat && byKey.ContainsKey(e.StatKey!) ? $"garde : {Why(e.StatKey!).ToLowerInvariant()}" : e.IsStat ? "garde : stat principale, elle augmente une stat utile" : "option non reconnue"));
+                    e.IsStat && byKey.ContainsKey(e.StatKey!) ? KeepWhy(e.StatKey!) : e.IsStat ? "garde : stat principale, elle augmente une stat utile" : "option non reconnue"));
             }
             var bonuses = r.Skills.GearBonuses.Where(b => !b.Arcana && b.Slot == slots[i].Slot).ToList();
             for (var j = 0; j < bonuses.Count; j++)
@@ -260,7 +270,7 @@ public sealed class StatOptimizer(GameDatabase db)
                 var current = j < stones[i].Count ? stones[i][j] : default;
                 stoneLines.Add(Line("pierre", current.Effect is { } se ? $"{se.Raw} ({db.Grade(current.Grade).Name.Split(' ')[0].ToLowerInvariant()})" : "", current.Effect?.StatKey, m,
                     skipped[i] || !keepStones[i] ? OptAdvice.Skip : OptAdvice.Keep,
-                    current.Effect is { IsStat: true } ce && byKey.ContainsKey(ce.StatKey!) ? $"garde : {Why(ce.StatKey!).ToLowerInvariant()}" : "garde"));
+                    current.Effect is { IsStat: true } ce && byKey.ContainsKey(ce.StatKey!) ? KeepWhy(ce.StatKey!) : "garde"));
             }
             items.Add(new OptItem(slots[i].Slot, slots[i].SlotName, item, item.SoulLineCount > 0 ? item.SoulBindRate : null, notes[i], soulLines, stoneLines));
         }
@@ -281,11 +291,15 @@ public sealed class StatOptimizer(GameDatabase db)
             .Select(x => new OptStat(x.Def, now[x.Def.Key], totals[x.Def.Key], goals[x.Def.Key].Target, goals[x.Def.Key].Label, goals[x.Def.Key].Cap, p.Weight(x.Def.Key)))
             .OrderByDescending(x => x.Weight).ToList();
 
-        // Compétences importantes à un niveau d'une spécialisation : une ligne d'âme « +1 » la débloquerait.
-        var specLevels = new[] { 8, 12, 16, 20 };
-        var skillNotes = r.Skills.Skills.Where(a => a.Skill.Acquired && a.Priority >= 0.85 && specLevels.Contains(a.Total + 1))
-            .OrderByDescending(a => a.Priority).Select(a => $"{a.Skill.Name} est au niveau {a.Total} : une option d'âme « {a.Skill.Name} +1 » la ferait passer au niveau {a.Total + 1} (nouvelle spécialisation).")
-            .ToList();
+        // Compétences actives importantes à un niveau d'une spécialisation : une option d'âme « +1 » la débloquerait.
+        var skillNotes = new List<string>();
+        foreach (var a in r.Skills.Skills.Where(a => a.Skill.Acquired && a.Kind == SkillKind.Active && a.Priority >= 0.85).OrderByDescending(a => a.Priority))
+        {
+            var spell = db.Spells.Values.FirstOrDefault(s => s.Class == p.Class.Code && s.Kind == "Active"
+                                                              && GameDatabase.NormalizeLabel(s.Name) == GameDatabase.NormalizeLabel(a.Skill.Name));
+            if (spell?.Specs.FirstOrDefault(x => x.Level == a.Total + 1) is { } spec)
+                skillNotes.Add($"{a.Skill.Name} est au niveau {a.Total} : une option d'âme « {a.Skill.Name} +1 » débloquerait sa spécialisation du niveau {spec.Level} ({spec.Text}).");
+        }
 
         return new OptimizationPlan(items.OrderByDescending(x => x.Gain).ThenBy(x => x.SlotName).ToList(), statRows, skillNotes);
     }

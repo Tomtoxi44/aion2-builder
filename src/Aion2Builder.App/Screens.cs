@@ -989,7 +989,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         // Les stats : toi, la cible, après les échanges, et ce qu'il en dit.
         const string statCols = "*,110,170,110,*";
         string Show(StatDef d, double v) => d.Kind == StatKind.Percent ? $"{Fmt.Num(Math.Round(v, 1))} %" : Fmt.Num(Math.Round(v));
-        var statRows = plan.Stats.Select(x =>
+        // Seulement les stats qui manquent, qui débordent ou que les échanges font bouger.
+        bool Shown(OptStat x) => x.Cap is { } c && x.Now > c * 1.02 || x.Target is { } t && x.Now < t - 1e-9 && x.Weight >= 0.5 || Math.Abs(x.After - x.Now) > 1e-6;
+        var atTarget = plan.Stats.Count(x => !Shown(x));
+        var statRows = plan.Stats.Where(Shown).Select(x =>
         {
             var over = x.Cap is { } cap && x.Now > cap * 1.02;
             var missing = x.Target is { } t && x.Now < t - 1e-9;
@@ -1006,7 +1009,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             };
         });
         blocks.Add(TableCard("Tes stats : ce qui manque, ce qui déborde", T(GameDatabase.ModeName(r.Mode), 11, Tok.Muted, mono: true),
-            TableHeader(statCols, "Stat", "Toi", "Cible", "Après", "Verdict"), statRows));
+            TableHeader(statCols, "Stat", "Toi", "Cible", "Après", "Verdict"),
+            atTarget > 0 ? statRows.Append(T($"+ {Fmt.Plural(atTarget, "autre stat utile déjà à sa cible", "autres stats utiles déjà à leur cible")}, que les échanges ne touchent pas.", 11, Tok.Muted).WithMargin(20, 6, 20, 6)) : statRows));
         if (plan.SkillNotes.Count > 0)
             blocks.Add(Card(new StackPanel { Spacing = 6, Children = { new ItemsControl { ItemsSource = plan.SkillNotes.Select(n => T(n, 12, Tok.Text2, wrap: true)).ToList() } } },
                 "Compétences à un niveau d'une spécialisation"));
