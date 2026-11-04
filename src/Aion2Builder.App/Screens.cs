@@ -3287,8 +3287,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var dps = tries.Select(x => (double?)x.Log.Dps).ToList();
         var durations = tries.Select(x => (double?)x.Log.Duration).ToList();
         var shares = aggro.Select(a => a is null ? null : (double?)a.Share).ToList();
-        var tips = tries.Select((x, i) => $"essai {i + 1} · {x.Log.ImportedAtUtc.ToLocalTime():dd/MM HH:mm}\n{Fmt.Big(x.Log.Dps)} DPS · {Duration(x.Log.Duration)}" +
-                                          (shares[i] is { } sh ? $" · aggro {Fmt.Pct(sh)}" : "") + "\nclic : ouvrir ce combat").ToList();
+        // Bulles courtes : les trois graphiques sont côte à côte, chacun étroit.
+        var tips = tries.Select((x, i) => $"essai {i + 1} · {x.Log.ImportedAtUtc.ToLocalTime():dd/MM HH:mm}\n{Fmt.Big(x.Log.Dps)} DPS\n{Duration(x.Log.Duration)}" +
+                                          (shares[i] is { } sh ? $" · aggro {Fmt.Pct(sh)}" : "") + "\nclic : l'ouvrir").ToList();
         void Open(int i) => update(st => { st.CombatIndex = tries[i].Index; st.CombatGroup = null; st.CombatSkill = null; st.CombatList = false; });
 
         // Les mots : DPS en % par essai (pente ÷ moyenne), durée en secondes par essai, aggro en points par essai.
@@ -3696,6 +3697,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         static readonly Typeface MonoFace = new(Fonts.Mono);
         Point? pointer;
 
+        /// <summary>Dessiné après ses voisins : une bulle qui déborde du graphique passe au-dessus du texte d'en dessous.</summary>
+        protected HoverChart() => ZIndex = 1;
+
         /// <summary>Élément survolé (-1 : aucun).</summary>
         protected int Hovered { get; private set; } = -1;
         public Action<int>? Clicked { get; init; }
@@ -3757,7 +3761,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var lines = tip.Split('\n').Select((l, i) => Text(l, 12, i == 0 ? Tok.Text : Tok.Text2)).ToList();
             var w = lines.Max(l => l.Width) + 18;
             var h = lines.Sum(l => l.Height) + 10;
-            var x = p.X + 16 + w <= size.Width ? p.X + 16 : Math.Max(0, p.X - 16 - w);
+            // À droite de la souris, sinon à gauche, sinon dans la largeur du graphique (un graphique étroit, côte à côte avec d'autres).
+            var x = p.X + 16 + w <= size.Width ? p.X + 16 : p.X - 16 - w >= 0 ? p.X - 16 - w : Math.Clamp(p.X - w / 2, 0, Math.Max(0, size.Width - w));
             var y = Math.Max(0, Math.Min(p.Y - h / 2, size.Height - h));
             ctx.DrawRectangle(Tok.HoverStrong, new Pen(Tok.Faint), new RoundedRect(new Rect(x, y, w, h), 3));
             var ty = y + 5;
