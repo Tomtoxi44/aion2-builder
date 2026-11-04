@@ -72,10 +72,21 @@ public static class PetMeterFights
     }
 
     /// <summary>
-    /// Créatures connues : code du Pet Meter → nom. Les boss ne s'y ajoutent qu'avec un nom vu en jeu par l'utilisateur (page
-    /// Besoins, carte « Noms des boss ») : aucun nom relevé sur un site tiers sans permission.
+    /// Créatures connues : code du Pet Meter → nom. Boss : noms des guides publics (allthings.how, bo3.gg, wikily.gg), rattachés
+    /// aux codes d'après l'ordre des combats de l'utilisateur ; « (probable) » tant qu'il ne l'a pas confirmé en jeu (carte
+    /// « Noms des boss »). Jamais de relevé en masse d'un site tiers.
     /// </summary>
-    static readonly Dictionary<long, string> Creatures = new() { [2400032] = "Mannequin d'entraînement" };
+    static readonly Dictionary<long, string> Creatures = new()
+    {
+        [2400032] = "Mannequin d'entraînement",
+        // Temple Divin du Feu
+        [2300311] = "Red Spark Ignus (probable)",
+        [2300312] = "Black Smoke Murute (probable)",
+        [2300371] = "Désir de Kromede",
+        // Shattered Arkanis
+        [2300908] = "Siliator of Deceit (probable)",
+        [2300909] = "Ruthilis of Pain (probable)",
+    };
 
     /// <summary>
     /// Nom à afficher pour la cible d'un combat enregistré : « Boss (code 2300371) » devient le nom du boss une fois connu, même
