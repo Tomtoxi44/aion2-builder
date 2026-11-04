@@ -41,10 +41,11 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      # ReadyToRun : code précompilé, premier écran ~1,5 s au lieu de ~2,7 s (mesuré le 04/11) ; exe ~85 Mo au lieu de 56.
       - name: Publication
         run: >
           dotnet publish src/Aion2Builder.App -c Release -r win-x64 --self-contained true
-          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=true
           -p:DebugType=None -p:Version=${{ env.VERSION }} -o publish
 
       # L'exe doit démarrer et rester ouvert : pas de version cassée proposée en mise à jour.
