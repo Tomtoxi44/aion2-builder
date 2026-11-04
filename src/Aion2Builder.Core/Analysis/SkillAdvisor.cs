@@ -101,7 +101,30 @@ public sealed partial class SkillAdvisor(GameDatabase db)
 
     /// <param name="combats">Combats gardés, les plus récents d'abord : en JcE ceux de boss et de mannequin, en JcJ ceux contre des
     /// joueurs ; leurs parts de dégâts (additionnées, suites d'enchaînement comptées avec leur sort) remplacent la simulation.</param>
+    /// <summary>
+    /// Plans déjà calculés, par perso affiché (l'objet chargé ; une simulation « et si » en est une copie, recalculée) : repris
+    /// tant que le mode, la fiche (build des joueurs ou conçu), tes réglages et tes combats sont les mêmes. L'appli recalcule
+    /// tout à chaque réglage (joueurs comparés, conseils cochés, stats en jeu…).
+    /// </summary>
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<CharacterSnapshot, Dictionary<string, SkillPlan>> Memo = new();
+
     public SkillPlan Plan(CharacterSnapshot c, ResolvedProfile p, PlayerInputs inputs, IReadOnlyList<Combat.CombatLog>? combats = null)
+    {
+        var key = string.Join("|", p.Mode, p.Class.Code, p.UsesDesigned, System.Text.Json.JsonSerializer.Serialize(inputs),
+            string.Join(",", (combats ?? []).Select(l => $"{l.ImportedAtUtc.Ticks}:{l.Source}:{l.ImportVersion}:{l.Skills.Count}")));
+        var memo = Memo.GetOrCreateValue(c);
+        lock (memo)
+            if (memo.TryGetValue(key, out var known)) return known;
+        var plan = Compute(c, p, inputs, combats);
+        lock (memo)
+        {
+            if (memo.Count >= 16) memo.Clear();
+            memo[key] = plan;
+        }
+        return plan;
+    }
+
+    SkillPlan Compute(CharacterSnapshot c, ResolvedProfile p, PlayerInputs inputs, IReadOnlyList<Combat.CombatLog>? combats)
     {
         var set = db.Settings.Skills;
         var bonus = BonusLevels(c);
