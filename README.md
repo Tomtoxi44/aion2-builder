@@ -231,6 +231,11 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    la simulation dans le **focus dégâts** de l'écran Compétences (parts réelles, enchaînements compris) et ajoute ses
    conseils à l'accueil. Les dégâts subis et les soins ne sont pas sur cette fenêtre de NotMeter (seulement via le Pet Meter).
    CLI : `combat <nom> [mots.tsv…]` (mots reconnus, écrits par `Aion2Builder.exe --ocr capture.png mots.tsv`).
+10. **Récolte (Pet Meter).** Le [Pet Meter](https://github.com/Tomtoxi44/aion2-pet-meter) (v0.17.0 ou plus) garde sur
+   ton PC le résumé de ta récolte de chaque jour (`%LOCALAPPDATA%\AION2-pet-meter\gathering`, 60 jours) ; l'écran
+   Récolte le montre jour par jour, ou sur les 7 / 30 derniers jours : récoltes du compteur du jeu (sur 1 000 par jour et
+   par serveur), ratées, récoltes au rang supérieur, **éclatantes** (rang 4, rareté Unique, en jaune dans le jeu), la
+   quantité par rang et par ressource, et les Kinah de monstres de chaque perso. Le serveur du perso ouvert vient d'abord.
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par
@@ -291,7 +296,8 @@ Aion 2 Builder n'envoie rien sans que tu le demandes, sauf la vérification des 
 - Les requêtes portent le numéro de version de l'application (en-tête `User-Agent`). Aucune télémétrie, aucune
   statistique d'usage, rien n'est envoyé ailleurs.
 - Ce que l'application garde (personnages importés, préférences, clé des familiers) reste sur ton PC, dans
-  `%APPDATA%\Aion2Builder` ; supprimer ce dossier efface tout.
+  `%APPDATA%\Aion2Builder` ; supprimer ce dossier efface tout. Elle lit aussi, sans y écrire, les combats et la récolte
+  écrits par le Pet Meter (`%LOCALAPPDATA%\AION2-pet-meter`).
 
 ## Code signing policy
 

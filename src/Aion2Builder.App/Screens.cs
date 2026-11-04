@@ -15,7 +15,7 @@ using static Aion2Builder.App.Ui;
 
 namespace Aion2Builder.App;
 
-enum Screen { Import, Home, Stats, Gear, Skills, Build, Combat, Daeva, Pets, Simulate, Progress, Details }
+enum Screen { Import, Home, Stats, Gear, Skills, Build, Combat, Daeva, Pets, Simulate, Progress, Details, Gather }
 
 /// <summary>Sous-pages de l'écran Équipement (sous-menu du rail).</summary>
 enum GearPage { Overview, Roadmap, Pieces, Enchant, Stones, Arcana, Optimize }
@@ -43,6 +43,9 @@ sealed class UiState
     public string? Skill { get; set; }
     public int? Board { get; set; }
     public string? Genus { get; set; }
+    /// <summary>Récolte : le jour montré (« AAAA-MM-JJ », « 7 » ou « 30 » derniers jours ; null : le plus récent) et le serveur.</summary>
+    public string? GatherDay { get; set; }
+    public string? GatherServer { get; set; }
     public bool HomeHow { get; set; }
     public bool StatsHow { get; set; }
     /// <summary>Listes longues (prochains points, prochaines cases) affichées en entier.</summary>
@@ -84,7 +87,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
         (Screen.Home, "Accueil", "Accueil"), (Screen.Stats, "Stats", "Stats"), (Screen.Gear, "Équipement", "Équip."),
-        (Screen.Skills, "Compétences", "Compét."), (Screen.Build, "Build et rotation", "Build"), (Screen.Combat, "Combat (Pet Meter, NotMeter)", "Combat"), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Pets, "Familiers", "Famil."),
+        (Screen.Skills, "Compétences", "Compét."), (Screen.Build, "Build et rotation", "Build"), (Screen.Combat, "Combat (Pet Meter, NotMeter)", "Combat"), (Screen.Gather, "Récolte (Pet Meter)", "Récolte"), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Pets, "Familiers", "Famil."),
         (Screen.Simulate, "Simulation « et si »", "Et si"), (Screen.Progress, "Progression", "Prog."),
         (Screen.Details, "Détails", "Détails"),
     ];
@@ -222,6 +225,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         Screen.Pets => (Pets(), PetInspector()),
         Screen.Simulate => (Simulate(), SimulateInspector()),
         Screen.Progress => (ProgressScreen(), null),
+        Screen.Gather => (GatherScreen(), null),
         _ => (Details(), null),
     };
 
@@ -4237,6 +4241,109 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         }
         box.Children.Add(new Border { Padding = new Thickness(12, 8), Background = Tok.Frame, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Child = canvas });
         return box;
+    }
+
+    /// <summary>
+    /// Récolte : le résumé de chaque jour écrit par le Pet Meter (jour de jeu, remis à zéro à 08:00 heure de Paris), ou des 7 / 30
+    /// derniers jours. Récoltes (compteur du jeu), ratées, rang supérieur, éclatantes (jaunes, rareté Unique dans le jeu), puis la
+    /// quantité par rang et par ressource, et les Kinah de monstres. Le serveur du perso ouvert d'abord.
+    /// </summary>
+    Control GatherScreen()
+    {
+        var days = PetMeterGathering.Load();
+        if (days.Count == 0)
+            return Page("Récolte", null, Card(T("Le Pet Meter (v0.17.0 ou plus) garde sur ton PC le résumé de ta récolte de chaque jour : récoltes, " +
+                "ratées, rang supérieur, chaque ressource avec son rang, et les Kinah de monstres. Lance-le et récolte : le résumé apparaît ici, " +
+                $"jour par jour.\nDossier lu : {PetMeterGathering.Dir}", 13, Tok.Muted, wrap: true).WithLineHeight(1.5)));
+        var fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
+        var gameToday = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-7));  // jour de jeu : reset à 07:00 UTC
+        string DayLabel(GatherDay d) => d.Date == gameToday ? "aujourd'hui" : d.Date == gameToday.AddDays(-1) ? "hier" : d.Date.ToString("ddd dd/MM", fr);
+        var pick = s.GatherDay is "7" or "30" ? s.GatherDay : days.FirstOrDefault(d => d.Day == s.GatherDay)?.Day ?? days[0].Day;
+        var span = pick switch { "7" => 7, "30" => 30, _ => 0 };
+        var chosen = span > 0 ? days.Where(d => d.Date > gameToday.AddDays(-span)).ToList() : days.Where(d => d.Day == pick).ToList();
+        void Pick(string v) => update(st => st.GatherDay = v);
+        var options = days.Take(6).Select(d => (DayLabel(d), pick == d.Day, (Action)(() => Pick(d.Day)))).ToList();
+        if (days.Count > 1)
+        {
+            options.Add(("7 jours", pick == "7", () => Pick("7")));
+            options.Add(("30 jours", pick == "30", () => Pick("30")));
+        }
+        var period = span > 0 ? $"{span} derniers jours ({Fmt.Plural(chosen.Count, "jour enregistré", "jours enregistrés")})"
+            : chosen.Count > 0 ? $"{DayLabel(chosen[0])} ({chosen[0].Date.ToString("dddd d MMMM", fr)})" : pick;
+
+        // Serveurs (la limite de récolte est par serveur) : celui du perso ouvert d'abord, puis le plus récolté.
+        var servers = chosen.SelectMany(d => d.Servers ?? new Dictionary<string, GatherServer>()).GroupBy(kv => kv.Key)
+            .Select(g => (Key: g.Key, Sum: PetMeterGathering.Sum(g.Select(kv => kv.Value))))
+            .OrderByDescending(x => x.Sum.Chars?.Contains(r.Character.Name) == true).ThenByDescending(x => x.Sum.Count).ToList();
+        static string ServerLabel(string key, GatherServer g) => g.Chars is { Count: > 0 } c ? string.Join(", ", c)
+            : key.StartsWith('#') ? $"serveur n° {key[1..]}" : key.TrimStart('@');
+        var server = servers.FirstOrDefault(x => x.Key == s.GatherServer);
+        if (server.Key is null) server = servers.FirstOrDefault();
+
+        var blocks = new List<Control?>();
+        if (servers.Count > 1)
+            blocks.Add(ColumnsSpaced("110,*", 12, T("Serveur", 13, weight: FontWeight.Medium),
+                Choice(servers.Select(x => (ServerLabel(x.Key, x.Sum), x.Key == server.Key, (Action)(() => update(st => st.GatherServer = x.Key)))))));
+        var unique = Tok.B(db.Grade("Unique").Color);
+        if (server.Sum is { } g)
+        {
+            var cap = chosen.FirstOrDefault()?.Cap ?? 1000;
+            var items = g.Items ?? [];
+            var total = items.Sum(i => i.Qty);
+            var radiant = items.Where(i => i.Rank == 4).Sum(i => i.Qty);
+            var seen = g.Failed + items.Count;  // au moins une récolte par ressource : seulement pour savoir si le Pet Meter a vu quelque chose
+            var kpis = new Avalonia.Controls.Primitives.UniformGrid { Columns = 4 };
+            kpis.Children.Add(Kpi(span > 0 ? "Récoltes" : "Récoltes du jour", span > 0 ? Fmt.Big(g.Count) : $"{Fmt.Big(g.Count)} / {Fmt.Big(cap)}",
+                span == 0 && g.Count >= cap ? Tok.Good : null).WithMargin(0, 0, 10, 0));
+            kpis.Children.Add(Kpi("Ratées", g.Count > 0 ? $"{Fmt.Big(g.Failed)} · {Fmt.Pct((double)g.Failed / g.Count)}" : Fmt.Big(g.Failed),
+                g.Failed > 0 ? Tok.Warn : null).WithMargin(0, 0, 10, 0));
+            kpis.Children.Add(Kpi("Rang supérieur", Fmt.Big(g.Better), g.Better > 0 ? Tok.Info : null).WithMargin(0, 0, 10, 0));
+            kpis.Children.Add(Kpi("Éclatantes (jaunes)", Fmt.Big(radiant), radiant > 0 ? unique : null));
+            blocks.Add(kpis);
+            blocks.Add(T("Récoltes : le compteur du jeu (récoltes commencées, ratées comprises, même faites sans le Pet Meter). Ratées, rang " +
+                "supérieur et ressources : ce que le Pet Meter a vu. Éclatantes : les ressources de rang 4 (« … éclatant »), de rareté Unique, " +
+                "en jaune dans le jeu.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+            if (items.Count > 0)
+            {
+                const string rankCols = "*,110,200";
+                var byRank = Enumerable.Range(1, 4).Reverse().Select(rank => (rank, qty: items.Where(i => i.Rank == rank).Sum(i => i.Qty)))
+                    .Where(x => x.qty > 0).Select(x => (Control)new Border
+                    {
+                        Padding = new Thickness(20, 5),
+                        Child = Columns(rankCols,
+                            T(x.rank switch { 4 => "Éclatant", 3 => "Pur", 2 => "Grande pureté / fraîche", _ => "Normal" }, 13, x.rank == 4 ? unique : Tok.Text),
+                            T(Fmt.Big(x.qty), 12, Tok.Text2, mono: true),
+                            RoundBar((double)x.qty / total, x.rank == 4 ? unique : Accent.Main, 6).WithMargin(0, 5, 0, 0)),
+                    });
+                blocks.Add(TableCard("Par rang", T($"{Fmt.Big(total)} ressources", 11, Tok.Muted, mono: true),
+                    TableHeader(rankCols, "Rang", "Quantité", "Part"), byRank));
+                const string cols = "*,130,90";
+                var rows = items.Select(i => (Control)new Border
+                {
+                    Padding = new Thickness(20, 4),
+                    Child = Columns(cols, T(i.Name, 13, i.Rank == 4 ? unique : Tok.Text),
+                        T(PetMeterGathering.RankName(i.Rank, i.Fresh), 12, i.Rank == 4 ? unique : Tok.Text2), T(Fmt.Big(i.Qty), 12, Tok.Text2, mono: true)),
+                });
+                blocks.Add(TableCard("Ressources", T(Fmt.Plural(items.Count, "ressource"), 11, Tok.Muted, mono: true),
+                    TableHeader(cols, "Ressource", "Rang", "Quantité"), rows));
+            }
+            else if (seen == 0)
+                blocks.Add(T("Le Pet Meter n'a vu aucune récolte sur cette période (seul le compteur du jeu est connu) : lance-le avant de récolter.", 12, Tok.Muted, wrap: true));
+        }
+        else blocks.Add(T("Pas de récolte sur cette période.", 13, Tok.Muted));
+
+        // Kinah de monstres : par perso (tous serveurs).
+        var kinah = chosen.SelectMany(d => d.Kinah ?? new Dictionary<string, long>()).GroupBy(kv => kv.Key).Select(kv => (Name: kv.Key, Amount: kv.Sum(x => x.Value)))
+            .Where(x => x.Amount > 0).OrderByDescending(x => x.Amount).ToList();
+        if (kinah.Count > 0)
+        {
+            const string cols = "*,160";
+            var rows = kinah.Select(x => (Control)new Border
+                { Padding = new Thickness(20, 4), Child = Columns(cols, T(x.Name, 13), T(Fmt.Big(x.Amount), 12, Tok.Text2, mono: true)) }).ToList();
+            blocks.Add(TableCard("Kinah de monstres", T(kinah.Count > 1 ? $"{Fmt.Big(kinah.Sum(x => x.Amount))} en tout" : "par perso", 11, Tok.Muted, mono: true),
+                TableHeader(cols, "Perso", "Kinah"), rows));
+        }
+        return Page($"Récolte · {period}", Choice(options), blocks.ToArray());
     }
 
     Control ProgressScreen()

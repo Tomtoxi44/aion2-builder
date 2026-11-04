@@ -771,7 +771,7 @@ public sealed class MainWindow : Window
 
     /// <summary>Ordre par défaut du rail : les écrans notés d'abord (leurs notes se suivent), puis les autres.</summary>
     static readonly Screen[] DefaultRail =
-        [Screen.Home, Screen.Stats, Screen.Gear, Screen.Skills, Screen.Daeva, Screen.Pets, Screen.Build, Screen.Combat, Screen.Simulate, Screen.Progress, Screen.Details];
+        [Screen.Home, Screen.Stats, Screen.Gear, Screen.Skills, Screen.Daeva, Screen.Pets, Screen.Build, Screen.Combat, Screen.Gather, Screen.Simulate, Screen.Progress, Screen.Details];
 
     /// <summary>Écrans du rail dans l'ordre choisi (glisser-déposer), les écrans inconnus de cet ordre à leur place par défaut.</summary>
     List<(Screen Screen, string Title, string Short)> RailNav
@@ -897,6 +897,8 @@ public sealed class MainWindow : Window
             Screen.Details => "M1,2 H3 M6,2 H17 M1,7 H3 M6,7 H17 M1,12 H3 M6,12 H17",
             // Patte : coussinet et quatre doigts.
             Screen.Pets => "M5,11 Q9,6 13,11 Q9,15 5,11 Z M3,6 L3,7 M7,3 L7,4 M11,3 L11,4 M15,6 L15,7",
+            // Pioche : manche et fer.
+            Screen.Gather => "M3,14 L11,6 M6,3 Q13,1 16,9",
             _ => "M2,7 H16",
         };
         return new Avalonia.Controls.Shapes.Path
