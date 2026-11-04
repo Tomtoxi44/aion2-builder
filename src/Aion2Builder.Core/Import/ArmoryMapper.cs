@@ -185,6 +185,26 @@ public static partial class ArmoryMapper
         };
     }
 
+    /// <summary>Niveau d'enchantement d'une fiche objet et ses stats principales (tableau JSON brut, à garder tel quel) ; null sans stats.</summary>
+    public static (int Level, string MainStats)? EnchantedMainStats(string detailJson)
+    {
+        using var doc = JsonDocument.Parse(detailJson);
+        var d = doc.RootElement;
+        return d.ValueKind == JsonValueKind.Object && d.TryGetProperty("mainStats", out var m) && m.ValueKind == JsonValueKind.Array
+            ? (Int(d, "enchantLevel"), m.GetRawText())
+            : null;
+    }
+
+    /// <summary>Stats principales lues dans un tableau JSON de fiche objet (même lecture qu'à l'import : valeur + bonus d'enchantement).</summary>
+    public static List<Effect> MainStatsFrom(string mainStatsJson, EffectParser parser)
+    {
+        using var doc = JsonDocument.Parse(mainStatsJson);
+        return doc.RootElement.ValueKind != JsonValueKind.Array ? []
+            : doc.RootElement.EnumerateArray()
+                .Select(s => parser.FromItemStat(Str(s, "id") ?? "", Str(s, "name") ?? "", Str(s, "value"), Str(s, "extra"), Str(s, "minValue")))
+                .ToList();
+    }
+
     static List<DaevanionNode> MapNodes(string json, EffectParser parser, Func<string, string?> skillLookup)
     {
         using var doc = JsonDocument.Parse(json);

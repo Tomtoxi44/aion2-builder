@@ -56,6 +56,11 @@
   "gear": {
     "weakSlotGap": 4
   },
+  "week": {
+    "_note": "Objectif de la semaine (Accueil) : temps de jeu proposés (heures par semaine), puis temps estimé d'une action selon ce qu'elle demande, en heures. Repères grossiers (pas mesurés) : ajuste-les à ton rythme. Free = gratuit tout de suite (compétences, cases avec tes points libres), Combat = une séance au mannequin, Rolls = relances et choix de stats, Engraving = gravures d'âme, Stones = pierres, Enchant = enchantement, Points = points à gagner, Farm = sorties en donjon pour une pièce, Pets = familiers.",
+    "choices": [3, 7, 15],
+    "hours": { "Free": 0.25, "Combat": 0.5, "Rolls": 1, "Engraving": 1, "Stones": 0.5, "Enchant": 1, "Points": 2, "Farm": 3, "Pets": 1 }
+  },
   "macros": {
     "_note": "Vue macro : tutos et macros de guides publics (relevés le 04/11/2026). Dans une pile, la compétence du bas part en premier (allthings.how, mein-mmo, KeenGamer). Noms des compétences en anglais, comme dans le guide.",
     "tutorials": [

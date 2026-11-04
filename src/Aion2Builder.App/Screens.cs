@@ -49,6 +49,8 @@ sealed class UiState
     /// <summary>Récolte : le jour montré (« AAAA-MM-JJ », « 7 » ou « 30 » derniers jours ; null : le plus récent) et le serveur.</summary>
     public string? GatherDay { get; set; }
     public string? GatherServer { get; set; }
+    /// <summary>Récolte : le perso dont le stock (sac et coffre, Pet Meter) est montré ; null : le perso ouvert.</summary>
+    public string? GatherStockChar { get; set; }
     public bool HomeHow { get; set; }
     public bool StatsHow { get; set; }
     /// <summary>Listes longues (prochains points, prochaines cases) affichées en entier.</summary>
@@ -76,6 +78,9 @@ sealed class UiState
     public string? CombatRival { get; set; }
     /// <summary>Combat : boss de la courbe d'apprentissage (null : celui que tu as le plus essayé).</summary>
     public string? CombatBoss { get; set; }
+    /// <summary>Progression : la comparaison côte à côte avec un autre perso (fichier enregistré) au lieu des courbes.</summary>
+    public bool ProgressCompare { get; set; }
+    public string? CompareWith { get; set; }
     public HashSet<Area> Collapsed { get; } = [];
     /// <summary>Sections repliables ouvertes (refonte visuelle), par identifiant.</summary>
     public HashSet<string> Open { get; } = [];
@@ -459,7 +464,68 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         return Page($"Accueil · {r.Character.Name} · {Mode}", Badges(
             copy,
             Tip(Badge($"score global {r.Scores.Overall}", Tok.Score(r.Scores.Overall)), HowText),
-            Badge(advice == 0 ? "✓ aucun conseil" : Fmt.CountsText(r.Findings), important > 0 ? Tok.Warn : advice > 0 ? Tok.Text2 : Tok.Good)), Doll(), HomeToday());
+            Badge(advice == 0 ? "✓ aucun conseil" : Fmt.CountsText(r.Findings), important > 0 ? Tok.Warn : advice > 0 ? Tok.Text2 : Tok.Good)), Doll(), HomeWeek(), HomeToday());
+    }
+
+    /// <summary>« 15 min », « 1 h », « 1 h 30 » : un temps estimé, arrondi au quart d'heure.</summary>
+    static string Hours(double h)
+    {
+        var minutes = (int)Math.Round(h * 4) * 15;
+        return minutes < 60 ? $"{Math.Max(15, minutes)} min" : minutes % 60 == 0 ? $"{minutes / 60} h" : $"{minutes / 60} h {minutes % 60:00}";
+    }
+
+    /// <summary>
+    /// Accueil : l'objectif de la semaine. Selon ton temps de jeu (3, 7 ou 15 h, gardé pour ce perso), les trois actions du plan
+    /// d'action qui rapportent le plus et tiennent dans ce temps, une par ligne avec son gain (note globale par les « Et si »,
+    /// niveau d'objet par la feuille de route) et son temps estimé ; en bas, le total et le palier de la feuille de route.
+    /// </summary>
+    Control HomeWeek()
+    {
+        var hours = inputs.WeekHours;
+        var plan = WeekGoal.Plan(db, r, Route, hours, IsDone);
+        var choices = db.Settings.Week.Choices.Count > 0 ? db.Settings.Week.Choices : [3, 7, 15];
+        var choice = Tip(Choice(choices.Select(h => ($"{h} h", h == hours, (Action)(() => onInputs(inputs with { WeekHours = h }))))),
+            "Ton temps de jeu par semaine sur ce perso : les actions choisies tiennent dedans (gardé pour ce perso).");
+        var list = new StackPanel();
+        var n = 0;
+        foreach (var a in plan.Actions)
+        {
+            var gain = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
+            if (a.Note != 0) gain.Children.Add(T($"{(a.Note > 0 ? "+" : "")}{a.Note} note", 13, a.Note > 0 ? Tok.Good : Tok.Bad, FontWeight.SemiBold, mono: true));
+            if (a.ItemLevel > 0) gain.Children.Add(T($"+{a.ItemLevel} niv. d'objet", 12, Tok.Good, FontWeight.SemiBold, mono: true));
+            if (a.Other is { } other) gain.Children.Add(T(other, 12, other.StartsWith('≈') ? Tok.Good : Tok.Muted, mono: true));
+            var text = new StackPanel { Spacing = 2, Children = { T(a.Title, 13, Tok.Text, FontWeight.Medium, wrap: true) } };
+            if (a.Action is { } act) text.Children.Add(new TextBlock { Text = act, FontSize = 12, Foreground = Tok.Muted, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis });
+            var row = Clickable(ColumnsSpaced("20,130,*,64", 8, T($"{++n}", 13, Accent.Main, FontWeight.Bold, mono: true), gain, text,
+                    T(Hours(a.Hours), 12, Tok.Text2, mono: true).AlignRight()),
+                () => Go(a.Finding), hover: Tok.TileHover, padding: new Thickness(8, 7));
+            row.BorderBrush = Tok.RowLine2;
+            row.BorderThickness = new Thickness(0, 0, 0, 1);
+            var why = a.Note != 0 || a.ItemLevel > 0
+                ? (a.Note != 0 ? $"Note globale {plan.NoteNow} → {plan.NoteNow + a.Note} (même calcul que les « Et si »). " : "") +
+                  (a.ItemLevel > 0 ? $"Niveau d'objet +{a.ItemLevel} (feuille de route : 1 niveau d'objet ou d'enchantement = 1 point). " : "")
+                : "Gain non chiffré en note : le conseil, en détail :";
+            list.Children.Add(Tip(row, $"{why}\n{string.Join("\n", a.Findings.Select(f => f.Detail.Replace('\n', ' ')))}\n" +
+                                       $"Temps estimé : {Hours(a.Hours)} (repère grossier, settings.json → week).\nClic : l'endroit où agir."));
+        }
+        if (n == 0)
+            list.Children.Add(T(r.ActionPlan.Any(f => !IsDone(f))
+                ? $"Aucune action du plan ne tient en {hours} h : choisis plus de temps."
+                : "✓ Rien d'important à faire cette semaine : tout est en ordre pour cette vue.", 13, Tok.Good, wrap: true).WithMargin(8, 8));
+        else
+        {
+            var il = plan.ItemLevelNow;
+            var total = $"≈ {Hours(plan.Hours)} sur {hours} h" +
+                        (plan.Note > 0 ? $" · note {plan.NoteNow} → ≈ {plan.NoteNow + plan.Note}" : "") +
+                        (plan.ItemLevel > 0 ? $" · niveau d'objet {Fmt.Big(il)} → {Fmt.Big(il + plan.ItemLevel)}" : "") +
+                        (plan.Reaches is { } g ? $" : palier {Fmt.Big(g.Score)} atteint ({g.Unlocks})"
+                            : plan.Next is { } next ? $" · palier suivant {Fmt.Big(next.Score)} (encore +{next.Score - il - plan.ItemLevel})" : "");
+            list.Children.Add(Tip(T(total, 12, plan.Reaches is not null ? Tok.Good : Tok.Text2, mono: true, wrap: true).WithMargin(8, 8, 8, 2),
+                "Parmi les conseils du plan d'action (les plus rentables d'abord), la combinaison de trois au plus qui tient dans ton temps de jeu " +
+                "et vaut le plus. Temps : estimés selon ce que demande chaque action (gratuit, séance au mannequin, sortie en donjon…). " +
+                "Gains : note globale par le calcul des « Et si » (additionnés : ≈), niveau d'objet et palier par la feuille de route (écran Équipement)."));
+        }
+        return Card(list, $"Objectif de la semaine · {hours} h de jeu", choice, new Thickness(6, 2, 6, 6));
     }
 
     /// <summary>
@@ -1438,6 +1504,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
         return Page($"Équipement · enchantement · {Mode}", badges, kpis,
             TableCard("Pièce par pièce", T("vert = fait · orange = à monter", 11, Tok.Muted, mono: true), TableHeader(cols, "Emplacement", "Niveau", "", "Conseil"), rows),
+            EnchantSimulator(),
             Expander("Les règles, en détail", IsOpen("enchant:rules"), () => Toggle("enchant:rules"), () => new StackPanel
             {
                 Spacing = 6, Margin = new Thickness(22, 0, 0, 0),
@@ -1448,6 +1515,173 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     T(rules.Transmute, 12, Tok.Text2, wrap: true).WithLineHeight(1.45),
                 },
             }));
+    }
+
+    /// <summary>Simulation d'enchantement d'une pièce : en cours, échouée, ou les niveaux calculés (pièce à ce niveau et analyse refaite).</summary>
+    sealed class EnchantRun
+    {
+        public volatile bool Busy = true;
+        public string? Error;
+        public List<(int Level, EquippedItem Item, AdviceReport After)>? Levels;
+    }
+
+    /// <summary>Simulations d'enchantement déjà lancées, par analyse affichée puis par emplacement.</summary>
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<AdviceReport, Dictionary<string, EnchantRun>> EnchantRuns = new();
+
+    /// <summary>
+    /// La simulation d'enchantement d'une pièce, lancée en arrière-plan la première fois : stats de la pièce à chaque niveau lues
+    /// sur le site officiel (gardées sur ce PC), puis l'analyse refaite sur une copie du perso pour chaque niveau. L'écran se
+    /// redessine quand c'est prêt.
+    /// </summary>
+    EnchantRun EnchantRunFor(EquippedItem item, int max)
+    {
+        var runs = EnchantRuns.GetOrCreateValue(r);
+        EnchantRun run;
+        lock (runs)
+        {
+            if (runs.TryGetValue(item.Slot, out var known)) return known;
+            runs[item.Slot] = run = new EnchantRun();
+        }
+        var (report, sim, refresh, data) = (r, simulate, update, db);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var table = await Aion2Builder.Import.EnchantTables.Load(data, report.Character, item, item.EnchantLevel + 1, max);
+                run.Levels = table.OrderBy(kv => kv.Key).Select(kv =>
+                {
+                    var piece = item with { EnchantLevel = kv.Key, MainStats = kv.Value };
+                    return (kv.Key, piece, sim(new SimulationOptions { Item = piece }));
+                }).ToList();
+            }
+            catch (Exception ex)
+            {
+                run.Error = ex is Aion2Builder.Import.ArmoryException ? ex.Message : $"Simulation impossible : {ex.Message}";
+            }
+            finally
+            {
+                run.Busy = false;
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => refresh(_ => { }));
+            }
+        });
+        return run;
+    }
+
+    /// <summary>
+    /// Simulateur d'enchantement de la pièce choisie : de son niveau actuel jusqu'à son maximum (+15 au plus), ce que donne chaque
+    /// niveau — ses stats principales (lues sur le site officiel, qui calcule la fiche de la pièce à chaque niveau), le niveau
+    /// d'objet et la note globale recalculée (même calcul que « Et si »), et la chance de réussite connue. Pas de coût : il n'est
+    /// pas connu.
+    /// </summary>
+    Control? EnchantSimulator()
+    {
+        var pieces = r.Gear.Slots.Where(p => p.Item is { HasDetail: true, MaxEnchantLevel: > 0 }).ToList();
+        if (pieces.Count == 0) return null;
+        var p = pieces.FirstOrDefault(x => x.Slot == SelectedSlot?.Slot) ?? pieces.OrderByDescending(x => x.Item!.MaxEnchantLevel - x.Item.EnchantLevel).First();
+        var item = p.Item!;
+        var rules = db.Progression.Roadmap.Enchant;
+        var max = Math.Min(15, item.MaxEnchantLevel);
+
+        var picker = new ComboBox
+        {
+            ItemsSource = pieces.Select(x => $"{x.SlotName} · +{x.Item!.EnchantLevel} / {x.Item.MaxEnchantLevel}").ToList(),
+            SelectedIndex = pieces.IndexOf(p), FontSize = 12, MinHeight = 0, Padding = new Thickness(8, 2), VerticalAlignment = VerticalAlignment.Center,
+        };
+        picker.SelectionChanged += (_, _) =>
+        {
+            if (picker.SelectedIndex >= 0 && pieces[picker.SelectedIndex].Slot != p.Slot) update(st => st.Slot = pieces[picker.SelectedIndex].Slot);
+        };
+        var title = $"Simulateur · {p.SlotName} · +{item.EnchantLevel} → +{max}";
+        var body = new StackPanel { Spacing = 10 };
+        body.Children.Add(T($"{item.Name} — {db.Grade(item.Grade).Name}, niveau {item.ItemLevel} +{item.EnchantLevel}. " +
+                            $"Jusqu'à +{rules.Guaranteed} : réussite garantie" +
+                            (rules.Rates.Count > 0 && max > rules.Guaranteed ? $" ; de +{rules.Guaranteed + 1} à +{rules.Guaranteed + rules.Rates.Count} : une chance par essai ({string.Join(", ", rules.Rates.Select(v => $"{v} %"))})." : ".") +
+                            " Coûts : non connus, le site officiel ne les donne pas.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        if (item.EnchantLevel >= max)
+        {
+            body.Children.Add(T(max < 15
+                ? $"Au maximum de ce grade (+{max}) : pour aller plus haut, il faut passer au grade supérieur."
+                : $"Déjà au maximum (+{max}).", 13, Tok.Good, wrap: true));
+            return Card(body, title, picker);
+        }
+
+        var run = EnchantRunFor(item, max);
+        if (run.Busy)
+        {
+            body.Children.Add(new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 8,
+                Children = { Spinner(14, Accent.Main), T($"Lecture des stats de +{item.EnchantLevel + 1} à +{max} sur le site officiel, puis calcul de la note…", 12, Tok.Text2) },
+            });
+            return Card(body, title, picker);
+        }
+        if (run.Error is { } error || run.Levels is not { Count: > 0 } levels)
+        {
+            var slot = p.Slot;
+            body.Children.Add(new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 10,
+                Children =
+                {
+                    T(run.Error ?? "Le site officiel n'a renvoyé aucun niveau pour cette pièce.", 12, Tok.Warn, wrap: true),
+                    Clickable(T("réessayer", 12, Accent.Main), () =>
+                    {
+                        lock (EnchantRuns.GetOrCreateValue(r)) EnchantRuns.GetOrCreateValue(r).Remove(slot);
+                        update(_ => { });
+                    }, hover: Tok.HoverStrong, padding: new Thickness(4, 0)),
+                },
+            });
+            return Card(body, title, picker);
+        }
+
+        // Une ligne par niveau : stats de la pièce gagnées depuis ton niveau actuel, niveau d'objet, note, chance de réussite.
+        string Name(Aion2Builder.Model.Effect e) => e.StatKey is { } key ? db.StatName(key) : Regex.Replace(e.Raw, @"\s*[\d.,]+.*$", "");
+        string Gain(Aion2Builder.Model.Effect now, Aion2Builder.Model.Effect? before)
+        {
+            var d = now.Value - (before?.Value ?? 0);
+            return $"{Name(now)} {(d >= 0 ? "+" : "−")}{Fmt.Num(Math.Abs(Math.Round(d, 1)))}{(now.IsPercent ? " %" : "")}";
+        }
+        const string cols = "54,*,96,110,74";
+        var rows = new List<Control>();
+        foreach (var (level, piece, after) in levels)
+        {
+            var gains = piece.MainStats.Select(e => (e, before: item.MainStats.FirstOrDefault(b => b.StatKey == e.StatKey && b.Raw.Split(' ')[0] == e.Raw.Split(' ')[0])))
+                .Where(x => Math.Abs(x.e.Value - (x.before?.Value ?? 0)) > 1e-6).Select(x => Gain(x.e, x.before)).ToList();
+            var delta = after.Scores.Overall - r.Scores.Overall;
+            var chance = level <= rules.Guaranteed ? "garanti" : level - rules.Guaranteed - 1 < rules.Rates.Count ? $"{rules.Rates[level - rules.Guaranteed - 1]} %" : "—";
+            var changes = Simulator.StatChanges(r, after);
+            var row = new Border
+            {
+                Padding = new Thickness(20, 5), BorderBrush = Tok.RowLine, BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = Columns(cols,
+                    T($"+{level}", 13, Accent.Main, FontWeight.SemiBold, mono: true),
+                    T(gains.Count > 0 ? string.Join(" · ", gains) : "rien de plus", 12, gains.Count > 0 ? Tok.Text2 : Tok.Muted, mono: true, wrap: true),
+                    T($"+{level - item.EnchantLevel} · {Fmt.Big(after.Character.ItemLevel)}", 12, Tok.Good, mono: true),
+                    T(delta == 0 ? $"{after.Scores.Overall} (=)" : $"{r.Scores.Overall} → {after.Scores.Overall}", 12, delta > 0 ? Tok.Good : delta < 0 ? Tok.Bad : Tok.Muted, delta != 0 ? FontWeight.SemiBold : FontWeight.Normal, mono: true),
+                    T(chance, 12, level <= rules.Guaranteed ? Tok.Good : Tok.Warn, mono: true)),
+            };
+            rows.Add(Tip(row, $"{p.SlotName} à +{level} : {string.Join(", ", piece.MainStats.Select(e => e.Raw))} (fiche du site officiel).\n" +
+                              $"Score d'équipement {Fmt.Big(r.Character.ItemLevel)} → {Fmt.Big(after.Character.ItemLevel)}.\n" +
+                              $"Notes : stats {r.Scores.Stats} → {after.Scores.Stats}, équipement {r.Scores.Gear} → {after.Scores.Gear} ; globale {r.Scores.Overall} → {after.Scores.Overall}.\n" +
+                              (changes.Count > 0 ? "Tes totaux : " + string.Join(", ", changes.Take(4).Select(x => $"{x.After.Def.Name} {x.Before.Display} → {x.After.Display}")) + "." : "Tes totaux ne changent pas.")));
+        }
+        if (levels[^1].Level < max)
+            rows.Add(T($"Le site officiel ne donne pas la pièce au-delà de +{levels[^1].Level}.", 12, Tok.Muted).WithMargin(20, 6));
+        body.Children.Add(new Border
+        {
+            BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), ClipToBounds = true,
+            Child = Table(),
+        });
+        StackPanel Table()
+        {
+            var table = new StackPanel { Children = { TableHeader(cols, "Niveau", "Gain de la pièce", "Niv. d'objet", "Note globale", "Réussite") } };
+            foreach (var row in rows) table.Children.Add(row);
+            return table;
+        }
+        body.Children.Add(T("Stats : la fiche de la pièce à chaque niveau, lue sur le site officiel (seul le bonus d'enchantement change). Niveau d'objet : " +
+                            "1 point par niveau. Note : toute l'analyse refaite sur une copie de ton perso, comme dans « Et si » ; elle ne bouge que si " +
+                            "le niveau change le statut de la pièce ou l'équilibre de tes stats.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        return Card(body, title, picker);
     }
 
     /// <summary>Les 5 emplacements d'arcanes, dans l'ordre du jeu.</summary>
@@ -1673,6 +1907,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     ("vue", Mode, Accent.Main), ("build", inputs.UsesDesigned ? "conçu" : "joueurs", null),
                     ("importé", c.FetchedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm"), null),
                 ]),
+                Tip(Clickable(T("comparer à un autre perso ›", 12, Accent.Main), () => update(st => { st.Screen = Screen.Progress; st.ProgressCompare = true; }),
+                    hover: Tok.HoverStrong, padding: new Thickness(0, 2)), "Toi et un autre perso enregistré (un onglet ouvert d'abord), côte à côte : notes, stats, pièces, compétences, Daevanion."),
             },
         });
         panel.Children.Add(SectionHeader("Score"));
@@ -1750,24 +1986,27 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             panel.Children.Add(rows);
         }
 
-        // Progression : un point par import qui a changé quelque chose (niveau, niveau d'objet, puissance de combat).
+        // Progression : niveau d'objet, puissance et note globale en petites courbes dans le temps (un point par import qui a
+        // changé quelque chose) ; le détail et les axes sont dans l'écran Progression.
         if (progress.Count >= 2)
         {
-            static string Delta(int d) => d == 0 ? "" : d > 0 ? $" (+{d})" : $" ({d})";
-            var first = progress[0];
-            var last = progress[^1];
             panel.Children.Add(SectionHeader("Progression", Clickable(T($"tout voir ({progress.Count} imports)", 11, Accent.Main), () => GoTo(Screen.Progress))));
-            var rows = new StackPanel { Spacing = 5, Margin = new Thickness(14, 10) };
-            rows.Children.Add(T($"depuis le {first.FetchedAtUtc.ToLocalTime():dd/MM} : objet {Delta(last.ItemLevel - first.ItemLevel).Trim()} · puissance {Delta(last.CombatPower - first.CombatPower).Trim()}",
-                12, last.ItemLevel > first.ItemLevel || last.CombatPower > first.CombatPower ? Tok.Good : Tok.Text2, mono: true, wrap: true));
-            for (var i = progress.Count - 1; i >= Math.Max(0, progress.Count - 6); i--)
+            var rows = new StackPanel { Spacing = 10, Margin = new Thickness(14, 10) };
+            var colors = new[] { Accent.Main, Tok.Info, Tok.Good };
+            var series = ProgressSeries();
+            for (var i = 0; i < series.Count; i++)
             {
-                var p = progress[i];
-                var prev = i > 0 ? progress[i - 1] : null;
-                rows.Children.Add(ColumnsSpaced("86,*", 8, T(p.FetchedAtUtc.ToLocalTime().ToString("dd/MM HH:mm"), 11, Tok.Muted, mono: true),
-                    T((prev is not null && prev.Level != p.Level ? $"niv. {p.Level} · " : "") +
-                      $"objet {p.ItemLevel}{Delta(p.ItemLevel - (prev?.ItemLevel ?? p.ItemLevel))} · puissance {p.CombatPower}{Delta(p.CombatPower - (prev?.CombatPower ?? p.CombatPower))}",
-                        11, Tok.Text2, mono: true, wrap: true)));
+                var (title, points, format) = series[i];
+                if (points.Count < 2) continue;
+                rows.Children.Add(new StackPanel
+                {
+                    Spacing = 3,
+                    Children =
+                    {
+                        ColumnsSpaced("*,Auto", 8, T($"{title.Split(" · ")[0]} · {format(points[^1].Value)}", 12, Tok.Muted), SinceText(points, format)),
+                        Tip(new TimeChart(points, format, colors[i], 34, compact: true), "Survole la courbe pour chaque import ; clic sur « tout voir » pour les axes et le détail."),
+                    },
+                });
             }
             panel.Children.Add(rows);
         }
@@ -4695,7 +4934,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             {
                 T("● compétence · ■ stat", 12, Tok.Muted),
                 new TextBlock { FontSize = 12, Foreground = Tok.Muted, Inlines = new InlineCollection { new Run("1 2 3") { Foreground = Accent.Main, FontWeight = FontWeight.Bold }, new Run(" à prendre, dans l'ordre") } },
+                new TextBlock { FontSize = 12, Foreground = Tok.Muted, TextWrapping = TextWrapping.Wrap, Inlines = new InlineCollection { new Run("━") { Foreground = Accent.Main, FontWeight = FontWeight.Bold }, new Run(" le chemin, de case en case") } },
+                T(s.DaevaRoute ? "case teintée : dans tes points" : "case teintée : faisable avec tes points libres", 12, Tok.Muted, wrap: true),
                 s.DaevaRoute ? T("chiffres sur les cases pleines : ordre depuis le centre", 12, Tok.Muted) : new Control(),
+                T("survole une ligne de la liste : sa case s'allume", 12, Tok.Muted, wrap: true),
                 new TextBlock { FontSize = 12, Foreground = Tok.Muted, Inlines = new InlineCollection { new Run("✕") { Foreground = Tok.Bad, FontWeight = FontWeight.Bold }, new Run(" à retirer") } },
                 T("coût : gris 1 · vert 2 · bleu 3 · orange 4", 12, Tok.Muted),
             },
@@ -4749,8 +4991,27 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 T($"{x.Cost:0} pt · Σ {Fmt.Num(x.Cumulative)}", 11, Tok.Muted, mono: true),
                 T(tag.Text, 11, tag.Color, mono: true)),
             () => update(st => st.Board = boardId), hover: Tok.Hover, padding: new Thickness(6, 3));
+        // Survol de la ligne : sa case s'allume sur le plateau affiché (s'il s'agit du même plateau).
+        IBrush? brush = null;
+        var thickness = default(Thickness);
+        row.PointerEntered += (_, _) =>
+        {
+            if (!boardCells.TryGetValue(x.Node.Id, out var cell)) return;
+            (brush, thickness) = (cell.BorderBrush, cell.BorderThickness);
+            cell.BorderBrush = Tok.Text;
+            cell.BorderThickness = new Thickness(3);
+        };
+        row.PointerExited += (_, _) =>
+        {
+            if (brush is null || !boardCells.TryGetValue(x.Node.Id, out var cell)) return;
+            (cell.BorderBrush, cell.BorderThickness) = (brush, thickness);
+            brush = null;
+        };
         return Tip(row, $"{x.Board.Name} ligne {x.Node.Row} col. {x.Node.Col} — {(x.IsPassage ? "case de passage vers les suivantes" : Reason(x.Node))}");
     }
+
+    /// <summary>Cases du plateau affiché, par identifiant : la liste des prochaines cases les allume au survol.</summary>
+    readonly Dictionary<long, Border> boardCells = [];
 
     Border MoreToggle(int hidden, string what) =>
         Clickable(T(s.AllNext ? "▴ réduire" : $"▾ voir la suite ({hidden} {what} de plus)", 12, Accent.Main), () => update(st => st.AllNext = !st.AllNext),
@@ -4811,7 +5072,11 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         return panel;
     }
 
-    /// <summary>Grille 15 × 15 : case ouverte pleine, fermée en contour, à prendre numérotée, à retirer barrée.</summary>
+    /// <summary>
+    /// Grille 15 × 15 : case ouverte pleine, fermée en contour, à prendre numérotée et teintée (plus fort si tes points libres la
+    /// couvrent), à retirer barrée ; un trait relie chaque case à prendre à la case d'où on l'atteint (ouverte, ou prise juste
+    /// avant dans le plan) : le chemin se lit de case en case, dans l'ordre des numéros.
+    /// </summary>
     Control BoardGrid(BoardSummary summary)
     {
         const int size = 30, gap = 2;
@@ -4820,6 +5085,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var respec = route is null ? WorthRespec(summary.Pool) : null;
         Dictionary<long, int> numbers;
         HashSet<long> removed;
+        HashSet<long> affordable;
         if (route is not null)
         {
             // Route conçue : toutes les cases de la route numérotées dans l'ordre depuis le centre (ouvertes comprises).
@@ -4827,15 +5093,19 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             numbers = inBudget.ToDictionary(x => x.Node.Id, x => x.Step);
             var kept = inBudget.Select(x => x.Node.Id).ToHashSet();
             removed = board.Nodes.Where(n => n.Open && !n.IsStart && !kept.Contains(n.Id)).Select(n => n.Id).ToHashSet();
+            affordable = kept;
         }
         else
         {
-            numbers = respec is not null
-                ? respec.Add.Where(x => x.Board.Id == board.Id).ToDictionary(x => x.Node.Id, x => x.Step)
-                : r.Daevanion.Steps.Where(x => x.Board.Id == board.Id).ToDictionary(x => x.Node.Id, x => x.Step);
+            var steps = respec is not null ? respec.Add.Where(x => x.Board.Id == board.Id).ToList() : r.Daevanion.Steps.Where(x => x.Board.Id == board.Id).ToList();
+            numbers = steps.ToDictionary(x => x.Node.Id, x => x.Step);
+            affordable = steps.Where(x => x.Affordable).Select(x => x.Node.Id).ToHashSet();
             removed = respec?.Remove.Where(x => x.Board.Id == board.Id).Select(x => x.Node.Id).ToHashSet() ?? [];
         }
         var canvas = new Canvas { Width = 15 * (size + gap) - gap, Height = 15 * (size + gap) - gap };
+        static double Center(int index) => (index - 1) * (size + gap) + size / 2.0;
+        boardCells.Clear();
+        var labels = new List<Control>();
         foreach (var n in board.Nodes)
         {
             var open = n.Open || n.IsStart;
@@ -4844,24 +5114,58 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             int? step = numbers.TryGetValue(n.Id, out var st) ? st : null;
             // Une case déjà ouverte qui fait partie de la route garde sa couleur, avec son numéro en sombre.
             var openStep = open && step is not null;
+            var planned = step is not null && !open;
             var cell = new Border
             {
                 Width = size, Height = size,
                 CornerRadius = new CornerRadius(n.IsSkill ? size / 2.0 : 3),
-                Background = isRemoved ? Tok.CellOff : open ? grade : Tok.CellOff,
-                BorderBrush = isRemoved ? Tok.Bad : step is not null && !open ? Accent.Main : open ? grade : Tok.Alpha(grade, 0.33),
-                BorderThickness = new Thickness(isRemoved || step is not null && !open ? 2 : 1),
+                Background = isRemoved ? Tok.CellOff : open ? grade : planned ? Tok.Alpha(Accent.Main, affordable.Contains(n.Id) ? 0.34 : 0.14) : Tok.CellOff,
+                BorderBrush = isRemoved ? Tok.Bad : planned ? Accent.Main : open ? grade : Tok.Alpha(grade, 0.33),
+                BorderThickness = new Thickness(isRemoved || planned ? 2 : 1),
                 Opacity = open || step is not null || isRemoved ? 1 : 0.55,
-                Child = isRemoved ? T("✕", 11, Tok.Bad, FontWeight.SemiBold, mono: true).Centered()
-                    : step is null ? null : T(step.ToString()!, step >= 100 ? 9 : 11, openStep ? Tok.OnAccent : Accent.Main, FontWeight.SemiBold, mono: true).Centered(),
             };
             Tip(cell, $"{(n.Name.Length > 0 ? n.Name : n.Type)} — {Fmt.Plural(db.Settings.Daevanion.NodeCost.GetValueOrDefault(n.Grade, 0), "point")}\n" +
                       string.Join("\n", n.Effects.Select(e => e.Raw)) +
-                      (isRemoved ? "\nÀ retirer : " + Reason(n) : n.Open ? "\n(ouverte)" : step is not null ? $"\nÉtape {step} du plan" : ""));
+                      (isRemoved ? "\nÀ retirer : " + Reason(n) : n.Open ? "\n(ouverte)" : step is not null
+                          ? $"\nÉtape {step} du plan{(affordable.Contains(n.Id) ? (route is null ? " · faisable avec tes points libres" : " · dans tes points") : "")}" : ""));
             Canvas.SetLeft(cell, (n.Col - 1) * (size + gap));
             Canvas.SetTop(cell, (n.Row - 1) * (size + gap));
             canvas.Children.Add(cell);
+            boardCells[n.Id] = cell;
+            // Numéros et croix au-dessus du chemin : posés après les traits.
+            var text = isRemoved ? T("✕", 11, Tok.Bad, FontWeight.SemiBold, mono: true).Centered()
+                : step is null ? null : T(step.ToString()!, step >= 100 ? 9 : 11, openStep ? Tok.OnAccent : planned && affordable.Contains(n.Id) ? Tok.Text : Accent.Main, FontWeight.SemiBold, mono: true).Centered();
+            if (text is null) continue;
+            var label = new Border { Width = size, Height = size, Child = text, IsHitTestVisible = false };
+            Canvas.SetLeft(label, (n.Col - 1) * (size + gap));
+            Canvas.SetTop(label, (n.Row - 1) * (size + gap));
+            labels.Add(label);
         }
+
+        // Le chemin : pour chaque case à prendre, la case voisine d'où on l'atteint — la dernière prise avant elle dans le plan,
+        // sinon une case ouverte (ou le centre).
+        var byPos = board.Nodes.GroupBy(n => (n.Row, n.Col)).ToDictionary(g => g.Key, g => g.First());
+        foreach (var (id, step) in numbers.OrderBy(x => x.Value))
+        {
+            var n = board.Nodes.FirstOrDefault(x => x.Id == id);
+            if (n is null || n.IsStart || route is null && n.Open) continue;
+            DaevanionNode? from = null;
+            var best = -1;
+            foreach (var (dr, dc) in new[] { (-1, 0), (1, 0), (0, -1), (0, 1) })
+            {
+                if (!byPos.TryGetValue((n.Row + dr, n.Col + dc), out var m) || removed.Contains(m.Id)) continue;
+                if (numbers.TryGetValue(m.Id, out var ms) && ms < step && ms > best) (from, best) = (m, ms);
+                else if (best < 0 && from is null && (m.IsStart || route is null && m.Open)) from = m;
+            }
+            if (from is null) continue;
+            canvas.Children.Add(new Line
+            {
+                StartPoint = new Point(Center(from.Col), Center(from.Row)), EndPoint = new Point(Center(n.Col), Center(n.Row)),
+                Stroke = Tok.Alpha(Accent.Main, affordable.Contains(n.Id) ? 0.85 : 0.5), StrokeThickness = 4, StrokeLineCap = PenLineCap.Round,
+                IsHitTestVisible = false,
+            });
+        }
+        foreach (var label in labels) canvas.Children.Add(label);
         return new Border
         {
             Padding = new Thickness(12), Background = Tok.Frame, BorderBrush = Tok.Border, BorderThickness = new Thickness(1),
@@ -5300,36 +5604,171 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
     // ----- Progression -----
 
-    /// <summary>Courbe simple sur les imports (un point par import), avec la dernière valeur et l'écart depuis le premier.</summary>
-    static Control Curve(string title, IReadOnlyList<(DateTime At, double Value)> points, Func<double, string> format)
+    /// <summary>Un point d'une courbe de progression : date de l'import, valeur, et ce que dit son survol.</summary>
+    sealed record ChartPoint(DateTime At, double Value, string Tip);
+
+    /// <summary>
+    /// Courbe dans le temps : l'abscisse suit les dates (deux imports le même jour sont proches, une semaine sans import se voit),
+    /// l'ordonnée la valeur. En grand : quadrillage léger, trois repères de valeur à gauche et les dates en bas. En petit
+    /// (inspecteur) : la courbe seule. Le survol met en avant le point le plus proche (date et valeur dessinées, détail en infobulle).
+    /// Dessinée directement : un élément par point coûterait à chaque affichage.
+    /// </summary>
+    sealed class TimeChart : Control
     {
-        const double width = 260, height = 70;
-        var box = new StackPanel { Spacing = 6, Width = width + 24 };
-        var last = points[^1].Value;
-        var delta = last - points[0].Value;
-        box.Children.Add(new DockPanel
+        readonly IReadOnlyList<ChartPoint> points;
+        readonly Func<double, string> format;
+        readonly IBrush stroke;
+        readonly bool compact;
+        int hover = -1;
+        static readonly Typeface Mono = new(Fonts.Mono);
+
+        public TimeChart(IReadOnlyList<ChartPoint> points, Func<double, string> format, IBrush stroke, double height, bool compact = false)
         {
-            Children =
+            (this.points, this.format, this.stroke, this.compact) = (points, format, stroke, compact);
+            Height = height;
+            Background = Brushes.Transparent;
+            PointerMoved += (_, e) =>
             {
-                new TextBlock { Text = $"{(delta >= 0 ? "+" : "")}{format(delta)}", FontFamily = Fonts.Mono, FontSize = 11, Foreground = delta > 0 ? Tok.Good : delta < 0 ? Tok.Bad : Tok.Muted, [DockPanel.DockProperty] = Dock.Right },
-                T($"{title} · {format(last)}", 12, Tok.Text2),
-            },
-        });
-        var canvas = new Canvas { Width = width, Height = height };
-        var min = points.Min(p => p.Value);
-        var max = points.Max(p => p.Value);
-        var span = Math.Max(1e-9, max - min);
-        var coords = points.Select((p, i) => new Point(points.Count == 1 ? width / 2 : i * width / (points.Count - 1), height - 6 - (p.Value - min) / span * (height - 12))).ToList();
-        canvas.Children.Add(new Polyline { Points = coords, Stroke = Accent.Main, StrokeThickness = 2 });
-        foreach (var c in coords)
-        {
-            var dot = new Ellipse { Width = 6, Height = 6, Fill = Accent.Main };
-            Canvas.SetLeft(dot, c.X - 3);
-            Canvas.SetTop(dot, c.Y - 3);
-            canvas.Children.Add(dot);
+                var x = e.GetPosition(this).X;
+                var nearest = Enumerable.Range(0, points.Count).MinBy(i => Math.Abs(At(i).X - x));
+                if (nearest == hover) return;
+                hover = nearest;
+                ToolTip.SetTip(this, points[nearest].Tip);
+                InvalidateVisual();
+            };
+            PointerExited += (_, _) => { hover = -1; InvalidateVisual(); };
+            ToolTip.SetShowDelay(this, 250);
         }
-        box.Children.Add(new Border { Padding = new Thickness(12, 8), Background = Tok.Frame, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Child = canvas });
-        return box;
+
+        /// <summary>Fond transparent : le survol est reçu sur toute la zone, pas seulement sur le trait.</summary>
+        public IBrush Background { get; }
+
+        protected override Size MeasureOverride(Size available) => new(double.IsInfinity(available.Width) ? 300 : available.Width, Height);
+
+        Rect Plot => compact ? new Rect(4, 5, Math.Max(1, Bounds.Width - 8), Math.Max(1, Bounds.Height - 10))
+            : new Rect(56, 10, Math.Max(1, Bounds.Width - 70), Math.Max(1, Bounds.Height - 32));
+
+        (double Lo, double Hi) Range
+        {
+            get
+            {
+                var lo = points.Min(p => p.Value);
+                var hi = points.Max(p => p.Value);
+                var pad = hi - lo < 1e-9 ? Math.Max(1, Math.Abs(hi) * 0.02) : (hi - lo) * 0.12;
+                return (lo - pad, hi + pad);
+            }
+        }
+
+        Point At(int i)
+        {
+            var plot = Plot;
+            var t0 = points[0].At;
+            var span = (points[^1].At - t0).TotalSeconds;
+            var x = span < 1 ? plot.X + plot.Width / 2 : plot.X + (points[i].At - t0).TotalSeconds / span * plot.Width;
+            var (lo, hi) = Range;
+            return new Point(x, plot.Bottom - (points[i].Value - lo) / (hi - lo) * plot.Height);
+        }
+
+        FormattedText Text(string s, IBrush color, double size = 10) =>
+            new(s, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Mono, size, color);
+
+        public override void Render(DrawingContext ctx)
+        {
+            ctx.FillRectangle(Background, new Rect(Bounds.Size));
+            if (points.Count == 0) return;
+            var plot = Plot;
+            var grid = new Pen(Tok.RowLine2, 1);
+            if (!compact)
+            {
+                // Trois repères de valeur (bas, milieu, haut) et les dates : première, dernière, et celle du milieu s'il y a la place.
+                var (lo, hi) = Range;
+                for (var k = 0; k <= 2; k++)
+                {
+                    var v = lo + (hi - lo) * k / 2;
+                    var y = plot.Bottom - plot.Height * k / 2;
+                    ctx.DrawLine(grid, new Point(plot.X, y), new Point(plot.Right, y));
+                    var label = Text(format(Math.Round(v)), Tok.Muted);
+                    ctx.DrawText(label, new Point(plot.X - 8 - label.Width, y - label.Height / 2));
+                }
+                var dates = new List<DateTime> { points[0].At, points[^1].At };
+                if ((points[^1].At - points[0].At).TotalDays >= 4 && plot.Width > 300) dates.Insert(1, points[0].At + (points[^1].At - points[0].At) / 2);
+                for (var k = 0; k < dates.Count; k++)
+                {
+                    var label = Text(dates[k].ToLocalTime().ToString("dd/MM"), Tok.Muted);
+                    var x = dates.Count == 1 || points[^1].At == points[0].At ? plot.X + plot.Width / 2 : plot.X + plot.Width * (dates[k] - points[0].At).TotalSeconds / (points[^1].At - points[0].At).TotalSeconds;
+                    ctx.DrawText(label, new Point(Math.Clamp(x - label.Width / 2, 0, Math.Max(0, Bounds.Width - label.Width)), plot.Bottom + 6));
+                }
+            }
+            var coords = Enumerable.Range(0, points.Count).Select(At).ToList();
+            // Aire légère sous la courbe, puis le trait et les points.
+            var area = new StreamGeometry();
+            using (var g = area.Open())
+            {
+                g.BeginFigure(new Point(coords[0].X, plot.Bottom), true);
+                foreach (var c in coords) g.LineTo(c);
+                g.LineTo(new Point(coords[^1].X, plot.Bottom));
+                g.EndFigure(true);
+            }
+            ctx.DrawGeometry(Tok.Alpha(stroke, 0.10), null, area);
+            var line = new StreamGeometry();
+            using (var g = line.Open())
+            {
+                g.BeginFigure(coords[0], false);
+                foreach (var c in coords.Skip(1)) g.LineTo(c);
+                g.EndFigure(false);
+            }
+            ctx.DrawGeometry(null, new Pen(stroke, compact ? 1.5 : 2, lineJoin: PenLineJoin.Round), line);
+            for (var i = 0; i < coords.Count; i++)
+                if (!compact || i == coords.Count - 1 || i == hover)
+                    ctx.DrawEllipse(stroke, null, coords[i], i == hover ? 4.5 : compact ? 2.5 : 3, i == hover ? 4.5 : compact ? 2.5 : 3);
+            if (hover < 0 || compact) return;
+            // Point survolé : trait vertical et « date · valeur » au-dessus du graphique.
+            var h = coords[hover];
+            ctx.DrawLine(new Pen(Tok.Alpha(Tok.Text2, 0.4), 1), new Point(h.X, plot.Y), new Point(h.X, plot.Bottom));
+            var tag = Text($"{points[hover].At.ToLocalTime():dd/MM HH:mm} · {format(points[hover].Value)}", Tok.Text, 11);
+            var box = new Rect(Math.Clamp(h.X - tag.Width / 2 - 6, 0, Math.Max(0, Bounds.Width - tag.Width - 12)), 0, tag.Width + 12, tag.Height + 4);
+            ctx.FillRectangle(Tok.HoverStrong, box, 3);
+            ctx.DrawText(tag, new Point(box.X + 6, box.Y + 2));
+        }
+    }
+
+    /// <summary>« +215 depuis le 23/10 » : l'écart entre le premier et le dernier point, en couleur.</summary>
+    static TextBlock SinceText(IReadOnlyList<ChartPoint> points, Func<double, string> format)
+    {
+        var delta = points[^1].Value - points[0].Value;
+        return T($"{(delta > 0 ? "+" : delta < 0 ? "−" : "±")}{format(Math.Abs(delta))} depuis le {points[0].At.ToLocalTime():dd/MM}", 12,
+            delta > 0 ? Tok.Good : delta < 0 ? Tok.Bad : Tok.Muted, mono: true);
+    }
+
+    /// <summary>
+    /// Les trois courbes de la progression : niveau d'objet, puissance et note globale de la vue (quand elle a été gardée à
+    /// l'import). Survol d'un point : sa date, sa valeur, l'écart avec l'import d'avant et ce qui a changé.
+    /// </summary>
+    List<(string Title, List<ChartPoint> Points, Func<double, string> Format)> ProgressSeries()
+    {
+        var key = r.Mode.ToString();
+        string Changes(int i) => i == 0 ? "premier import enregistré"
+            : progress[i].ChangesSince(progress[i - 1], db.SlotName) is { Count: > 0 } c ? string.Join("\n", c.Take(8).Select(x => $"· {x}")) + (c.Count > 8 ? $"\n· et {c.Count - 8} de plus" : "")
+            : "rien d'autre de visible";
+        List<ChartPoint> Series(string what, Func<ProgressPoint, int?> value)
+        {
+            var list = new List<ChartPoint>();
+            int? before = null;
+            for (var i = 0; i < progress.Count; i++)
+            {
+                if (value(progress[i]) is not { } v) continue;
+                var delta = before is { } b && v != b ? $" ({(v > b ? "+" : "")}{v - b})" : "";
+                list.Add(new ChartPoint(progress[i].FetchedAtUtc, v, $"{progress[i].FetchedAtUtc.ToLocalTime():dd/MM/yyyy HH:mm} · {what} {Fmt.Big(v)}{delta}\n{Changes(i)}"));
+                before = v;
+            }
+            return list;
+        }
+        return
+        [
+            ("Niveau d'objet", Series("niveau d'objet", p => p.ItemLevel), v => Fmt.Big(v)),
+            ("Puissance", Series("puissance", p => p.CombatPower), v => Fmt.Big(v)),
+            ($"Note globale · {Mode}", Series("note globale", p => p.Scores?.GetValueOrDefault(key)?.Overall), v => Fmt.Num(v)),
+        ];
     }
 
     /// <summary>
@@ -5350,7 +5789,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             return Page("Récolte", null, Card(new StackPanel { Spacing = 10, Children = {
                 T("Le Pet Meter (v0.17.0 ou plus) garde le résumé de ta récolte de chaque jour : récoltes, ratées, rang supérieur, chaque ressource " +
                   "avec son rang, et les Kinah de monstres. Lance-le et récolte : le résumé apparaît ici, jour par jour.", 13, Tok.Muted, wrap: true).WithLineHeight(1.5),
-                source } }));
+                source } }), GatherStock(days));
         var fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
         var gameToday = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-7));  // jour de jeu : reset à 07:00 UTC
         string DayLabel(GatherDay d) => d.Date == gameToday ? "aujourd'hui" : d.Date == gameToday.AddDays(-1) ? "hier" : d.Date.ToString("ddd dd/MM", fr);
@@ -5464,7 +5903,120 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             blocks.Add(TableCard("Kinah de monstres", T(kinah.Count > 1 ? $"{Fmt.Big(kinah.Sum(x => x.Amount))} en tout" : "par perso", 11, Tok.Muted, mono: true),
                 TableHeader(cols, "Perso", "Kinah"), rows));
         }
+        blocks.Add(GatherStock(days));
         return Page($"Récolte · {period}", Choice(options), blocks.ToArray());
+    }
+
+    static readonly GatherStockStore StockStore = new();
+
+    /// <summary>
+    /// Ton stock de récolte : les ressources (numéros 6106xxxxx) de ton sac et de ton coffre, lues dans l'inventaire noté par le
+    /// Pet Meter (v0.21.0 ou plus), par rang puis par ressource, avec l'écart depuis le jour relevé précédent (historique gardé sur
+    /// ce PC, un relevé par jour de jeu) et la courbe du total. Rien sans fichier d'inventaire ni ressource.
+    /// </summary>
+    Control? GatherStock(IReadOnlyList<GatherDay> days)
+    {
+        if (PetMeterInventory.Load() is not { } inv) return null;
+        var owners = inv.Chars.Values.Where(c => c.Items.Any(i => GatherCatalog.IsResource(i.Item) && i.Qty > 0)).OrderByDescending(c => c.At).ToList();
+        if (owners.Count == 0) return null;
+        var who = owners.FirstOrDefault(c => c.Character == s.GatherStockChar)
+                  ?? owners.FirstOrDefault(c => string.Equals(c.Character, r.Character.Name, StringComparison.OrdinalIgnoreCase)) ?? owners[0];
+        var stacks = who.Items.Where(i => GatherCatalog.IsResource(i.Item) && i.Qty > 0).ToList();
+        var totals = stacks.GroupBy(i => i.Item).ToDictionary(g => g.Key, g => g.Sum(i => i.Qty));
+        var history = StockStore.Record(who.Character, who.At, totals);
+        var today = GatherStockStore.GameDay(who.At);
+        var prevDay = history.Keys.LastOrDefault(k => string.CompareOrdinal(k, today) < 0);
+        var prev = prevDay is null ? null : history[prevDay];
+        var fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
+        var since = prevDay is null ? null : DateOnly.ParseExact(prevDay, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture).ToString("dd/MM", fr);
+
+        var items = totals.Select(kv => GatherCatalog.Item(kv.Key, kv.Value, days)).ToList();
+        var unique = Tok.B(db.Grade("Unique").Color);
+        var rankColors = new[] { Tok.Text, Tok.Text, Tok.B(db.Grade("Rare").Color), Tok.B(db.Grade("Legend").Color), unique };
+        IBrush RankColor(int rank) => rankColors[Math.Clamp(rank, 1, 4)];
+        static string RankLabel(int rank) => rank switch { 4 => "Éclatant", 3 => "Pur", 2 => "Grande pureté / fraîche", _ => "Normal" };
+        // Écart depuis le relevé précédent, pour un ensemble de ressources.
+        Control Change(IEnumerable<long> ids)
+        {
+            if (prev is null) return T("—", 12, Tok.Faint, mono: true);
+            var list = ids.ToList();
+            var d = list.Sum(id => totals.GetValueOrDefault(id)) - list.Sum(id => prev.GetValueOrDefault(id));
+            return Tip(T(d == 0 ? "=" : $"{(d > 0 ? "+" : "−")}{Fmt.Big(Math.Abs(d))}", 12, d > 0 ? Tok.Good : d < 0 ? Tok.Bad : Tok.Muted, mono: true).AlignRight(),
+                $"Depuis le relevé du {since} : {(d >= 0 ? "+" : "−")}{Fmt.Big(Math.Abs(d))}.");
+        }
+        long Qty(IEnumerable<GatherItem> list) => list.Sum(i => totals.GetValueOrDefault(i.Id ?? 0));
+
+        // Conteneurs : sac d'abord, puis coffre, puis les autres (rangements), sans les pièces portées.
+        var containers = stacks.Select(i => inv.ContainerName(i.Cont)).Distinct()
+            .OrderBy(n => n == "sac" ? 0 : n == "coffre" ? 1 : 2).ThenBy(n => n, StringComparer.Ordinal).ToList();
+        long In(string container, IEnumerable<long> ids)
+        {
+            var set = ids.ToHashSet();
+            return stacks.Where(i => inv.ContainerName(i.Cont) == container && set.Contains(i.Item)).Sum(i => i.Qty);
+        }
+
+        var blocks = new StackPanel { Spacing = 12 };
+        if (owners.Count > 1)
+            blocks.Children.Add(ColumnsSpaced("110,*", 12, T("Perso", 13, weight: FontWeight.Medium),
+                Choice(owners.Select(c => (c.Character, c == who, (Action)(() => update(st => st.GatherStockChar = c.Character)))))));
+        var total = totals.Values.Sum();
+        var kpis = new Avalonia.Controls.Primitives.UniformGrid { Columns = 4 };
+        kpis.Children.Add(Kpi("En stock", Fmt.Big(total)).WithMargin(0, 0, 10, 0));
+        kpis.Children.Add(Kpi("Éclatantes (jaunes)", Fmt.Big(Qty(items.Where(i => i.Rank == 4))), Qty(items.Where(i => i.Rank == 4)) > 0 ? unique : null).WithMargin(0, 0, 10, 0));
+        kpis.Children.Add(Kpi("Pures", Fmt.Big(Qty(items.Where(i => i.Rank == 3))), Qty(items.Where(i => i.Rank == 3)) > 0 ? RankColor(3) : null).WithMargin(0, 0, 10, 0));
+        var change = prev is null ? 0 : total - prev.Values.Sum();
+        kpis.Children.Add(Kpi(since is null ? "Évolution" : $"Depuis le {since}", prev is null ? "—" : change == 0 ? "=" : $"{(change > 0 ? "+" : "−")}{Fmt.Big(Math.Abs(change))}",
+            change > 0 ? Tok.Good : change < 0 ? Tok.Bad : null));
+        blocks.Children.Add(kpis);
+
+        // Par rang : une colonne par conteneur, le total et l'écart.
+        var rankCols = "*," + string.Join(",", containers.Select(_ => "90")) + ",90,90";
+        var byRank = Enumerable.Range(1, 4).Reverse().Select(rank => (rank, ids: items.Where(i => i.Rank == rank).Select(i => (long)(i.Id ?? 0)).ToList()))
+            .Where(x => x.ids.Count > 0).Select(x => (Control)new Border
+            {
+                Padding = new Thickness(20, 5),
+                Child = Columns(rankCols, [T(RankLabel(x.rank), 13, RankColor(x.rank)),
+                    .. containers.Select(c => (Control)T(Fmt.Big(In(c, x.ids)), 12, Tok.Text2, mono: true).AlignRight()),
+                    T(Fmt.Big(x.ids.Sum(id => totals.GetValueOrDefault(id))), 12, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(), Change(x.ids)]),
+            }).ToList();
+        blocks.Children.Add(TableCard("Par rang", null, TableHeader(rankCols, ["Rang", .. containers, "Total", since is null ? "Écart" : $"vs {since}"]), byRank));
+
+        // Par ressource, une colonne par rang : où est ton stock, et ce qui a bougé.
+        var families = items.GroupBy(PetMeterGathering.Family)
+            .Select(f => (Name: PetMeterGathering.BaseName(f.OrderBy(i => i.Rank).First().Name), Items: f.ToList()))
+            .OrderByDescending(f => f.Items.Where(i => i.Rank == 4).Sum(i => (long)totals.GetValueOrDefault(i.Id ?? 0)))
+            .ThenByDescending(f => Qty(f.Items)).ToList();
+        const string famCols = "*,80,80,80,80,90,90";
+        var famRows = families.Select(f =>
+        {
+            Control Cell(int rank)
+            {
+                var q = Qty(f.Items.Where(i => i.Rank == rank));
+                return q == 0 ? T("—", 12, Tok.Faint, mono: true).AlignRight() : T(Fmt.Big(q), 12, rank == 1 ? Tok.Text2 : RankColor(rank), mono: true).AlignRight();
+            }
+            var where = string.Join(" · ", containers.Select(c => (c, q: In(c, f.Items.Select(i => (long)(i.Id ?? 0))))).Where(x => x.q > 0).Select(x => $"{x.c} {Fmt.Big(x.q)}"));
+            return (Control)Tip(new Border
+            {
+                Padding = new Thickness(20, 4),
+                Child = Columns(famCols, T(f.Name, 13), Cell(1), Cell(2), Cell(3), Cell(4),
+                    T(Fmt.Big(Qty(f.Items)), 12, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(), Change(f.Items.Select(i => (long)(i.Id ?? 0)))),
+            }, $"{f.Name} : {where}\n" + string.Join("\n", f.Items.OrderBy(i => i.Rank).Select(i => $"{i.Name} : {Fmt.Big(totals.GetValueOrDefault(i.Id ?? 0))}")));
+        }).ToList();
+        blocks.Children.Add(TableCard("Par ressource", T(Fmt.Plural(families.Count, "ressource"), 11, Tok.Muted, mono: true),
+            TableHeader(famCols, "Ressource", "Normal", "Gr. pureté", "Pur", "Éclatant", "Total", since is null ? "Écart" : $"vs {since}"), famRows));
+
+        // Le total, jour par jour (un relevé par jour de jeu où tu as ouvert cette page avec un inventaire à jour).
+        if (history.Count >= 2)
+        {
+            var points = history.Select(kv => new ChartPoint(DateOnly.ParseExact(kv.Key, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture).ToDateTime(new TimeOnly(7, 0), DateTimeKind.Utc),
+                kv.Value.Values.Sum(), $"{kv.Key} : {Fmt.Big(kv.Value.Values.Sum())} ressources en stock, dont " +
+                                       $"{Fmt.Big(kv.Value.Where(x => GatherCatalog.Item(x.Key, x.Value, days).Rank == 4).Sum(x => x.Value))} éclatantes")).ToList();
+            blocks.Children.Add(Card(new TimeChart(points, v => Fmt.Big(v), Accent.Main, 110), "Ton stock, jour par jour", SinceText(points, v => Fmt.Big(v)), new Thickness(8, 8, 12, 6)));
+        }
+        blocks.Children.Add(T($"Lu dans l'inventaire noté par le Pet Meter{(who.Version is { } v ? $" v{v}" : "")} le {who.At.ToLocalTime():dd/MM à HH:mm} (à l'entrée en jeu, puis à chaque " +
+                              "changement) : ressources de récolte dans ton sac et ton coffre, quantités seulement (le Builder ne connaît pas leur prix). " +
+                              "L'écart compare au dernier relevé d'un jour précédent, gardé sur ce PC.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        return Card(blocks, $"Ton stock de récolte · {who.Character}", T($"relevé du {who.At.ToLocalTime():dd/MM HH:mm}", 11, Tok.Muted, mono: true));
     }
 
     /// <summary>
@@ -5525,22 +6077,45 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         return Card(new StackPanel { Spacing = 8, Children = { grid, legend } }, "Jour par jour", T($"{count} derniers jours", 11, Tok.Muted, mono: true));
     }
 
+    /// <summary>« dans le temps · côte à côte » : les deux vues de la Progression.</summary>
+    Control ProgressModes() => Choice([
+        ("dans le temps", !s.ProgressCompare, () => update(st => st.ProgressCompare = false)),
+        ("côte à côte", s.ProgressCompare, () => update(st => st.ProgressCompare = true)),
+    ]);
+
     Control ProgressScreen()
     {
+        if (s.ProgressCompare) return ComparePage();
         if (progress.Count < 2)
-            return Page($"Progression · {progress.Count} import", null,
+            return Page($"Progression · {progress.Count} import", ProgressModes(),
                 T("Un seul import pour l'instant. Actualise ton personnage (Ctrl+R) après tes progrès : chaque import qui change quelque chose " +
                   "(pièces, compétences, cases Daevanion, niveau d'objet) ajoute un point ici, avec ce qui a changé.", 13, Tok.Muted, wrap: true).WithLineHeight(1.5));
         var first = progress[0];
         var key = r.Mode.ToString();
-        var curves = new WrapPanel { ItemSpacing = 16, LineSpacing = 12 };
-        curves.Children.Add(Curve("Niveau d'objet", progress.Select(p => (p.FetchedAtUtc, (double)p.ItemLevel)).ToList(), v => Fmt.Num(v)));
-        curves.Children.Add(Curve("Puissance", progress.Select(p => (p.FetchedAtUtc, (double)p.CombatPower)).ToList(), v => Fmt.Num(v)));
-        var scored = progress.Where(p => p.Scores?.ContainsKey(key) == true).Select(p => (p.FetchedAtUtc, (double)p.Scores![key].Overall)).ToList();
-        if (scored.Count >= 2) curves.Children.Add(Curve($"Score global ({Mode})", scored, v => Fmt.Num(v)));
-        var curvesBlock = new StackPanel { Spacing = 8, Children = { curves } };
-        if (scored.Count < 2)
-            curvesBlock.Children.Add(T("La courbe du score apparaît dès deux imports notés (le score est gardé à chaque calcul depuis cette version).", 12, Tok.Muted, wrap: true));
+        // Une courbe par carte, sur toute la largeur : la valeur actuelle et l'écart depuis le premier import en tête.
+        var charts = new List<Control>();
+        var colors = new[] { Accent.Main, Tok.Info, Tok.Good };
+        var series = ProgressSeries();
+        for (var i = 0; i < series.Count; i++)
+        {
+            var (title, points, format) = series[i];
+            if (points.Count < 2)
+            {
+                charts.Add(Card(T(i == 2 ? $"La courbe de la note apparaît dès deux imports notés en {Mode} (la note est gardée à chaque calcul)."
+                    : "Pas assez d'imports pour une courbe.", 12, Tok.Muted, wrap: true), title));
+                continue;
+            }
+            var head = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 10,
+                Children = { T(format(points[^1].Value), 12, Tok.Text, FontWeight.SemiBold, mono: true), SinceText(points, format) },
+            };
+            charts.Add(Card(new TimeChart(points, format, colors[i], 130), title, head, new Thickness(8, 8, 12, 6)));
+        }
+        var curvesBlock = new StackPanel { Spacing = 10 };
+        foreach (var c in charts) curvesBlock.Children.Add(c);
+        curvesBlock.Children.Add(T("Une courbe par mesure, dans le temps (deux imports le même jour sont proches). Survole un point : sa date, sa valeur et ce qui a changé à cet import.",
+            12, Tok.Muted, wrap: true));
 
         static string Delta(int d) => d == 0 ? "" : d > 0 ? $" (+{d})" : $" ({d})";
         // Les 6 derniers imports visibles, les plus anciens repliés.
@@ -5575,8 +6150,163 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         if (older.Children.Count > 0)
             recent.Children.Add(Expander(Fmt.Plural(older.Children.Count, "import plus ancien", "imports plus anciens"),
                 IsOpen("progress:older"), () => Toggle("progress:older"), () => older, new Thickness(10, 4)));
-        return Page($"Progression · {progress.Count} imports depuis le {first.FetchedAtUtc.ToLocalTime():dd/MM/yyyy}", null,
-            Card(curvesBlock, "Courbes"), Card(recent, "Imports, du plus récent au plus ancien", padding: new Thickness(0)));
+        return Page($"Progression · {progress.Count} imports depuis le {first.FetchedAtUtc.ToLocalTime():dd/MM/yyyy}", ProgressModes(),
+            curvesBlock, Card(recent, "Imports, du plus récent au plus ancien", padding: new Thickness(0)));
+    }
+
+    // ----- Progression : comparaison côte à côte -----
+
+    /// <summary>Analyses des persos comparés (fichier, date de l'import, mode) : refaites seulement quand l'un d'eux change.</summary>
+    static readonly Dictionary<string, AdviceReport> CompareMemo = [];
+
+    /// <summary>Un perso enregistré, analysé dans le mode de la vue avec ses propres réglages (sans familiers ni combats).</summary>
+    AdviceReport? Analyzed(SavedCharacter saved)
+    {
+        var key = $"{saved.Path}|{saved.FetchedAtUtc.Ticks}|{r.Mode}";
+        lock (CompareMemo)
+            if (CompareMemo.TryGetValue(key, out var known)) return known;
+        try
+        {
+            var store = new CharacterStore();
+            var other = store.Load(saved.Path);
+            var report = new Advisor(db).Analyze(other, r.Mode, store.LoadInputs(other));
+            lock (CompareMemo)
+            {
+                if (CompareMemo.Count >= 8) CompareMemo.Clear();
+                CompareMemo[key] = report;
+            }
+            return report;
+        }
+        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or InvalidDataException or InvalidOperationException or KeyNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>« +12 » en vert, « −5 » en rouge, « = » en gris : l'écart de toi à l'autre (plus haut = mieux, sauf <paramref name="lowerIsBetter"/>).</summary>
+    static TextBlock Gap(double d, string unit = "", bool lowerIsBetter = false)
+    {
+        var good = lowerIsBetter ? d < 0 : d > 0;
+        return T(Math.Abs(d) < 0.05 ? "=" : $"{(d > 0 ? "+" : "−")}{Fmt.Num(Math.Abs(Math.Round(d, 1)))}{unit}", 12,
+            Math.Abs(d) < 0.05 ? Tok.Muted : good ? Tok.Good : Tok.Bad, Math.Abs(d) < 0.05 ? FontWeight.Normal : FontWeight.SemiBold, mono: true).AlignRight();
+    }
+
+    /// <summary>
+    /// Toi et un autre perso enregistré (un onglet ouvert d'abord, ou tout perso importé : ami, joueur ouvert depuis un combat),
+    /// sur deux colonnes : l'essentiel (niveau d'objet, puissance, notes), les stats principales de ta classe, les pièces et leur
+    /// enchantement, les compétences (même classe) et le Daevanion ; l'écart en couleur (vert : tu es devant).
+    /// </summary>
+    Control ComparePage()
+    {
+        var me = r.Character;
+        var tabs = UiPrefs.Load().Tabs ?? [];
+        var saved = new CharacterStore().List()
+            .Where(c => !(c.Name.Equals(me.Name, StringComparison.OrdinalIgnoreCase) && c.ServerName == me.ServerName && c.Region == me.Region))
+            .OrderByDescending(c => tabs.Contains(c.Path)).ThenByDescending(c => c.ClassCode == me.ClassCode).ThenByDescending(c => c.FetchedAtUtc).ToList();
+        if (saved.Count == 0)
+            return Page("Progression · côte à côte", ProgressModes(), T("Aucun autre perso enregistré. Ouvre d'abord celui à comparer (écran d'import, ou « ouvrir sa fiche » " +
+                "d'un joueur dans l'écran Combat) : il apparaît ici, à côté de toi.", 13, Tok.Muted, wrap: true).WithLineHeight(1.5));
+        var pick = saved.FirstOrDefault(c => c.Path == s.CompareWith) ?? saved[0];
+        string ClassName(string code) => db.FindClass(code)?.Name ?? code;
+        var picker = new ComboBox
+        {
+            ItemsSource = saved.Select(c => $"{c.Name} · {ClassName(c.ClassCode)} · niv. d'objet {Fmt.Big(c.ItemLevel)} · {c.ServerName}{(tabs.Contains(c.Path) ? " · onglet ouvert" : "")}").ToList(),
+            SelectedIndex = saved.IndexOf(pick), FontSize = 12, MinHeight = 0, Padding = new Thickness(8, 2), MinWidth = 320,
+        };
+        picker.SelectionChanged += (_, _) =>
+        {
+            if (picker.SelectedIndex >= 0 && saved[picker.SelectedIndex].Path != pick.Path) update(st => st.CompareWith = saved[picker.SelectedIndex].Path);
+        };
+        var head = ColumnsSpaced("110,*", 12, T("Comparer à", 13, weight: FontWeight.Medium), picker);
+        if (Analyzed(pick) is not { } o)
+            return Page("Progression · côte à côte", ProgressModes(), head, T($"Le fichier de {pick.Name} est illisible.", 13, Tok.Warn));
+        var other = o.Character;
+        var sameClass = other.ClassCode == me.ClassCode;
+        const string cols = "*,190,190,90";
+        Border Header() => TableHeader(cols, "", "Toi", other.Name, "Écart");
+        Border Row(Control label, Control mine, Control theirs, Control gap) => new()
+        {
+            Padding = new Thickness(20, 5), BorderBrush = Tok.RowLine, BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = Columns(cols, label, mine, theirs, gap),
+        };
+        Border NumRow(string label, double mine, double theirs, Func<double, string> show, string unit = "") =>
+            Row(T(label, 13), T(show(mine), 12, Tok.Text, mono: true), T(show(theirs), 12, Tok.Text2, mono: true), Gap(mine - theirs, unit));
+
+        // L'essentiel : classe, niveaux, notes.
+        int Nodes(AdviceReport x) => x.Daevanion.Boards.Where(b => b.Pool == DaevanionPlanner.NormalPool).Sum(b => b.Board.OpenNodes);
+        var summary = new List<Control>
+        {
+            Row(T("Classe", 13), T($"{r.Profile.Class.Name} · niv. {me.Level}", 12, Tok.Text), T($"{o.Profile.Class.Name} · niv. {other.Level}", 12, Tok.Text2),
+                T(sameClass ? "" : "≠ classe", 12, Tok.Warn, mono: true).AlignRight()),
+            NumRow("Niveau d'objet", me.ItemLevel, other.ItemLevel, v => Fmt.Big(v)),
+            NumRow("Puissance", me.CombatPower, other.CombatPower, v => Fmt.Big(v)),
+            NumRow($"Note globale ({Mode})", r.Scores.Overall, o.Scores.Overall, v => Fmt.Num(v)),
+            NumRow("Note Stats", r.Scores.Stats, o.Scores.Stats, v => Fmt.Num(v)),
+            NumRow("Note Équipement", r.Scores.Gear, o.Scores.Gear, v => Fmt.Num(v)),
+            NumRow("Note Compétences", r.Scores.Skills, o.Scores.Skills, v => Fmt.Num(v)),
+            NumRow("Note Daevanion", r.Scores.Daevanion, o.Scores.Daevanion, v => Fmt.Num(v)),
+            NumRow("Cases Daevanion", Nodes(r), Nodes(o), v => Fmt.Big(v)),
+        };
+
+        // Stats principales : celles qui comptent pour ta classe dans ce mode, la plus importante d'abord.
+        var stats = r.Stats.Stats.Where(x => x.Weight >= 0.5 && (x.Budget > 0 || o.Stats.Get(x.Def.Key) is { Budget: > 0 }))
+            .OrderByDescending(x => x.Weight).Take(16).Select(x =>
+            {
+                var t = o.Stats.Get(x.Def.Key);
+                var unit = x.Def.Kind == StatKind.Percent ? " %" : "";
+                return (Control)Tip(Row(T(x.Def.Name, 13), T(x.Display, 12, Tok.Text, mono: true), T(t?.Display ?? "—", 12, Tok.Text2, mono: true),
+                        Gap(x.BenchValue - (t?.BenchValue ?? 0), unit)),
+                    $"{x.Def.Name} : importance {x.Weight:0.00} pour ta classe en {GameDatabase.ModeName(r.Mode)}. Comparé sur la valeur des joueurs " +
+                    $"({(x.Def.Kind == StatKind.Percent ? "le %" : "la valeur chiffrée")}).");
+            }).ToList();
+
+        // Pièces : une ligne par emplacement, nom dans la couleur du grade, niveau d'objet + enchantement ; écart de niveau d'objet effectif.
+        Control Piece(EquippedItem? i) => i is null ? T("vide", 12, Tok.Bad)
+            : Tip(T($"{i.ItemLevel} +{i.EnchantLevel} · {i.Name}", 12, Tok.B(db.Grade(i.Grade).Color), mono: true), $"{i.Name} — {db.Grade(i.Grade).Name}, niveau {i.ItemLevel} +{i.EnchantLevel} / {i.MaxEnchantLevel}\n{string.Join("\n", i.MainStats.Select(e => e.Raw))}");
+        var slots = me.Equipment.Select(i => i.Slot).Union(other.Equipment.Select(i => i.Slot))
+            .OrderBy(sl => DollLayout.Select(d => d.Slot).ToList().IndexOf(sl) is var k and >= 0 ? k : 100 + (sl.StartsWith("Arcana") ? sl[^1] : 0)).ToList();
+        var pieces = slots.Select(sl =>
+        {
+            var a = me.Equipment.FirstOrDefault(i => i.Slot == sl);
+            var b = other.Equipment.FirstOrDefault(i => i.Slot == sl);
+            return (Control)Row(T(db.SlotName(sl), 13), Piece(a), Piece(b), Gap((a?.Power ?? 0) - (b?.Power ?? 0)));
+        }).ToList();
+
+        // Compétences (même classe) : niveau total de chaque compétence utile, la plus importante d'abord ; les différences d'abord.
+        var skills = new List<Control>();
+        if (sameClass)
+        {
+            var theirs = other.Skills.Where(x => x.Acquired).GroupBy(x => x.Name).ToDictionary(g => g.Key, g => g.Max(x => x.Level));
+            foreach (var a in r.Skills.Skills.Where(a => a.Priority > 0 && (a.Skill.Acquired || theirs.ContainsKey(a.Skill.Name)))
+                         .OrderByDescending(a => a.Skill.Level != theirs.GetValueOrDefault(a.Skill.Name)).ThenByDescending(a => a.Priority).Take(24))
+            {
+                var mine = a.Skill.Acquired ? a.Skill.Level : 0;
+                var t = theirs.GetValueOrDefault(a.Skill.Name);
+                skills.Add(Tip(Row(WithIcon(SkillIcon(a.Skill, 18), T(a.Skill.Name, 13)), T(mine > 0 ? $"niv. {mine}" : "non apprise", 12, mine > 0 ? Tok.Text : Tok.Muted, mono: true),
+                        T(t > 0 ? $"niv. {t}" : "non apprise", 12, t > 0 ? Tok.Text2 : Tok.Muted, mono: true), Gap(mine - t)),
+                    $"{a.Skill.Name} — {a.Role}, importance {a.Priority:0.00} en {GameDatabase.ModeName(r.Mode)} ; niveau visé {a.Target}. Niveau total (points, Daevanion, équipement)."));
+            }
+        }
+
+        // Daevanion : cases ouvertes par plateau.
+        var boards = me.Boards.Select(b => b.Name).Union(other.Boards.Select(b => b.Name)).Select(name =>
+        {
+            var a = me.Boards.FirstOrDefault(b => b.Name == name);
+            var b = other.Boards.FirstOrDefault(x => x.Name == name);
+            return (Name: name, Mine: a?.OpenNodes ?? 0, Theirs: b?.OpenNodes ?? 0, Total: Math.Max(a?.TotalNodes ?? 0, b?.TotalNodes ?? 0));
+        }).Where(x => x.Mine + x.Theirs > 0).Select(x => (Control)Row(T(x.Name, 13), T($"{x.Mine} / {x.Total}", 12, Tok.Text, mono: true),
+            T($"{x.Theirs} / {x.Total}", 12, Tok.Text2, mono: true), Gap(x.Mine - x.Theirs))).ToList();
+
+        return Page($"Progression · toi et {other.Name} · {Mode}", ProgressModes(),
+            head,
+            T($"{other.Name} : importé le {other.FetchedAtUtc.ToLocalTime():dd/MM/yyyy HH:mm}, analysé dans la même vue avec ses réglages (sans familiers ni combats). " +
+              "Écart : toi moins lui, en vert quand tu es devant." + (sameClass ? "" : " Classes différentes : stats jugées selon ta classe, compétences non comparées."),
+                12, Tok.Muted, wrap: true).WithLineHeight(1.4),
+            TableCard("L'essentiel", null, Header(), summary),
+            stats.Count > 0 ? TableCard($"Stats principales de ta classe · {stats.Count}", T("importance ≥ 0,5", 11, Tok.Muted, mono: true), Header(), stats) : null,
+            TableCard($"Pièces et enchantements · {pieces.Count}", T("niveau d'objet +enchantement", 11, Tok.Muted, mono: true), Header(), pieces),
+            skills.Count > 0 ? TableCard($"Compétences · {skills.Count}", T("différences d'abord", 11, Tok.Muted, mono: true), Header(), skills) : null,
+            boards.Count > 0 ? TableCard($"Daevanion · {boards.Count} plateaux", T("cases ouvertes", 11, Tok.Muted, mono: true), Header(), boards) : null);
     }
 
     Control Details()

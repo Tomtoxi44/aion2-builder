@@ -14,7 +14,10 @@ public enum DaevanionChoice { None, Next, Respec, Route }
 public sealed record SimulationOptions(DaevanionChoice Daevanion = DaevanionChoice.None, int NextNodes = 20, bool Skills = false,
     bool? Designed = null, bool GearAtStage = false, string? ArcanaGrade = null, string? ArcanaSlot = null)
 {
-    public bool Any => Daevanion != DaevanionChoice.None || Skills || Designed is not null || GearAtStage || ArcanaGrade is not null;
+    /// <summary>Pièce mise à la place de celle du même emplacement (simulateur d'enchantement : la même pièce à un autre niveau).</summary>
+    public EquippedItem? Item { get; init; }
+
+    public bool Any => Daevanion != DaevanionChoice.None || Skills || Designed is not null || GearAtStage || ArcanaGrade is not null || Item is not null;
 }
 
 /// <summary>
@@ -162,6 +165,12 @@ public static partial class Simulator
             skills = skills.Select(s => s.Acquired && bonus.TryGetValue(GameDatabase.NormalizeLabel(s.Name), out var d) && d != 0 ? s with { Level = s.Level + d } : s).ToList();
 
         var simulated = WithArcana(c, ArcanaChanges(db, c, o)) with { Boards = boards, Skills = skills };
+        if (o.Item is { } piece && simulated.Equipment.FirstOrDefault(i => i.Slot == piece.Slot) is { } old)
+            simulated = simulated with
+            {
+                Equipment = simulated.Equipment.Select(i => i == old ? piece : i).ToList(),
+                ItemLevel = simulated.ItemLevel + piece.Power - old.Power,
+            };
         var simInputs = inputs with
         {
             UnspentSkillPoints = o.Skills ? 0 : inputs.UnspentSkillPoints,

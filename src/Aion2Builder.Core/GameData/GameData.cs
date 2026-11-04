@@ -437,6 +437,21 @@ public sealed record GearSettings
     public int WeakSlotGap { get; init; } = 4;
 }
 
+/// <summary>
+/// Objectif de la semaine (Accueil) : temps de jeu proposés (heures par semaine) et temps estimé d'une action selon ce qu'elle
+/// demande (clés de <see cref="Analysis.Need"/>), en heures. Repères grossiers, pas mesurés : ajustables dans settings.json.
+/// </summary>
+public sealed record WeekSettings
+{
+    public List<int> Choices { get; init; } = [3, 7, 15];
+    public Dictionary<string, double> Hours { get; init; } = new()
+    {
+        ["Free"] = 0.25, ["Combat"] = 0.5, ["Rolls"] = 1, ["Engraving"] = 1, ["Stones"] = 0.5, ["Enchant"] = 1, ["Points"] = 2, ["Farm"] = 3, ["Pets"] = 1,
+    };
+
+    public double For(Analysis.Need need) => Hours.TryGetValue(need.ToString(), out var h) && h > 0 ? h : 1;
+}
+
 public sealed record SettingsFile
 {
     public DaevanionSettings Daevanion { get; init; } = new();
@@ -444,6 +459,7 @@ public sealed record SettingsFile
     public StigmaSettings Stigmas { get; init; } = new();
     public StatSettings Stats { get; init; } = new();
     public GearSettings Gear { get; init; } = new();
+    public WeekSettings Week { get; init; } = new();
     public MacroSettings Macros { get; init; } = new();
 }
 
