@@ -30,16 +30,14 @@ public static class WhatIf
         var moved = r.Skills.Skills.Count(a => a.RecommendedBase != a.Base);
         if (moved > 0)
         {
-            var overall = Score(r, skills: r.Skills with { Skills = r.Skills.Skills.Select(a => a with { Base = a.RecommendedBase }).ToList() }).Overall;
+            var overall = SkillsFollowed(r);
             gains.Add(new Gain("les compétences conseillées", $"{Fmt.Plural(moved, "compétence change", "compétences changent")} de niveau", overall, overall - now, Area.Skills));
         }
 
         var steps = r.Daevanion.Steps.Take(nextNodes).ToList();
         if (steps.Count > 0)
         {
-            var added = steps.GroupBy(s => s.Board.Id).ToDictionary(g => g.Key, g => g.Count());
-            var boards = r.Daevanion.Boards.Select(b => added.TryGetValue(b.Board.Id, out var n) ? b with { Board = b.Board with { OpenNodes = b.Board.OpenNodes + n } } : b).ToList();
-            var overall = Score(r, dae: r.Daevanion with { Boards = boards }).Overall;
+            var overall = NodesOpened(r, steps);
             gains.Add(new Gain($"les {steps.Count} prochaines cases Daevanion", $"{Fmt.Num(steps[^1].Cumulative)} points", overall, overall - now, Area.Daevanion));
         }
         return gains.OrderByDescending(g => g.Delta).ToList();
@@ -48,4 +46,16 @@ public static class WhatIf
     /// <summary>Score global si cette seule pièce passait au niveau du palier.</summary>
     public static int SlotFixed(AdviceReport r, string slot) =>
         Score(r, gear: r.Gear with { Slots = r.Gear.Slots.Select(s => s.Slot == slot && Todo(s) ? s with { Status = SlotStatus.Ok } : s).ToList() }).Overall;
+
+    /// <summary>Score global avec la répartition conseillée des compétences.</summary>
+    public static int SkillsFollowed(AdviceReport r) =>
+        Score(r, skills: r.Skills with { Skills = r.Skills.Skills.Select(a => a with { Base = a.RecommendedBase }).ToList() }).Overall;
+
+    /// <summary>Score global avec ces cases Daevanion ouvertes (note Daevanion seulement : leurs stats ne sont pas recalculées).</summary>
+    public static int NodesOpened(AdviceReport r, IEnumerable<PlannedNode> steps)
+    {
+        var added = steps.GroupBy(s => s.Board.Id).ToDictionary(g => g.Key, g => g.Count());
+        var boards = r.Daevanion.Boards.Select(b => added.TryGetValue(b.Board.Id, out var n) ? b with { Board = b.Board with { OpenNodes = b.Board.OpenNodes + n } } : b).ToList();
+        return Score(r, dae: r.Daevanion with { Boards = boards }).Overall;
+    }
 }

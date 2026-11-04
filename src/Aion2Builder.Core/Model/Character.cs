@@ -148,6 +148,9 @@ public sealed record PlayerInputs
     public List<string> Done { get; init; } = [];
     public DateTime? DoneFor { get; init; }
 
+    /// <summary>Temps de jeu par semaine sur ce perso (heures), pour l'objectif de la semaine de l'Accueil.</summary>
+    public int WeekHours { get; init; } = 7;
+
     public bool IsDone(string title, DateTime fetchedAtUtc) => DoneFor == fetchedAtUtc && Done.Contains(title);
 
     public int UnspentFor(string pool) => pool switch

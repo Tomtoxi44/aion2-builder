@@ -455,7 +455,68 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         return Page($"Accueil · {r.Character.Name} · {Mode}", Badges(
             copy,
             Tip(Badge($"score global {r.Scores.Overall}", Tok.Score(r.Scores.Overall)), HowText),
-            Badge(advice == 0 ? "✓ aucun conseil" : Fmt.CountsText(r.Findings), important > 0 ? Tok.Warn : advice > 0 ? Tok.Text2 : Tok.Good)), Doll(), HomeToday());
+            Badge(advice == 0 ? "✓ aucun conseil" : Fmt.CountsText(r.Findings), important > 0 ? Tok.Warn : advice > 0 ? Tok.Text2 : Tok.Good)), Doll(), HomeWeek(), HomeToday());
+    }
+
+    /// <summary>« 15 min », « 1 h », « 1 h 30 » : un temps estimé, arrondi au quart d'heure.</summary>
+    static string Hours(double h)
+    {
+        var minutes = (int)Math.Round(h * 4) * 15;
+        return minutes < 60 ? $"{Math.Max(15, minutes)} min" : minutes % 60 == 0 ? $"{minutes / 60} h" : $"{minutes / 60} h {minutes % 60:00}";
+    }
+
+    /// <summary>
+    /// Accueil : l'objectif de la semaine. Selon ton temps de jeu (3, 7 ou 15 h, gardé pour ce perso), les trois actions du plan
+    /// d'action qui rapportent le plus et tiennent dans ce temps, une par ligne avec son gain (note globale par les « Et si »,
+    /// niveau d'objet par la feuille de route) et son temps estimé ; en bas, le total et le palier de la feuille de route.
+    /// </summary>
+    Control HomeWeek()
+    {
+        var hours = inputs.WeekHours;
+        var plan = WeekGoal.Plan(db, r, Route, hours, IsDone);
+        var choices = db.Settings.Week.Choices.Count > 0 ? db.Settings.Week.Choices : [3, 7, 15];
+        var choice = Tip(Choice(choices.Select(h => ($"{h} h", h == hours, (Action)(() => onInputs(inputs with { WeekHours = h }))))),
+            "Ton temps de jeu par semaine sur ce perso : les actions choisies tiennent dedans (gardé pour ce perso).");
+        var list = new StackPanel();
+        var n = 0;
+        foreach (var a in plan.Actions)
+        {
+            var gain = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
+            if (a.Note != 0) gain.Children.Add(T($"{(a.Note > 0 ? "+" : "")}{a.Note} note", 13, a.Note > 0 ? Tok.Good : Tok.Bad, FontWeight.SemiBold, mono: true));
+            if (a.ItemLevel > 0) gain.Children.Add(T($"+{a.ItemLevel} niv. d'objet", 12, Tok.Good, FontWeight.SemiBold, mono: true));
+            if (a.Other is { } other) gain.Children.Add(T(other, 12, other.StartsWith('≈') ? Tok.Good : Tok.Muted, mono: true));
+            var text = new StackPanel { Spacing = 2, Children = { T(a.Title, 13, Tok.Text, FontWeight.Medium, wrap: true) } };
+            if (a.Action is { } act) text.Children.Add(new TextBlock { Text = act, FontSize = 12, Foreground = Tok.Muted, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis });
+            var row = Clickable(ColumnsSpaced("20,130,*,64", 8, T($"{++n}", 13, Accent.Main, FontWeight.Bold, mono: true), gain, text,
+                    T(Hours(a.Hours), 12, Tok.Text2, mono: true).AlignRight()),
+                () => Go(a.Finding), hover: Tok.TileHover, padding: new Thickness(8, 7));
+            row.BorderBrush = Tok.RowLine2;
+            row.BorderThickness = new Thickness(0, 0, 0, 1);
+            var why = a.Note != 0 || a.ItemLevel > 0
+                ? (a.Note != 0 ? $"Note globale {plan.NoteNow} → {plan.NoteNow + a.Note} (même calcul que les « Et si »). " : "") +
+                  (a.ItemLevel > 0 ? $"Niveau d'objet +{a.ItemLevel} (feuille de route : 1 niveau d'objet ou d'enchantement = 1 point). " : "")
+                : "Gain non chiffré en note : le conseil, en détail :";
+            list.Children.Add(Tip(row, $"{why}\n{string.Join("\n", a.Findings.Select(f => f.Detail.Replace('\n', ' ')))}\n" +
+                                       $"Temps estimé : {Hours(a.Hours)} (repère grossier, settings.json → week).\nClic : l'endroit où agir."));
+        }
+        if (n == 0)
+            list.Children.Add(T(r.ActionPlan.Any(f => !IsDone(f))
+                ? $"Aucune action du plan ne tient en {hours} h : choisis plus de temps."
+                : "✓ Rien d'important à faire cette semaine : tout est en ordre pour cette vue.", 13, Tok.Good, wrap: true).WithMargin(8, 8));
+        else
+        {
+            var il = plan.ItemLevelNow;
+            var total = $"≈ {Hours(plan.Hours)} sur {hours} h" +
+                        (plan.Note > 0 ? $" · note {plan.NoteNow} → ≈ {plan.NoteNow + plan.Note}" : "") +
+                        (plan.ItemLevel > 0 ? $" · niveau d'objet {Fmt.Big(il)} → {Fmt.Big(il + plan.ItemLevel)}" : "") +
+                        (plan.Reaches is { } g ? $" : palier {Fmt.Big(g.Score)} atteint ({g.Unlocks})"
+                            : plan.Next is { } next ? $" · palier suivant {Fmt.Big(next.Score)} (encore +{next.Score - il - plan.ItemLevel})" : "");
+            list.Children.Add(Tip(T(total, 12, plan.Reaches is not null ? Tok.Good : Tok.Text2, mono: true, wrap: true).WithMargin(8, 8, 8, 2),
+                "Parmi les conseils du plan d'action (les plus rentables d'abord), la combinaison de trois au plus qui tient dans ton temps de jeu " +
+                "et vaut le plus. Temps : estimés selon ce que demande chaque action (gratuit, séance au mannequin, sortie en donjon…). " +
+                "Gains : note globale par le calcul des « Et si » (additionnés : ≈), niveau d'objet et palier par la feuille de route (écran Équipement)."));
+        }
+        return Card(list, $"Objectif de la semaine · {hours} h de jeu", choice, new Thickness(6, 2, 6, 6));
     }
 
     /// <summary>

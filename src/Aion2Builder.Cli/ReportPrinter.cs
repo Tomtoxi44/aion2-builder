@@ -15,6 +15,13 @@ sealed class ReportPrinter(GameDatabase db)
         var gains = WhatIf.Gains(r).Where(g => g.Delta > 0).ToList();
         if (gains.Count > 0)
             Console.WriteLine("Et si : " + string.Join(" · ", gains.Select(g => $"{g.Label} → {g.Overall} (+{g.Delta})")));
+        var roadmap = GearRoadmap.Build(db, r);
+        foreach (var hours in db.Settings.Week.Choices)
+        {
+            var week = WeekGoal.Plan(db, r, roadmap, hours);
+            Console.WriteLine($"Semaine ({hours} h) : " + (week.Actions.Count == 0 ? "rien qui tienne" : string.Join(" · ", week.Actions.Select(a =>
+                $"{a.Title} [{a.Hours:0.##} h{(a.Note != 0 ? $", {a.Note:+0;-0} note" : "")}{(a.ItemLevel > 0 ? $", +{a.ItemLevel} niv." : "")}{(a.Other is { } o ? $", {o}" : "")}]"))));
+        }
         if (r.Profile.Class.Benchmark is { ItemLevel.Count: > 0 } bench && c.Level >= 45)
         {
             var nodes = r.Daevanion.Boards.Where(b => b.Pool == DaevanionPlanner.NormalPool).Sum(b => b.Board.OpenNodes);
