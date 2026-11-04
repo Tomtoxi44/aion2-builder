@@ -236,6 +236,8 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    Récolte le montre jour par jour, ou sur les 7 / 30 derniers jours : récoltes du compteur du jeu (sur 1 000 par jour et
    par serveur), ratées, récoltes au rang supérieur, **éclatantes** (rang 4, rareté Unique, en jaune dans le jeu), la
    quantité par rang et par ressource, et les Kinah de monstres de chaque perso. Le serveur du perso ouvert vient d'abord.
+   Avec ta clé Aion 2 Todo (la même que celle du Pet Meter), c'est la récolte de tout ton compte : le Pet Meter v0.18.0
+   envoie le détail du jour avec sa synchro, le site additionne tes PC, et l'écran le lit, quel que soit le PC.
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par

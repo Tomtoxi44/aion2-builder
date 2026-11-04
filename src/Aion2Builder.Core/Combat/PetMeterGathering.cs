@@ -15,8 +15,9 @@ public sealed record GatherItem(int? Id, List<string>? Names, int Rank, int Qty)
 /// vues par le Pet Meter, les persos et les ressources.</summary>
 public sealed record GatherServer(int Count, int Failed, int Better, List<string>? Chars, List<GatherItem>? Items);
 
-/// <summary>Un jour de jeu (reset à 07:00 UTC) : récolte par serveur (« #numéro »), Kinah de monstres par perso.</summary>
-public sealed record GatherDay(string Day, Dictionary<string, GatherServer>? Servers, Dictionary<string, long>? Kinah, int Cap = 1000)
+/// <summary>Un jour de jeu (reset à 07:00 UTC) : récolte par serveur (« #numéro »), Kinah de monstres par perso ; Clients : combien
+/// de PC l'ont vu (récolte du compte, lue sur Aion 2 Todo), 0 pour un fichier de ce PC.</summary>
+public sealed record GatherDay(string Day, Dictionary<string, GatherServer>? Servers, Dictionary<string, long>? Kinah, int Cap = 1000, int Clients = 0)
 {
     public DateOnly Date => DateOnly.ParseExact(Day, "yyyy-MM-dd", CultureInfo.InvariantCulture);
 }
@@ -46,6 +47,13 @@ public static class PetMeterGathering
         }
         return days.OrderByDescending(d => d.Day, StringComparer.Ordinal).ToList();
     }
+
+    /// <summary>
+    /// Les jours du compte (tous tes PC, lus sur Aion 2 Todo) d'abord ; ceux de ce PC qu'il n'a pas (avant le Pet Meter v0.18.0,
+    /// ou pas encore envoyés), en plus. Du plus récent au plus ancien.
+    /// </summary>
+    public static List<GatherDay> Merge(IReadOnlyList<GatherDay> account, IReadOnlyList<GatherDay> local) =>
+        account.Concat(local.Where(l => account.All(a => a.Day != l.Day))).OrderByDescending(d => d.Day, StringComparer.Ordinal).ToList();
 
     /// <summary>Plusieurs jours d'un serveur additionnés (ressources regroupées par numéro, ou par nom pour un numéro inconnu).</summary>
     public static GatherServer Sum(IEnumerable<GatherServer> servers)

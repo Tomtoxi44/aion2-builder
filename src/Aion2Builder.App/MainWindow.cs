@@ -919,6 +919,7 @@ public sealed class MainWindow : Window
             grid.Children.Add(bar);
         }
         side = null;
+        if (state.Screen == Screen.Gather && report is not null) _ = LoadAccountGatherAsync();
         var page = state.Screen == Screen.Import || report is null ? ImportHost() : Page(report);
         Grid.SetRow(page, 1);
         Grid.SetColumn(page, 1);
@@ -941,7 +942,8 @@ public sealed class MainWindow : Window
         var views = new ScreenViews(db, r, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key), progress,
             o => Simulator.Run(db, r, inputs, pets.Collection, o),
             combats, () => _ = ImportCombatAsync(), DeleteCombat, ReloadCombats, () => _ = RefreshAsync(),
-            peerStore.Load(), (name, server) => _ = AddPeerAsync(name, server), RemovePeer, () => _ = ImportInGameAsync());
+            peerStore.Load(), (name, server) => _ = AddPeerAsync(name, server), RemovePeer, () => _ = ImportInGameAsync(),
+            new AccountGather(accountGather ?? [], AccountKey() is not null, accountGatherStatus));
         var (content, inspector) = views.Build();
         side = views.Side();
         var grid = new Grid { RowDefinitions = new RowDefinitions("36,*") };
@@ -1649,6 +1651,35 @@ public sealed class MainWindow : Window
             SetStatus(ex.Message, error: true);
             Toast("Lecture des captures impossible", ex.Message, error: true);
         }
+    }
+
+    // Récolte du compte (Aion 2 Todo) : relue à l'ouverture de l'écran Récolte, au plus toutes les 2 minutes.
+    List<GatherDay>? accountGather;
+    string? accountGatherStatus;
+    DateTime accountGatherAt;
+    bool accountGatherLoading;
+
+    /// <summary>La clé Aion 2 Todo : celle reliée dans le Builder, sinon celle du Pet Meter de ce PC.</summary>
+    string? AccountKey() => pets.Key is { Length: > 0 } k ? k : PetStore.PetMeterKey();
+
+    async Task LoadAccountGatherAsync()
+    {
+        if (accountGatherLoading || DateTime.UtcNow - accountGatherAt < TimeSpan.FromMinutes(2) || AccountKey() is not { } key) return;
+        accountGatherLoading = true;
+        accountGatherAt = DateTime.UtcNow;
+        if (accountGather is null) accountGatherStatus = "Lecture de la récolte de ton compte sur Aion 2 Todo… (le site peut mettre une minute à se réveiller)";
+        try
+        {
+            using var client = PetSyncClient.Create();
+            accountGather = await client.Gathering(key);
+            accountGatherStatus = null;
+        }
+        catch (Exception ex) when (ex is ArmoryException or System.Text.Json.JsonException)
+        {
+            accountGatherStatus = $"Récolte du compte illisible ({ex.Message}) : seuls les jours de ce PC sont montrés.";
+        }
+        finally { accountGatherLoading = false; }
+        if (state.Screen == Screen.Gather) Render();
     }
 
     void RemovePeer(string characterId)

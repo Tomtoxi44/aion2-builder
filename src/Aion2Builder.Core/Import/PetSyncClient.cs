@@ -47,6 +47,11 @@ public sealed class PetSyncClient(HttpClient http) : IDisposable
         return new PetCollection { Souls = map, Tiers = tiers, Catalog = pets, FetchedAtUtc = DateTime.UtcNow };
     }
 
+    /// <summary>Récolte de chaque jour du compte (60 jours), tous les PC additionnés par le site.</summary>
+    public async Task<List<Combat.GatherDay>> Gathering(string key, CancellationToken ct = default) =>
+        JsonSerializer.Deserialize<List<Combat.GatherDay>>(await Get("/api/sync/gathering", key.Trim(), ct),
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+
     async Task<string> Get(string path, string? key, CancellationToken ct)
     {
         try

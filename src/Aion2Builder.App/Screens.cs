@@ -29,6 +29,9 @@ enum BuildPage { Compare, Rotations, Differences }
 /// <summary>Barre secondaire d'un écran (à côté du rail) : titre, boutons de l'en-tête, puis ses lignes.</summary>
 sealed record SidePanel(string Title, Control? Actions, Control Body);
 
+/// <summary>Récolte du compte lue sur Aion 2 Todo : les jours (tous les PC), si une clé est reliée, et l'état de la lecture.</summary>
+sealed record AccountGather(IReadOnlyList<GatherDay> Days, bool Linked, string? Status);
+
 /// <summary>État de l'interface : écran, sélections et blocs repliés (hors rapport).</summary>
 sealed class UiState
 {
@@ -82,7 +85,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     Action<Action<UiState>> update, Action<PlayerInputs> onInputs, string? petKeyHint, Action<string?> onPets,
     IReadOnlyList<ProgressPoint> progress, Func<SimulationOptions, AdviceReport> simulate,
     IReadOnlyList<(string Path, CombatLog Log)> combats, Action importCombat, Action<string> deleteCombat, Action reloadCombats, Action refresh,
-    IReadOnlyList<SavedPeer> savedPeers, Action<string, string> addPeer, Action<string> removePeer, Action importInGame)
+    IReadOnlyList<SavedPeer> savedPeers, Action<string, string> addPeer, Action<string> removePeer, Action importInGame,
+    AccountGather accountGather)
 {
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
@@ -4319,11 +4323,17 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     /// </summary>
     Control GatherScreen()
     {
-        var days = PetMeterGathering.Load();
+        var days = PetMeterGathering.Merge(accountGather.Days, PetMeterGathering.Load());
+        // D'où vient la récolte : ton compte (tous tes PC) avec ta clé Aion 2 Todo, sinon ce PC.
+        var source = T(accountGather.Status
+            ?? (accountGather.Linked ? "Récolte de ton compte : tous tes PC additionnés (Aion 2 Todo, Pet Meter v0.18.0 ou plus), plus les jours gardés sur ce PC."
+                : "Récolte de ce PC seulement. Avec ta clé Aion 2 Todo (onglet Familiers → Pet Meter), celle de tous tes PC."),
+            12, accountGather.Status is { } st && !st.EndsWith('…') ? Tok.Warn : Tok.Muted, wrap: true);
         if (days.Count == 0)
-            return Page("Récolte", null, Card(T("Le Pet Meter (v0.17.0 ou plus) garde sur ton PC le résumé de ta récolte de chaque jour : récoltes, " +
-                "ratées, rang supérieur, chaque ressource avec son rang, et les Kinah de monstres. Lance-le et récolte : le résumé apparaît ici, " +
-                $"jour par jour.\nDossier lu : {PetMeterGathering.Dir}", 13, Tok.Muted, wrap: true).WithLineHeight(1.5)));
+            return Page("Récolte", null, Card(new StackPanel { Spacing = 10, Children = {
+                T("Le Pet Meter (v0.17.0 ou plus) garde le résumé de ta récolte de chaque jour : récoltes, ratées, rang supérieur, chaque ressource " +
+                  "avec son rang, et les Kinah de monstres. Lance-le et récolte : le résumé apparaît ici, jour par jour.", 13, Tok.Muted, wrap: true).WithLineHeight(1.5),
+                source } }));
         var fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
         var gameToday = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-7));  // jour de jeu : reset à 07:00 UTC
         string DayLabel(GatherDay d) => d.Date == gameToday ? "aujourd'hui" : d.Date == gameToday.AddDays(-1) ? "hier" : d.Date.ToString("ddd dd/MM", fr);
@@ -4349,7 +4359,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var server = servers.FirstOrDefault(x => x.Key == s.GatherServer);
         if (server.Key is null) server = servers.FirstOrDefault();
 
-        var blocks = new List<Control?>();
+        var blocks = new List<Control?> { source };
         if (servers.Count > 1)
             blocks.Add(ColumnsSpaced("110,*", 12, T("Serveur", 13, weight: FontWeight.Medium),
                 Choice(servers.Select(x => (ServerLabel(x.Key, x.Sum), x.Key == server.Key, (Action)(() => update(st => st.GatherServer = x.Key)))))));
