@@ -240,7 +240,10 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    ton PC le résumé de ta récolte de chaque jour (`%LOCALAPPDATA%\AION2-pet-meter\gathering`, 60 jours) ; l'écran
    Récolte le montre jour par jour, ou sur les 7 / 30 derniers jours : récoltes du compteur du jeu (sur 1 000 par jour et
    par serveur), ratées, récoltes au rang supérieur, **éclatantes** (rang 4, rareté Unique, en jaune dans le jeu), la
-   quantité par rang et par ressource, et les Kinah de monstres de chaque perso. Le serveur du perso ouvert vient d'abord.
+   quantité par rang et par ressource (noms colorés comme en jeu : vert « grande pureté » / « fraîche », bleu « pur », jaune
+   « éclatant »), la part au rang supérieur et en éclatantes de chaque ressource (« Par ressource, toutes qualités »), et les
+   Kinah de monstres de chaque perso. Le serveur du perso ouvert vient d'abord. L'Accueil montre aussi la récolte du jour et
+   ton dernier combat (DPS, ta part en groupe, ton record sur ce boss).
    Un graphique « Jour par jour » (14 ou 30 jours) montre les récoltes de chaque jour sur 1 000 et les éclatantes ; un clic
    ouvre le jour.
    Avec ta clé Aion 2 Todo (la même que celle du Pet Meter), c'est la récolte de tout ton compte : le Pet Meter v0.18.0
@@ -257,7 +260,9 @@ aux joueurs reste juste (leurs totaux sont calculés pareil), mais les valeurs c
 jeu. « lire mes captures… » lit sur le PC tes captures de la fenêtre Stats (touche P, onglets Stats principales et Stats
 détaillées, sans buff temporaire), relit ton perso, et garde pour chaque stat la part que le site ne montre pas
 (valeur en jeu = (total + part) × (1 + %)) ; une valeur se corrige ou se tape à la main. Les guides sont alors jugés sur ta
-valeur en jeu. CLI : `stats-jeu <nom> mots.tsv… [--save]` (mots écrits par `Aion2Builder.exe --ocr capture.png mots.tsv 2000`).
+valeur en jeu. Avec le Pet Meter v0.20.9 ou plus, « reprendre du Pet Meter » prend tes PV, PM, VIT de combat et de
+déplacement et ta Perforation dans la fiche que le jeu envoie à ta connexion (`ingame-stats.json`), sans capture ; ATQ, DÉF,
+Précision, CRIT… n'y sont pas (le jeu les calcule). CLI : `stats-jeu <nom> mots.tsv… [--save]` (mots écrits par `Aion2Builder.exe --ocr capture.png mots.tsv 2000`).
 
 ## Ajuster les données
 
