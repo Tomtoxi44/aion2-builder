@@ -3924,7 +3924,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 wrap.Children.Add(item);
             }
             var rest = casts.Count(c => !colors.ContainsKey(c.Code));
-            if (rest > 0) wrap.Children.Add(T($"gris : {Fmt.Plural(rest, "autre lancer")}", 12, Tok.Muted).WithMargin(0, 0, 0, 2));
+            if (rest > 0) wrap.Children.Add(T($"gris : {Fmt.Plural(rest, "autre lancer", "autres lancers")}", 12, Tok.Muted).WithMargin(0, 0, 0, 2));
             legend.Children.Add(wrap);
         }
         body.Children.Add(legend);
@@ -4101,12 +4101,15 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 var label = Text(name, 12, color, maxWidth: labelWidth - 10);
                 ctx.DrawText(label, new Point(0, y + (Row - label.Height) / 2));
                 ctx.DrawRectangle(Tok.Frame, null, new RoundedRect(new Rect(labelWidth, y + 3, Math.Max(0, size.Width - labelWidth), Row - 6), 3));
+                // Traits de 2 px, affinés jusqu'à 1 px quand les lancers se serrent (un combat de 3 min en compte des centaines).
+                var tick = Math.Clamp((size.Width - labelWidth - 8) / Math.Max(1, marks.Count) * 0.6, 1, 2);
                 for (var j = 0; j < marks.Count; j++)
                 {
                     var m = marks[j];
                     var h = 6 + 10 * Math.Clamp(m.Weight, 0, 1);
                     var on = i == hoverLane && j == hoverMark;
-                    ctx.FillRectangle(on ? Tok.Text : m.Color, new Rect(X(m.T, size.Width) - (on ? 1.5 : 1), y + (Row - h) / 2, on ? 3 : 2, h));
+                    var w = on ? 3 : tick;
+                    ctx.FillRectangle(on ? Tok.Text : m.Color, new Rect(X(m.T, size.Width) - w / 2, y + (Row - h) / 2, w, h));
                 }
             }
             if (hoverLane >= 0)
