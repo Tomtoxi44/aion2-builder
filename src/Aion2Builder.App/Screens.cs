@@ -2846,7 +2846,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var line = m.Lines[i];
             var count = line.Slots.Count;
             // Dans le jeu, la première essayée est EN BAS de la pile (guides allthings.how, mein-mmo, KeenGamer) : la place est dite telle quelle.
-            string Place(int k) => k == 0 ? "en bas · 1re" : k == count - 1 ? "en haut" : $"{k + 1}e en partant du bas";
+            string Place(int k) => k == 0 ? "en bas · 1re" : k == count - 1 ? "en haut" : $"{k + 1}e du bas";
             var rows = line.Slots.Select((sl, k) => (Control)new Border
             {
                 Padding = new Thickness(20, 6),
@@ -2855,7 +2855,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     T(sl.Why, 12, Tok.Text2, wrap: true)),
             });
             blocks.Add(TableCard($"Ligne {i + 1} · {line.Name}", T($"étape {i + 1} de la macro", 11, Tok.Muted, mono: true),
-                TableHeader(cols, "Place dans la pile", "Compétence", "Pourquoi là"), rows));
+                TableHeader(cols, "Place", "Compétence", "Pourquoi là"), rows));
         }
 
         var setup = new StackPanel { Spacing = 8 };
