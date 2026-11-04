@@ -220,7 +220,7 @@ static class BenchCommand
             CombatPower = rows.Select(p => p.Player.CombatPower ?? 0).Order().ToList(),
             DaevanionNodes = rows.Select(p => p.DaevanionNodes).Order().ToList(),
             Stats = keys.ToDictionary(k => k, k => rows.Select(p => p.Player.Stats.GetValueOrDefault(k)).Order().ToList()),
-            Players = rows.Select(p => p.Player).ToList(),
+            Players = rows.Select(p => p.Player with { Passives = null }).ToList(),  // niveaux des passifs : le top seulement
             Top = top.OrderByDescending(p => p.CombatPower).ToList(),
             TopSource = top.Count == 0 ? "" : $"les {top.Count} {c.Name}s à la plus forte puissance de combat ({top.Min(p => p.CombatPower):N0} à {top.Max(p => p.CombatPower):N0}) " +
                                               $"parmi les {found} niveau {Level} trouvés le {date:dd/MM/yyyy}",

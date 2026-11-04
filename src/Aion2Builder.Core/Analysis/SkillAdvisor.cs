@@ -18,6 +18,16 @@ public sealed partial class SkillAdvisor(GameDatabase db)
 
     static string Norm(string s) => GameDatabase.NormalizeLabel(s);
 
+    /// <summary>
+    /// Niveau acheté médian de ce passif chez les joueurs du top de la classe qui l'ont pris (relevé du jeudi), null s'ils sont
+    /// moins de 3 : sert de niveau visé quand aucun guide ne décrit le passif.
+    /// </summary>
+    public static int? TopLevel(ClassProfile c, string skill)
+    {
+        var levels = (c.Benchmark?.Top ?? []).Select(pl => pl.Passives?.GetValueOrDefault(skill) ?? 0).Where(l => l > 0).Order().ToList();
+        return levels.Count >= 3 ? levels[levels.Count / 2] : null;
+    }
+
     public static SkillKind KindOf(SkillInfo s) =>
         s.Category.Equals("Dp", StringComparison.OrdinalIgnoreCase) || s.Category.Equals("Stigma", StringComparison.OrdinalIgnoreCase)
             ? SkillKind.Stigma
@@ -150,6 +160,8 @@ public sealed partial class SkillAdvisor(GameDatabase db)
             var b = bonus.GetValueOrDefault(Norm(s.Name));
             var priority = Priority(s, p);
             var target = known?.Target.GetValueOrDefault(p.Mode) is > 0 and var t ? t : priority >= 0.3 ? set.BaseMax : 1;
+            // Passif que les guides ne décrivent pas (« à valider ») : le niveau acheté médian des meilleurs joueurs de la classe.
+            if (KindOf(s) == SkillKind.Passive && (known is null || known.Unverified) && TopLevel(p.Class, s.Name) is { } top) target = top;
             return new Row(s, known, b, s.Acquired ? Math.Clamp(s.Level - b, 1, set.BaseMax) : 0, priority, Math.Clamp(target, 1, set.BaseMax))
             {
                 Share = KindOf(s) == SkillKind.Active ? shares.GetValueOrDefault(Norm(s.Name)) : 0,

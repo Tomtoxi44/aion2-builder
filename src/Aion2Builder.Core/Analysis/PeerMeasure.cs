@@ -22,6 +22,9 @@ public static class PeerMeasure
         var changed = a.Keys.Union(b.Keys).Where(k => Math.Abs(a.GetValueOrDefault(k) - b.GetValueOrDefault(k)) > 1e-9)
             .OrderBy(k => k, StringComparer.Ordinal).ToDictionary(k => k, k => b.GetValueOrDefault(k));
         var nodes = pve.Daevanion.Boards.Where(x => x.Pool == DaevanionPlanner.NormalPool).Sum(x => x.Board.OpenNodes);
-        return (new BenchPlayer(s.ItemLevel, a, changed) { CombatPower = s.CombatPower, Score = pve.Scores.Overall, PvpScore = pvp.Scores.Overall }, nodes);
+        var bonus = SkillAdvisor.BonusLevels(s);
+        var passives = s.Skills.Where(k => k.Acquired && SkillAdvisor.KindOf(k) == SkillKind.Passive).GroupBy(k => k.Name)
+            .ToDictionary(g => g.Key, g => Math.Clamp(g.First().Level - bonus.GetValueOrDefault(GameDatabase.NormalizeLabel(g.Key)), 1, db.Settings.Skills.BaseMax));
+        return (new BenchPlayer(s.ItemLevel, a, changed) { CombatPower = s.CombatPower, Score = pve.Scores.Overall, PvpScore = pvp.Scores.Overall, Passives = passives }, nodes);
     }
 }

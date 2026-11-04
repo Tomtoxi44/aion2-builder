@@ -147,6 +147,11 @@ public sealed record BenchPlayer(int ItemLevel, Dictionary<string, double> Stats
     public int? PvpScore { get; init; }
     /// <summary>Nom : seulement pour un joueur de ta liste (gardée sur ton PC), jamais dans l'échantillon publié.</summary>
     public string? Name { get; init; }
+    /// <summary>
+    /// Niveau acheté de chacun de ses passifs (bonus du Daevanion, des arcanes et de l'équipement retirés), par nom ; gardé pour
+    /// le top de la classe seulement : sert de niveau visé pour les passifs que les guides ne décrivent pas.
+    /// </summary>
+    public Dictionary<string, int>? Passives { get; init; }
 
     /// <summary>Le même joueur vu dans un mode : en JcJ, ses stats JcE corrigées de celles qui changent ; null sans relevé JcJ.</summary>
     public BenchPlayer? In(GameMode mode)
