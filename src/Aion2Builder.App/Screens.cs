@@ -4313,7 +4313,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                         Child = Columns(rankCols,
                             T(x.rank switch { 4 => "Éclatant", 3 => "Pur", 2 => "Grande pureté / fraîche", _ => "Normal" }, 13, x.rank == 4 ? unique : Tok.Text),
                             T(Fmt.Big(x.qty), 12, Tok.Text2, mono: true),
-                            RoundBar((double)x.qty / total, x.rank == 4 ? unique : Accent.Main, 6).WithMargin(0, 5, 0, 0)),
+                            RoundBar((double)x.qty / total, x.rank == 4 ? unique : Tok.Muted, 6).WithMargin(0, 5, 0, 0)),
                     });
                 blocks.Add(TableCard("Par rang", T($"{Fmt.Big(total)} ressources", 11, Tok.Muted, mono: true),
                     TableHeader(rankCols, "Rang", "Quantité", "Part"), byRank));
