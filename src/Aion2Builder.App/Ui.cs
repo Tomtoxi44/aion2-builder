@@ -453,35 +453,36 @@ static class Ui
 
     /// <summary>
     /// Barres verticales sur toute la largeur, une par valeur (une seconde de combat), hauteur selon la plus grande ;
-    /// une valeur nulle laisse un trou : on voit d'un coup d'œil quand on frappait et quand non.
+    /// une valeur nulle laisse un trou : on voit d'un coup d'œil quand on frappait et quand non. Dessinées directement
+    /// (pas un élément par barre : un combat de 5 min en ferait 300 à chaque affichage de l'écran).
     /// </summary>
-    public sealed class Histogram : Panel
+    public sealed class Histogram : Control
     {
         readonly IReadOnlyList<double> values;
         readonly double peak;
+        readonly IBrush fill;
 
         public Histogram(IReadOnlyList<double> values, IBrush fill)
         {
             this.values = values;
+            this.fill = fill;
             peak = values.Count > 0 ? Math.Max(1e-9, values.Max()) : 1;
-            Children.Add(new Border { Background = Tok.Border });  // ligne de base
-            foreach (var _ in values) Children.Add(new Border { Background = fill, CornerRadius = new CornerRadius(1, 1, 0, 0) });
         }
 
         protected override Size MeasureOverride(Size available) =>
             new(double.IsInfinity(available.Width) ? 300 : available.Width, double.IsNaN(Height) ? 80 : Height);
 
-        protected override Size ArrangeOverride(Size final)
+        public override void Render(DrawingContext context)
         {
-            var w = final.Width / Math.Max(1, values.Count);
+            var size = Bounds.Size;
+            var w = size.Width / Math.Max(1, values.Count);
             var gap = w >= 4 ? 1 : 0;
-            Children[0].Arrange(new Rect(0, final.Height - 1, final.Width, 1));
+            context.FillRectangle(Tok.Border, new Rect(0, size.Height - 1, size.Width, 1));  // ligne de base
             for (var i = 0; i < values.Count; i++)
             {
-                var h = values[i] / peak * (final.Height - 2);
-                Children[i + 1].Arrange(new Rect(i * w, final.Height - 1 - h, Math.Max(1, w - gap), h));
+                var h = values[i] / peak * (size.Height - 2);
+                if (h > 0) context.FillRectangle(fill, new Rect(i * w, size.Height - 1 - h, Math.Max(1, w - gap), h));
             }
-            return final;
         }
     }
 
