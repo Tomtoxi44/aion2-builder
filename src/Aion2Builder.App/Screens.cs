@@ -74,6 +74,8 @@ sealed class UiState
     public string? CombatSkill { get; set; }
     /// <summary>Combat : joueur du groupe comparé sur la frise de rotation (null : le meilleur DPS de ta classe, sinon le meilleur DPS).</summary>
     public string? CombatRival { get; set; }
+    /// <summary>Combat : boss de la courbe d'apprentissage (null : celui que tu as le plus essayé).</summary>
+    public string? CombatBoss { get; set; }
     public HashSet<Area> Collapsed { get; } = [];
     /// <summary>Sections repliables ouvertes (refonte visuelle), par identifiant.</summary>
     public HashSet<string> Open { get; } = [];
@@ -3178,7 +3180,11 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             .Where(g => g.Count() >= 2)
             .OrderByDescending(g => g.Count()).ThenByDescending(g => g.Max(x => x.Log.ImportedAtUtc))
             .ToList();
-        if (byBoss.Count > 0) list.Children.Add(BossTrials(byBoss));
+        if (byBoss.Count > 0)
+        {
+            list.Children.Add(BossTrials(byBoss));
+            list.Children.Add(BossCurve(byBoss));
+        }
         for (var g = 0; g < CombatSessions.Count; g++)
         {
             var session = CombatSessions[g];
@@ -3262,6 +3268,148 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 Background = i == best ? Tok.Good : i == values.Count - 1 ? Accent.Main : Tok.Faint,
             });
         return panel;
+    }
+
+    /// <summary>
+    /// Courbe d'apprentissage d'un boss : essai par essai (le plus ancien à gauche), ton DPS, la durée du combat et ta part
+    /// d'aggro (si le Pet Meter a lu les coups du boss), chacun avec sa tendance (droite des moindres carrés) et un mot clair ;
+    /// survol : l'essai ; clic : l'ouvrir. Le boss se choisit au-dessus quand il y en a plusieurs.
+    /// </summary>
+    Control BossCurve(List<IGrouping<string, (CombatLog Log, int Index)>> groups)
+    {
+        var group = groups.FirstOrDefault(g => g.Key == s.CombatBoss) ?? groups[0];
+        var tries = group.OrderBy(x => x.Log.ImportedAtUtc).ToList();
+        var profile = db.Resolve(r.Character.ClassCode, GameMode.PvE, inputs.UsesDesigned);
+        var tank = profile.Role.Key == "tank";
+        var aggro = tries.Select(x => AggroAnalyzer.Analyze(x.Log, profile, db)).ToList();
+        var dps = tries.Select(x => (double?)x.Log.Dps).ToList();
+        var durations = tries.Select(x => (double?)x.Log.Duration).ToList();
+        var shares = aggro.Select(a => a is null ? null : (double?)a.Share).ToList();
+        var tips = tries.Select((x, i) => $"essai {i + 1} · {x.Log.ImportedAtUtc.ToLocalTime():dd/MM HH:mm}\n{Fmt.Big(x.Log.Dps)} DPS · {Duration(x.Log.Duration)}" +
+                                          (shares[i] is { } sh ? $" · aggro {Fmt.Pct(sh)}" : "") + "\nclic : ouvrir ce combat").ToList();
+        void Open(int i) => update(st => { st.CombatIndex = tries[i].Index; st.CombatGroup = null; st.CombatSkill = null; st.CombatList = false; });
+
+        // Les mots : DPS en % par essai (pente ÷ moyenne), durée en secondes par essai, aggro en points par essai.
+        (string Text, IBrush Color) DpsWords()
+        {
+            if (Trend(dps) is not { } t || t.Mean <= 0) return ("Pas de tendance.", Tok.Muted);
+            var pct = t.Slope / t.Mean;
+            return Math.Abs(pct) < 0.01 ? ("Tu stagnes : moins de 1 % d'écart d'un essai à l'autre.", Tok.Text2)
+                : pct > 0 ? ($"Tu progresses de {Fmt.Num(Math.Round(pct * 100, 1))} % par essai.", Tok.Good)
+                : ($"Tu baisses de {Fmt.Num(Math.Round(-pct * 100, 1))} % par essai.", Tok.Warn);
+        }
+        (string Text, IBrush Color) DurationWords()
+        {
+            if (Trend(durations) is not { } t) return ("Pas de tendance.", Tok.Muted);
+            return Math.Abs(t.Slope) < 1 ? ("Durée stable d'un essai à l'autre.", Tok.Text2)
+                : t.Slope < 0 ? ($"Le combat raccourcit de {Duration(-t.Slope)} par essai.", Tok.Good)
+                : ($"Le combat s'allonge de {Duration(t.Slope)} par essai.", Tok.Warn);
+        }
+        (string Text, IBrush Color) AggroWords()
+        {
+            if (Trend(shares) is not { } t) return ("Pas assez d'essais avec les coups du boss pour une tendance.", Tok.Muted);
+            var points = t.Slope * 100;
+            if (Math.Abs(points) < 1) return (tank ? "Aggro tenue pareil d'un essai à l'autre." : "Aggro prise pareil d'un essai à l'autre.", Tok.Text2);
+            var word = $"{Fmt.Num(Math.Round(Math.Abs(points), 1))} point{(Math.Abs(points) >= 2 ? "s" : "")}";
+            return tank
+                ? points > 0 ? ($"Tu tiens mieux l'aggro : +{word} par essai.", Tok.Good) : ($"Tu tiens moins l'aggro : −{word} par essai.", Tok.Warn)
+                : points > 0 ? ($"Tu prends l'aggro plus souvent : +{word} par essai.", Tok.Warn) : ($"Tu prends moins l'aggro : −{word} par essai.", Tok.Good);
+        }
+
+        Control Panel(string label, List<double?> values, IBrush color, (string Text, IBrush Color) words, double? scale = null) => new StackPanel
+        {
+            Spacing = 6,
+            Children = { Label(label), new TrendChart(values, tips, color, scale) { Clicked = Open }, T(words.Text, 12, words.Color, wrap: true).WithLineHeight(1.4) },
+        };
+        var dpsWords = DpsWords();
+        var panels = new List<Control>
+        {
+            Panel("DPS", dps, Accent.Main, dpsWords),
+            Panel("Durée du combat", durations, Tok.Info, DurationWords()),
+        };
+        if (shares.Any(v => v is not null)) panels.Add(Panel(tank ? "Aggro tenue (attaques de tank sur toi)" : "Aggro prise (attaques de tank sur toi)", shares, tank ? Tok.Good : Tok.Warn, AggroWords(), 1));
+
+        var body = new StackPanel { Spacing = 12 };
+        if (groups.Count > 1)
+        {
+            var pick = new WrapPanel();
+            pick.Children.Add(T("Boss", 12, Tok.Muted).WithMargin(0, 0, 8, 4));
+            foreach (var g in groups)
+            {
+                var key = g.Key;
+                pick.Children.Add(Choice([($"{g.Key} · {g.Count()}", g == group, () => update(st => st.CombatBoss = key))]).WithMargin(0, 0, 6, 4));
+            }
+            body.Children.Add(pick);
+        }
+        var first = tries[0].Log.ImportedAtUtc.ToLocalTime();
+        var last = tries[^1].Log.ImportedAtUtc.ToLocalTime();
+        body.Children.Add(T($"{group.Key} : {char.ToLowerInvariant(dpsWords.Text[0])}{dpsWords.Text[1..^1]} ({Fmt.Plural(tries.Count, "essai")} du {first:dd/MM} au {last:dd/MM})." +
+                            (tries.Count == 2 ? " Deux essais seulement : tendance à confirmer." : ""), 13, dpsWords.Color, FontWeight.SemiBold, wrap: true).WithLineHeight(1.4));
+        var grid = new Avalonia.Controls.Primitives.UniformGrid { Columns = panels.Count };
+        foreach (var p in panels) grid.Children.Add(p.WithMargin(0, 0, 18, 0));
+        body.Children.Add(grid);
+        body.Children.Add(T("Tendance (pointillés) : droite des moindres carrés sur tes essais gardés, le dernier en couleur. La durée dépend aussi du groupe ; " +
+                            "l'aggro vient des coups du boss lus par le Pet Meter (v0.21.2 et plus). Survol : l'essai ; clic : l'ouvrir.", 11, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        return Card(body, $"Courbe d'apprentissage · {group.Key}", T(Fmt.Plural(tries.Count, "essai"), 12, Tok.Muted, mono: true));
+    }
+
+    /// <summary>
+    /// Tendance d'une suite d'essais (0, 1, 2…) : droite des moindres carrés sur les valeurs connues, sa pente par essai, son
+    /// ordonnée à l'origine et la moyenne ; null à moins de deux valeurs.
+    /// </summary>
+    static (double Slope, double Intercept, double Mean)? Trend(IReadOnlyList<double?> values)
+    {
+        var points = values.Select((v, i) => (X: (double)i, Y: v)).Where(p => p.Y is not null).Select(p => (p.X, Y: p.Y!.Value)).ToList();
+        if (points.Count < 2) return null;
+        var mx = points.Average(p => p.X);
+        var my = points.Average(p => p.Y);
+        var sxx = points.Sum(p => (p.X - mx) * (p.X - mx));
+        if (sxx <= 0) return null;
+        var slope = points.Sum(p => (p.X - mx) * (p.Y - my)) / sxx;
+        return (slope, my - slope * mx, my);
+    }
+
+    /// <summary>
+    /// Essais en barres (le plus ancien à gauche ; le dernier et le survolé en couleur, les autres pâlis ; un essai sans valeur :
+    /// un tiret) et la tendance en pointillés ; échelle de 0 à la plus grande valeur, ou à <paramref name="scale"/> ; survol :
+    /// l'essai.
+    /// </summary>
+    sealed class TrendChart(List<double?> values, List<string> tips, IBrush fill, double? scale = null) : HoverChart
+    {
+        readonly double peak = Math.Max(1e-9, scale ?? values.Max(v => v ?? 0));
+        readonly (double Slope, double Intercept, double Mean)? trend = Trend(values);
+
+        protected override Size MeasureOverride(Size available) => new(double.IsInfinity(available.Width) ? 200 : available.Width, 72);
+
+        double Slot(Size size) => size.Width / Math.Max(1, values.Count);
+
+        protected override int HitAt(Point p, Size size) =>
+            values.Count == 0 || p.X < 0 || p.X >= size.Width ? -1 : Math.Min(values.Count - 1, (int)(p.X / Slot(size)));
+
+        protected override string? TipOf(int i) => tips[i];
+
+        protected override void Draw(DrawingContext ctx, Size size)
+        {
+            var slot = Slot(size);
+            var bar = Math.Clamp(slot * 0.6, 3, 26);
+            double Y(double v) => size.Height - 1 - Math.Clamp(v / peak, 0, 1) * (size.Height - 5);
+            for (var i = 0; i < values.Count; i++)
+            {
+                if (i == Hovered) ctx.FillRectangle(Tok.HoverStrong, new Rect(i * slot, 0, slot, size.Height));
+                var x = i * slot + (slot - bar) / 2;
+                if (values[i] is not { } v)
+                {
+                    ctx.FillRectangle(Tok.Faint, new Rect(x, size.Height - 4, bar, 2));
+                    continue;
+                }
+                var y = Y(v);
+                ctx.FillRectangle(i == values.Count - 1 || i == Hovered ? fill : Tok.Alpha(fill, 0.45), new Rect(x, y, bar, Math.Max(1, size.Height - 1 - y)));
+            }
+            ctx.FillRectangle(Tok.Border, new Rect(0, size.Height - 1, size.Width, 1));  // ligne de base
+            if (trend is { } t)
+                ctx.DrawLine(new Pen(Tok.Text, 1.5, new DashStyle([4, 3], 0)),
+                    new Point(slot / 2, Y(t.Intercept)), new Point((values.Count - 0.5) * slot, Y(t.Intercept + t.Slope * (values.Count - 1))));
+        }
     }
 
     static IBrush LevelColor(Severity level) => level switch { Severity.Critical => Tok.Bad, Severity.Important => Tok.Warn, Severity.Advice => Tok.Info, _ => Tok.Text2 };
