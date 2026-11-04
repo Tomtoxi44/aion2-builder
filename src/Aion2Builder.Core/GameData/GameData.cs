@@ -444,7 +444,25 @@ public sealed record SettingsFile
     public StigmaSettings Stigmas { get; init; } = new();
     public StatSettings Stats { get; init; } = new();
     public GearSettings Gear { get; init; } = new();
+    public MacroSettings Macros { get; init; } = new();
 }
+
+/// <summary>
+/// Vue macro : les tutos (titre, lien, langue, ce qu'on y trouve) et, par classe, la macro d'un guide public (piles dans
+/// l'ordre de la macro, la première compétence de chaque pile en bas, celles gardées à la main), avec sa source et sa date.
+/// Noms des compétences tels que le guide les donne (anglais).
+/// </summary>
+public sealed record MacroSettings
+{
+    public List<MacroTutorial> Tutorials { get; init; } = [];
+    public Dictionary<string, MacroGuide> Classes { get; init; } = [];
+}
+
+public sealed record MacroTutorial(string Title, string Url, string Lang, string What);
+
+public sealed record MacroGuide(string Source, string Url, string Date, List<MacroGuideStack> Stacks, List<string> Manual, string? Note = null);
+
+public sealed record MacroGuideStack(string Name, List<string> Skills);
 
 /// <summary>Poids et cibles d'une classe pour un mode, rôle et surcharges fusionnés.</summary>
 /// <param name="UsesDesigned">Les conseils suivent le build conçu (sinon celui des joueurs).</param>

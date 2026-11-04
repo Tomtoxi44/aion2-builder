@@ -2833,37 +2833,45 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                                                      "vérifie sur le mannequin d'entraînement avec l'analyse de combat (Ctrl+X)."));
         var blocks = new List<Control?>
         {
-            T("La macro appuie pour toi sur des lignes de raccourcis tant que tu tiens sa touche. Une ligne empile jusqu'à 4 compétences sur une touche : " +
-              "à chaque appui, la plus prioritaire qui est prête part (0 d'abord) ; une compétence en recharge est sautée.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4),
+            T("La macro appuie pour toi sur des lignes de raccourcis tant que tu tiens sa touche. Une ligne empile jusqu'à 4 compétences sur une case : " +
+              "à chaque appui, la compétence du BAS de la pile part si elle est prête, sinon celle du dessus, et ainsi de suite ; une compétence en recharge est sautée.",
+                12, Tok.Muted, wrap: true).WithLineHeight(1.4),
         };
         if (r.Mode == GameMode.PvP)
             blocks.Add(T("En JcJ, une macro ne réagit pas à l'adversaire : garde-la pour le farm et les boss, joue tes contrôles et tes défenses à la main.",
                 12, Tok.Warn, wrap: true).WithLineHeight(1.4));
-        const string cols = "70,220,*";
+        const string cols = "110,220,*";
         for (var i = 0; i < m.Lines.Count; i++)
         {
             var line = m.Lines[i];
-            var rows = line.Slots.Select(sl => (Control)new Border
+            var count = line.Slots.Count;
+            // Dans le jeu, la première essayée est EN BAS de la pile (guides allthings.how, mein-mmo, KeenGamer) : la place est dite telle quelle.
+            string Place(int k) => k == 0 ? "en bas · 1re" : k == count - 1 ? "en haut" : $"{k + 1}e en partant du bas";
+            var rows = line.Slots.Select((sl, k) => (Control)new Border
             {
                 Padding = new Thickness(20, 6),
-                Child = Columns(cols, T($"{sl.Priority}", 13, sl.Priority == 0 ? Accent.Main : Tok.Text2, FontWeight.SemiBold, mono: true),
+                Child = Columns(cols, T(Place(k), 12, k == 0 ? Accent.Main : Tok.Text2, FontWeight.SemiBold, mono: true),
                     sl.Detail is { Length: > 0 } detail ? Tip(T(sl.Skill, 13), detail) : T(sl.Skill, 13),
                     T(sl.Why, 12, Tok.Text2, wrap: true)),
             });
             blocks.Add(TableCard($"Ligne {i + 1} · {line.Name}", T($"étape {i + 1} de la macro", 11, Tok.Muted, mono: true),
-                TableHeader(cols, "Priorité", "Compétence", "Pourquoi là"), rows));
+                TableHeader(cols, "Place dans la pile", "Compétence", "Pourquoi là"), rows));
         }
 
         var setup = new StackPanel { Spacing = 8 };
         void Step(string n, string text) => setup.Children.Add(ColumnsSpaced("24,*", 8, T(n, 13, Accent.Main, FontWeight.Bold, mono: true),
             T(text, 13, wrap: true).WithLineHeight(1.45)));
-        Step("1", "Range les compétences de chaque ligne sur une même touche de raccourci, dans l'ordre des priorités ci-dessus (fenêtre des compétences, K).");
+        Step("1", "Range les compétences de chaque ligne sur une même case de raccourci (fenêtre des compétences, K) : la première du tableau EN BAS de la pile " +
+                  "(elle part en premier), la compétence sans recharge tout en haut (en dessous, elle bloquerait les autres). Ces cases n'ont pas besoin d'être sous tes " +
+                  "doigts : mets-les sur une barre que tu n'utilises pas à la main, la macro appuie pour toi.");
         Step("2", $"K → Macro → ajouter une macro, puis {(m.Lines.Count == 1 ? "la ligne 1" : $"les lignes 1 à {m.Lines.Count}, dans cet ordre")} " +
                   "(une étape par ligne). Délai : 10 ms, 40 à 50 ms si ton ping dépasse 80 à 100 ms.");
-        Step("3", "Lie une touche à la macro : Réglages → Touches → Général → Jeu → Macro. Elle est vide au départ : sans touche, la macro ne fait rien.");
-        Step("4", "En combat, tiens la touche (la macro s'arrête dès que tu la lâches) et tiens aussi le clic gauche : les attaques de base s'intercalent entre les compétences.");
+        Step("3", "Lie une touche à la macro : Échap → Paramètres → Touches → Général → Gameplay → Macro. Elle est vide au départ : sans touche, la macro ne fait rien.");
+        Step("4", "En combat, tiens la touche de macro (elle s'arrête dès que tu la lâches) ET le clic gauche : les attaques de base s'intercalent entre les compétences.");
         Step("5", "Une compétence lancée à la main passe avant la macro : lance tes buffs et ton burst par-dessus, sans lâcher la touche.");
         blocks.Add(Card(setup, "Mettre la macro en place"));
+        blocks.Add(MacroKeys(m));
+        blocks.Add(MacroGuides());
 
         if (m.Manual.Count > 0)
         {
@@ -2877,6 +2885,68 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         blocks.Add(T($"D'après les {m.Source}. Dans une ligne : ce qui ne part qu'après un autre sort d'abord, puis les recharges par importance, " +
                      "et une seule compétence sans recharge, en dernier (toujours prête, elle bloquerait celles d'après).", 11, Tok.Muted, wrap: true).WithLineHeight(1.4));
         return Page(title, badges, blocks.ToArray());
+    }
+
+    /// <summary>
+    /// Touches conseillées : la macro sur le clic droit ou un bouton latéral (tenu avec le clic gauche), les compétences à la
+    /// main sur des touches autour de ZQSD, dans l'ordre de la liste « À la main ». Une proposition à adapter.
+    /// </summary>
+    Control MacroKeys(MacroPlan m)
+    {
+        const string cols = "200,*";
+        var rows = new List<Control>
+        {
+            Columns(cols, T("Touche de macro", 13, Accent.Main, FontWeight.SemiBold),
+                T("clic droit, ou bouton latéral de la souris (souris 4) : à tenir. Un bouton de souris demande le mode de contrôle AION 2 ; en mode AION 1, " +
+                  "prends une touche du clavier sous un doigt libre (A ou E en AZERTY, Q ou E en QWERTY).", 12, Tok.Text2, wrap: true).WithLineHeight(1.4)),
+            Columns(cols, T("Attaque de base", 13, Accent.Main, FontWeight.SemiBold),
+                T("clic gauche, tenu en même temps que la macro.", 12, Tok.Text2, wrap: true)),
+            Columns(cols, T("Lignes de la macro", 13, Accent.Main, FontWeight.SemiBold),
+                T("n'importe quelles cases d'une barre que tu n'utilises pas à la main.", 12, Tok.Text2, wrap: true)),
+        };
+        string[] keys = ["1", "2", "3", "4", "R", "F", "C", "V", "Maj + 1", "Maj + 2", "Maj + 3", "Maj + 4"];
+        for (var i = 0; i < m.Manual.Count && i < keys.Length; i++)
+            rows.Add(Columns(cols, T(m.Manual[i].Skill, 13), T(keys[i], 12, Tok.Text, FontWeight.SemiBold, mono: true)));
+        var panel = new StackPanel { Spacing = 6 };
+        foreach (var row in rows) panel.Children.Add(row);
+        panel.Children.Add(T("Une proposition pour garder la main gauche sur ZQSD : à adapter à ton clavier et à tes habitudes. Les compétences à la main " +
+                             "suivent l'ordre de la liste « À la main » ci-dessous.", 11, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        return Card(panel, "Touches conseillées");
+    }
+
+    /// <summary>
+    /// Ce que proposent les guides (settings.json → macros) : la macro d'un guide public pour ta classe, pile par pile, et les
+    /// tutos. Les macros des meilleurs joueurs ne se lisent pas (elles restent dans leur jeu) : les guides sont le plus proche.
+    /// </summary>
+    Control MacroGuides()
+    {
+        var panel = new StackPanel { Spacing = 8 };
+        if (db.Settings.Macros.Classes.TryGetValue(r.Character.ClassCode, out var g))
+        {
+            for (var i = 0; i < g.Stacks.Count; i++)
+                panel.Children.Add(T($"{i + 1}. {g.Stacks[i].Name} (du bas vers le haut) : {string.Join(" › ", g.Stacks[i].Skills)}", 13, wrap: true).WithLineHeight(1.4));
+            if (g.Manual.Count > 0)
+                panel.Children.Add(T($"À la main : {string.Join(", ", g.Manual)}", 12, Tok.Text2, wrap: true).WithLineHeight(1.4));
+            if (g.Note is { } note) panel.Children.Add(T(note, 12, Tok.Text2, wrap: true));
+            panel.Children.Add(T($"Macro : {string.Join(" puis ", g.Stacks.Select(s => s.Name))}, délai 10 ms. Guide {g.Source} du {g.Date}, noms des compétences en anglais.",
+                11, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        }
+        panel.Children.Add(T("Les macros des meilleurs joueurs ne se lisent nulle part : elles restent dans leur jeu. Les guides et les tutos sont le plus proche :",
+            12, Tok.Text2, wrap: true).WithLineHeight(1.4));
+        foreach (var t in db.Settings.Macros.Tutorials)
+        {
+            var url = t.Url;
+            panel.Children.Add(Tip(Clickable(ColumnsSpaced("34,*", 8, T(t.Lang, 11, Tok.Muted, mono: true),
+                    T($"{t.Title} ›  {t.What}", 12, Accent.Main, wrap: true)), () => OpenLink(url), hover: Tok.HoverStrong, padding: new Thickness(4, 2)),
+                $"Ouvrir dans ton navigateur : {url}"));
+        }
+        return Card(panel, "Ce que proposent les guides");
+    }
+
+    static void OpenLink(string url)
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException) { /* pas de navigateur : rien */ }
     }
 
     Control SpecsPage()

@@ -55,5 +55,49 @@
   },
   "gear": {
     "weakSlotGap": 4
+  },
+  "macros": {
+    "_note": "Vue macro : tutos et macros de guides publics (relevés le 04/11/2026). Dans une pile, la compétence du bas part en premier (allthings.how, mein-mmo, KeenGamer). Noms des compétences en anglais, comme dans le guide.",
+    "tutorials": [
+      { "title": "Macros Aion 2 : les configurer et optimiser", "url": "https://www.playnews.gg/guides/macros-aion-2-comment-les-configurer-et-optimiser-leur-utilisation", "lang": "FR", "what": "Touche de macro (clic droit ou souris 4), délai, ce qu'il faut garder hors macro." },
+      { "title": "Skill priority : une touche, quatre compétences", "url": "https://www.allthings.how/aion-2-skill-priority-how-one-hotbar-key-runs-four-skills/", "lang": "EN", "what": "Ordre des piles : la compétence du bas part en premier, la sans-recharge en haut." },
+      { "title": "Macros pour toutes les classes, 2 touches tenues", "url": "https://mein-mmo.de/en/aion-2-macros-for-all-classes-how-to-massively-increase-your-damage-with-just-2-keys,1590032/", "lang": "EN", "what": "Clic gauche (attaque de base) + touche de macro tenus ensemble ; renvoie à la vidéo de Grobs." },
+      { "title": "Macro guide : best setups for all classes", "url": "https://www.keengamer.com/articles/guides/aion-2-macro-guide-best-setups-for-all-classes/", "lang": "EN", "what": "Une macro par classe : piles, ordre, compétences gardées à la main (12/10/2026)." }
+    ],
+    "classes": {
+      "GLADIATOR": { "source": "KeenGamer", "url": "https://www.keengamer.com/articles/guides/aion-2-macro-guide-best-setups-for-all-classes/", "date": "12/10/2026",
+        "stacks": [ { "name": "Pile dégâts", "skills": ["Rage Burst", "Overhead Slam", "Sword Aura Rampage", "Rending Blow"] } ],
+        "manual": ["Ruinous Blow", "Leaping Slam", "Focused Block", "Lunge Stance", "Zikel's Blessing"] },
+      "TEMPLAR": { "source": "KeenGamer", "url": "https://www.keengamer.com/articles/guides/aion-2-macro-guide-best-setups-for-all-classes/", "date": "12/10/2026",
+        "stacks": [ { "name": "Pile Jugement", "skills": ["Judgment", "Shield Smite", "Warding Strike"] },
+                    { "name": "Pile dégâts", "skills": ["Annihilate", "Debilitating Smash", "Pummel"] } ],
+        "manual": ["Punishment", "Doom Shield", "Shield Rush", "Taunt"] },
+      "ASSASSIN": { "source": "KeenGamer", "url": "https://www.keengamer.com/articles/guides/aion-2-macro-guide-best-setups-for-all-classes/", "date": "12/10/2026",
+        "stacks": [ { "name": "Pile dégâts", "skills": ["Insignia Explosion", "Heart Gore", "Ambush", "Savage Roar"] },
+                    { "name": "Attaque en plus", "skills": ["Quick Slice"] } ],
+        "manual": ["Illusive Clone", "Swift Contract", "Savage Fang", "Infiltrate", "Shadowstrike", "Flash Slice"] },
+      "RANGER": { "source": "KeenGamer", "url": "https://www.keengamer.com/articles/guides/aion-2-macro-guide-best-setups-for-all-classes/", "date": "12/10/2026",
+        "stacks": [ { "name": "Pile Griffon", "skills": ["Griffon Arrow", "Snare Shot", "Burst Arrow"] },
+                    { "name": "Pile Gale", "skills": ["Gale Arrow", "Drill Dart", "Tempest Shot"] } ],
+        "manual": ["Deadshot", "Marking Shot", "Explosion Trap", "Bow of Blessing", "Vaizel's Authority"],
+        "note": "Griffon Arrow s'ajoute une fois son stigma débloqué." },
+      "SORCERER": { "source": "KeenGamer", "url": "https://www.keengamer.com/articles/guides/aion-2-macro-guide-best-setups-for-all-classes/", "date": "12/10/2026",
+        "stacks": [ { "name": "Pile sorts", "skills": ["Bittercold Wind", "Blaze", "Firestorm", "Wish of Concentration"] } ],
+        "manual": ["Hellfire", "Element Enhancement", "Delayed Explosion", "Winter's Shackles", "Fire Wall", "Cold Storm"],
+        "note": "Le guide dit de ne jamais mettre Hellfire dans la macro." },
+      "ELEMENTALIST": { "source": "KeenGamer", "url": "https://www.keengamer.com/articles/guides/aion-2-macro-guide-best-setups-for-all-classes/", "date": "12/10/2026",
+        "stacks": [ { "name": "Pile dégâts", "skills": ["Jointstrike: Corrode", "Jointstrike: Curse", "Dimensional Control", "Combustion"] },
+                    { "name": "Pile esprits", "skills": ["Elemental Fusion", "Summon: Water Spirit", "Summon: Earth Spirit", "Summon: Fire Spirit"] } ],
+        "manual": ["Flame Blessing", "Enhance: Spirit's Benediction", "Summon: Ancient Spirit", "Soul's Cry"] },
+      "CLERIC": { "source": "KeenGamer", "url": "https://www.keengamer.com/articles/guides/aion-2-macro-guide-best-setups-for-all-classes/", "date": "12/10/2026",
+        "stacks": [ { "name": "Pile dégâts", "skills": ["Prayer of Amplification", "Earth Punishment", "Chain of Torment", "Condemnation"] },
+                    { "name": "Dégâts en plus", "skills": ["Divine Aura", "Judgment Thunder"] } ],
+        "manual": ["Healing Light", "Light of Regeneration", "Radiant Recovery", "Bolt", "Light of Protection", "Debilitating Mark"],
+        "note": "Prayer of Amplification peut passer à la main pour le burst de groupe." },
+      "CHANTER": { "source": "KeenGamer", "url": "https://www.keengamer.com/articles/guides/aion-2-macro-guide-best-setups-for-all-classes/", "date": "12/10/2026",
+        "stacks": [ { "name": "Pile dégâts", "skills": ["Dark Crush", "Spinning Strike", "Incandescent Blow"] } ],
+        "manual": ["Rushing Smash", "Impactful Crush", "Marchutan's Wrath", "Power of the Storm", "Undefeated Mantra", "Recuperation"],
+        "note": "Ne jamais mettre un mantra à bascule dans une macro qui se répète." }
+    }
   }
 }
