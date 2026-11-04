@@ -1807,24 +1807,27 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             panel.Children.Add(rows);
         }
 
-        // Progression : un point par import qui a changé quelque chose (niveau, niveau d'objet, puissance de combat).
+        // Progression : niveau d'objet, puissance et note globale en petites courbes dans le temps (un point par import qui a
+        // changé quelque chose) ; le détail et les axes sont dans l'écran Progression.
         if (progress.Count >= 2)
         {
-            static string Delta(int d) => d == 0 ? "" : d > 0 ? $" (+{d})" : $" ({d})";
-            var first = progress[0];
-            var last = progress[^1];
             panel.Children.Add(SectionHeader("Progression", Clickable(T($"tout voir ({progress.Count} imports)", 11, Accent.Main), () => GoTo(Screen.Progress))));
-            var rows = new StackPanel { Spacing = 5, Margin = new Thickness(14, 10) };
-            rows.Children.Add(T($"depuis le {first.FetchedAtUtc.ToLocalTime():dd/MM} : objet {Delta(last.ItemLevel - first.ItemLevel).Trim()} · puissance {Delta(last.CombatPower - first.CombatPower).Trim()}",
-                12, last.ItemLevel > first.ItemLevel || last.CombatPower > first.CombatPower ? Tok.Good : Tok.Text2, mono: true, wrap: true));
-            for (var i = progress.Count - 1; i >= Math.Max(0, progress.Count - 6); i--)
+            var rows = new StackPanel { Spacing = 10, Margin = new Thickness(14, 10) };
+            var colors = new[] { Accent.Main, Tok.Info, Tok.Good };
+            var series = ProgressSeries();
+            for (var i = 0; i < series.Count; i++)
             {
-                var p = progress[i];
-                var prev = i > 0 ? progress[i - 1] : null;
-                rows.Children.Add(ColumnsSpaced("86,*", 8, T(p.FetchedAtUtc.ToLocalTime().ToString("dd/MM HH:mm"), 11, Tok.Muted, mono: true),
-                    T((prev is not null && prev.Level != p.Level ? $"niv. {p.Level} · " : "") +
-                      $"objet {p.ItemLevel}{Delta(p.ItemLevel - (prev?.ItemLevel ?? p.ItemLevel))} · puissance {p.CombatPower}{Delta(p.CombatPower - (prev?.CombatPower ?? p.CombatPower))}",
-                        11, Tok.Text2, mono: true, wrap: true)));
+                var (title, points, format) = series[i];
+                if (points.Count < 2) continue;
+                rows.Children.Add(new StackPanel
+                {
+                    Spacing = 3,
+                    Children =
+                    {
+                        ColumnsSpaced("*,Auto", 8, T($"{title.Split(" · ")[0]} · {format(points[^1].Value)}", 12, Tok.Muted), SinceText(points, format)),
+                        Tip(new TimeChart(points, format, colors[i], 34, compact: true), "Survole la courbe pour chaque import ; clic sur « tout voir » pour les axes et le détail."),
+                    },
+                });
             }
             panel.Children.Add(rows);
         }
@@ -4670,36 +4673,171 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
     // ----- Progression -----
 
-    /// <summary>Courbe simple sur les imports (un point par import), avec la dernière valeur et l'écart depuis le premier.</summary>
-    static Control Curve(string title, IReadOnlyList<(DateTime At, double Value)> points, Func<double, string> format)
+    /// <summary>Un point d'une courbe de progression : date de l'import, valeur, et ce que dit son survol.</summary>
+    sealed record ChartPoint(DateTime At, double Value, string Tip);
+
+    /// <summary>
+    /// Courbe dans le temps : l'abscisse suit les dates (deux imports le même jour sont proches, une semaine sans import se voit),
+    /// l'ordonnée la valeur. En grand : quadrillage léger, trois repères de valeur à gauche et les dates en bas. En petit
+    /// (inspecteur) : la courbe seule. Le survol met en avant le point le plus proche (date et valeur dessinées, détail en infobulle).
+    /// Dessinée directement : un élément par point coûterait à chaque affichage.
+    /// </summary>
+    sealed class TimeChart : Control
     {
-        const double width = 260, height = 70;
-        var box = new StackPanel { Spacing = 6, Width = width + 24 };
-        var last = points[^1].Value;
-        var delta = last - points[0].Value;
-        box.Children.Add(new DockPanel
+        readonly IReadOnlyList<ChartPoint> points;
+        readonly Func<double, string> format;
+        readonly IBrush stroke;
+        readonly bool compact;
+        int hover = -1;
+        static readonly Typeface Mono = new(Fonts.Mono);
+
+        public TimeChart(IReadOnlyList<ChartPoint> points, Func<double, string> format, IBrush stroke, double height, bool compact = false)
         {
-            Children =
+            (this.points, this.format, this.stroke, this.compact) = (points, format, stroke, compact);
+            Height = height;
+            Background = Brushes.Transparent;
+            PointerMoved += (_, e) =>
             {
-                new TextBlock { Text = $"{(delta >= 0 ? "+" : "")}{format(delta)}", FontFamily = Fonts.Mono, FontSize = 11, Foreground = delta > 0 ? Tok.Good : delta < 0 ? Tok.Bad : Tok.Muted, [DockPanel.DockProperty] = Dock.Right },
-                T($"{title} · {format(last)}", 12, Tok.Text2),
-            },
-        });
-        var canvas = new Canvas { Width = width, Height = height };
-        var min = points.Min(p => p.Value);
-        var max = points.Max(p => p.Value);
-        var span = Math.Max(1e-9, max - min);
-        var coords = points.Select((p, i) => new Point(points.Count == 1 ? width / 2 : i * width / (points.Count - 1), height - 6 - (p.Value - min) / span * (height - 12))).ToList();
-        canvas.Children.Add(new Polyline { Points = coords, Stroke = Accent.Main, StrokeThickness = 2 });
-        foreach (var c in coords)
-        {
-            var dot = new Ellipse { Width = 6, Height = 6, Fill = Accent.Main };
-            Canvas.SetLeft(dot, c.X - 3);
-            Canvas.SetTop(dot, c.Y - 3);
-            canvas.Children.Add(dot);
+                var x = e.GetPosition(this).X;
+                var nearest = Enumerable.Range(0, points.Count).MinBy(i => Math.Abs(At(i).X - x));
+                if (nearest == hover) return;
+                hover = nearest;
+                ToolTip.SetTip(this, points[nearest].Tip);
+                InvalidateVisual();
+            };
+            PointerExited += (_, _) => { hover = -1; InvalidateVisual(); };
+            ToolTip.SetShowDelay(this, 250);
         }
-        box.Children.Add(new Border { Padding = new Thickness(12, 8), Background = Tok.Frame, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Child = canvas });
-        return box;
+
+        /// <summary>Fond transparent : le survol est reçu sur toute la zone, pas seulement sur le trait.</summary>
+        public IBrush Background { get; }
+
+        protected override Size MeasureOverride(Size available) => new(double.IsInfinity(available.Width) ? 300 : available.Width, Height);
+
+        Rect Plot => compact ? new Rect(4, 5, Math.Max(1, Bounds.Width - 8), Math.Max(1, Bounds.Height - 10))
+            : new Rect(56, 10, Math.Max(1, Bounds.Width - 70), Math.Max(1, Bounds.Height - 32));
+
+        (double Lo, double Hi) Range
+        {
+            get
+            {
+                var lo = points.Min(p => p.Value);
+                var hi = points.Max(p => p.Value);
+                var pad = hi - lo < 1e-9 ? Math.Max(1, Math.Abs(hi) * 0.02) : (hi - lo) * 0.12;
+                return (lo - pad, hi + pad);
+            }
+        }
+
+        Point At(int i)
+        {
+            var plot = Plot;
+            var t0 = points[0].At;
+            var span = (points[^1].At - t0).TotalSeconds;
+            var x = span < 1 ? plot.X + plot.Width / 2 : plot.X + (points[i].At - t0).TotalSeconds / span * plot.Width;
+            var (lo, hi) = Range;
+            return new Point(x, plot.Bottom - (points[i].Value - lo) / (hi - lo) * plot.Height);
+        }
+
+        FormattedText Text(string s, IBrush color, double size = 10) =>
+            new(s, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Mono, size, color);
+
+        public override void Render(DrawingContext ctx)
+        {
+            ctx.FillRectangle(Background, new Rect(Bounds.Size));
+            if (points.Count == 0) return;
+            var plot = Plot;
+            var grid = new Pen(Tok.RowLine2, 1);
+            if (!compact)
+            {
+                // Trois repères de valeur (bas, milieu, haut) et les dates : première, dernière, et celle du milieu s'il y a la place.
+                var (lo, hi) = Range;
+                for (var k = 0; k <= 2; k++)
+                {
+                    var v = lo + (hi - lo) * k / 2;
+                    var y = plot.Bottom - plot.Height * k / 2;
+                    ctx.DrawLine(grid, new Point(plot.X, y), new Point(plot.Right, y));
+                    var label = Text(format(Math.Round(v)), Tok.Muted);
+                    ctx.DrawText(label, new Point(plot.X - 8 - label.Width, y - label.Height / 2));
+                }
+                var dates = new List<DateTime> { points[0].At, points[^1].At };
+                if ((points[^1].At - points[0].At).TotalDays >= 4 && plot.Width > 300) dates.Insert(1, points[0].At + (points[^1].At - points[0].At) / 2);
+                for (var k = 0; k < dates.Count; k++)
+                {
+                    var label = Text(dates[k].ToLocalTime().ToString("dd/MM"), Tok.Muted);
+                    var x = dates.Count == 1 || points[^1].At == points[0].At ? plot.X + plot.Width / 2 : plot.X + plot.Width * (dates[k] - points[0].At).TotalSeconds / (points[^1].At - points[0].At).TotalSeconds;
+                    ctx.DrawText(label, new Point(Math.Clamp(x - label.Width / 2, 0, Math.Max(0, Bounds.Width - label.Width)), plot.Bottom + 6));
+                }
+            }
+            var coords = Enumerable.Range(0, points.Count).Select(At).ToList();
+            // Aire légère sous la courbe, puis le trait et les points.
+            var area = new StreamGeometry();
+            using (var g = area.Open())
+            {
+                g.BeginFigure(new Point(coords[0].X, plot.Bottom), true);
+                foreach (var c in coords) g.LineTo(c);
+                g.LineTo(new Point(coords[^1].X, plot.Bottom));
+                g.EndFigure(true);
+            }
+            ctx.DrawGeometry(Tok.Alpha(stroke, 0.10), null, area);
+            var line = new StreamGeometry();
+            using (var g = line.Open())
+            {
+                g.BeginFigure(coords[0], false);
+                foreach (var c in coords.Skip(1)) g.LineTo(c);
+                g.EndFigure(false);
+            }
+            ctx.DrawGeometry(null, new Pen(stroke, compact ? 1.5 : 2, lineJoin: PenLineJoin.Round), line);
+            for (var i = 0; i < coords.Count; i++)
+                if (!compact || i == coords.Count - 1 || i == hover)
+                    ctx.DrawEllipse(stroke, null, coords[i], i == hover ? 4.5 : compact ? 2.5 : 3, i == hover ? 4.5 : compact ? 2.5 : 3);
+            if (hover < 0 || compact) return;
+            // Point survolé : trait vertical et « date · valeur » au-dessus du graphique.
+            var h = coords[hover];
+            ctx.DrawLine(new Pen(Tok.Alpha(Tok.Text2, 0.4), 1), new Point(h.X, plot.Y), new Point(h.X, plot.Bottom));
+            var tag = Text($"{points[hover].At.ToLocalTime():dd/MM HH:mm} · {format(points[hover].Value)}", Tok.Text, 11);
+            var box = new Rect(Math.Clamp(h.X - tag.Width / 2 - 6, 0, Math.Max(0, Bounds.Width - tag.Width - 12)), 0, tag.Width + 12, tag.Height + 4);
+            ctx.FillRectangle(Tok.HoverStrong, box, 3);
+            ctx.DrawText(tag, new Point(box.X + 6, box.Y + 2));
+        }
+    }
+
+    /// <summary>« +215 depuis le 23/10 » : l'écart entre le premier et le dernier point, en couleur.</summary>
+    static TextBlock SinceText(IReadOnlyList<ChartPoint> points, Func<double, string> format)
+    {
+        var delta = points[^1].Value - points[0].Value;
+        return T($"{(delta > 0 ? "+" : delta < 0 ? "−" : "±")}{format(Math.Abs(delta))} depuis le {points[0].At.ToLocalTime():dd/MM}", 12,
+            delta > 0 ? Tok.Good : delta < 0 ? Tok.Bad : Tok.Muted, mono: true);
+    }
+
+    /// <summary>
+    /// Les trois courbes de la progression : niveau d'objet, puissance et note globale de la vue (quand elle a été gardée à
+    /// l'import). Survol d'un point : sa date, sa valeur, l'écart avec l'import d'avant et ce qui a changé.
+    /// </summary>
+    List<(string Title, List<ChartPoint> Points, Func<double, string> Format)> ProgressSeries()
+    {
+        var key = r.Mode.ToString();
+        string Changes(int i) => i == 0 ? "premier import enregistré"
+            : progress[i].ChangesSince(progress[i - 1], db.SlotName) is { Count: > 0 } c ? string.Join("\n", c.Take(8).Select(x => $"· {x}")) + (c.Count > 8 ? $"\n· et {c.Count - 8} de plus" : "")
+            : "rien d'autre de visible";
+        List<ChartPoint> Series(string what, Func<ProgressPoint, int?> value)
+        {
+            var list = new List<ChartPoint>();
+            int? before = null;
+            for (var i = 0; i < progress.Count; i++)
+            {
+                if (value(progress[i]) is not { } v) continue;
+                var delta = before is { } b && v != b ? $" ({(v > b ? "+" : "")}{v - b})" : "";
+                list.Add(new ChartPoint(progress[i].FetchedAtUtc, v, $"{progress[i].FetchedAtUtc.ToLocalTime():dd/MM/yyyy HH:mm} · {what} {Fmt.Big(v)}{delta}\n{Changes(i)}"));
+                before = v;
+            }
+            return list;
+        }
+        return
+        [
+            ("Niveau d'objet", Series("niveau d'objet", p => p.ItemLevel), v => Fmt.Big(v)),
+            ("Puissance", Series("puissance", p => p.CombatPower), v => Fmt.Big(v)),
+            ($"Note globale · {Mode}", Series("note globale", p => p.Scores?.GetValueOrDefault(key)?.Overall), v => Fmt.Num(v)),
+        ];
     }
 
     /// <summary>
@@ -4903,14 +5041,30 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                   "(pièces, compétences, cases Daevanion, niveau d'objet) ajoute un point ici, avec ce qui a changé.", 13, Tok.Muted, wrap: true).WithLineHeight(1.5));
         var first = progress[0];
         var key = r.Mode.ToString();
-        var curves = new WrapPanel { ItemSpacing = 16, LineSpacing = 12 };
-        curves.Children.Add(Curve("Niveau d'objet", progress.Select(p => (p.FetchedAtUtc, (double)p.ItemLevel)).ToList(), v => Fmt.Num(v)));
-        curves.Children.Add(Curve("Puissance", progress.Select(p => (p.FetchedAtUtc, (double)p.CombatPower)).ToList(), v => Fmt.Num(v)));
-        var scored = progress.Where(p => p.Scores?.ContainsKey(key) == true).Select(p => (p.FetchedAtUtc, (double)p.Scores![key].Overall)).ToList();
-        if (scored.Count >= 2) curves.Children.Add(Curve($"Score global ({Mode})", scored, v => Fmt.Num(v)));
-        var curvesBlock = new StackPanel { Spacing = 8, Children = { curves } };
-        if (scored.Count < 2)
-            curvesBlock.Children.Add(T("La courbe du score apparaît dès deux imports notés (le score est gardé à chaque calcul depuis cette version).", 12, Tok.Muted, wrap: true));
+        // Une courbe par carte, sur toute la largeur : la valeur actuelle et l'écart depuis le premier import en tête.
+        var charts = new List<Control>();
+        var colors = new[] { Accent.Main, Tok.Info, Tok.Good };
+        var series = ProgressSeries();
+        for (var i = 0; i < series.Count; i++)
+        {
+            var (title, points, format) = series[i];
+            if (points.Count < 2)
+            {
+                charts.Add(Card(T(i == 2 ? $"La courbe de la note apparaît dès deux imports notés en {Mode} (la note est gardée à chaque calcul)."
+                    : "Pas assez d'imports pour une courbe.", 12, Tok.Muted, wrap: true), title));
+                continue;
+            }
+            var head = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 10,
+                Children = { T(format(points[^1].Value), 12, Tok.Text, FontWeight.SemiBold, mono: true), SinceText(points, format) },
+            };
+            charts.Add(Card(new TimeChart(points, format, colors[i], 130), title, head, new Thickness(8, 8, 12, 6)));
+        }
+        var curvesBlock = new StackPanel { Spacing = 10 };
+        foreach (var c in charts) curvesBlock.Children.Add(c);
+        curvesBlock.Children.Add(T("Une courbe par mesure, dans le temps (deux imports le même jour sont proches). Survole un point : sa date, sa valeur et ce qui a changé à cet import.",
+            12, Tok.Muted, wrap: true));
 
         static string Delta(int d) => d == 0 ? "" : d > 0 ? $" (+{d})" : $" ({d})";
         // Les 6 derniers imports visibles, les plus anciens repliés.
@@ -4946,7 +5100,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             recent.Children.Add(Expander(Fmt.Plural(older.Children.Count, "import plus ancien", "imports plus anciens"),
                 IsOpen("progress:older"), () => Toggle("progress:older"), () => older, new Thickness(10, 4)));
         return Page($"Progression · {progress.Count} imports depuis le {first.FetchedAtUtc.ToLocalTime():dd/MM/yyyy}", null,
-            Card(curvesBlock, "Courbes"), Card(recent, "Imports, du plus récent au plus ancien", padding: new Thickness(0)));
+            curvesBlock, Card(recent, "Imports, du plus récent au plus ancien", padding: new Thickness(0)));
     }
 
     Control Details()
