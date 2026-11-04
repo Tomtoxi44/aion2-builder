@@ -3290,6 +3290,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         page.Children.Add(Columns("*,*", hero, kpiGrid));
         if (log.Timeline is { Count: > 1 }) page.Children.Add(TargetTimeline(log));
         if (log.Players?.Any(p => !p.Me) == true) page.Children.Add(CombatPlayers(log));
+        if (AggroAnalyzer.Analyze(log, db.Resolve(r.Character.ClassCode, log.Kind == "pvp" ? GameMode.PvP : GameMode.PvE), db) is { } aggro)
+            page.Children.Add(AggroCard(log, aggro));
 
         // 2. À corriger en priorité : au plus 3 cartes ; le reste replié.
         if (todo.Count > 0)
@@ -3466,6 +3468,42 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 T(note + " Survol d'un nom : ses sorts principaux.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4),
             },
         }, "Joueurs du combat", T(Fmt.Plural(players.Count, "joueur"), 12, Tok.Muted));
+    }
+
+    /// <summary>
+    /// « Aggro du boss » : la part de ses attaques de tank (celles qui visent d'habitude une seule cible, toi) que tu as prises,
+    /// chaque perte d'aggro (qui, quand, combien de temps, ton sort de menace prêt ou non), et à part ses mécaniques (zone,
+    /// cible au hasard) qui ne sont pas des pertes d'aggro.
+    /// </summary>
+    Control AggroCard(CombatLog log, AggroReport a)
+    {
+        var who = Who(log);
+        var panel = new StackPanel { Spacing = 8 };
+        var color = a.YouAreTank ? (a.Share >= 0.95 ? Tok.Good : a.Share >= 0.8 ? Tok.Warn : Tok.Bad) : (a.OnYou > 0 ? Tok.Warn : Tok.Good);
+        var head = a.YouAreTank
+            ? $"Tu as pris {a.OnYou} des {a.TankAttacks} attaques de tank de {who} ({Fmt.Pct(a.Share)}) : " +
+              (a.Losses.Count == 0 ? "aggro tenue tout le combat." : $"{Fmt.Plural(a.Losses.Count, "perte")} d'aggro.")
+            : a.OnYou > 0 ? $"{who} t'a visé {Fmt.Plural(a.OnYou, "fois", "fois")} avec ses attaques de tank : tu as pris l'aggro."
+            : $"{who} n'a jamais visé que le tank avec ses attaques de tank.";
+        panel.Children.Add(T(head, 13, color, FontWeight.SemiBold, wrap: true));
+        foreach (var l in a.Losses)
+        {
+            var span = l.End - l.Start >= 1 ? $" pendant {Duration(l.End - l.Start)}" : "";
+            var taunt = l.Taunt is null ? "" : l.TauntWait is > 0.5 and var w
+                ? $" · {l.Taunt} en recharge (encore {w:0} s)"
+                : l.TauntedBack ? $" · {l.Taunt} relancée dans les 5 s" : $" · {l.Taunt} était prête : relance-la";
+            panel.Children.Add(new Border
+            {
+                BorderBrush = Tok.Warn, BorderThickness = new Thickness(2, 0, 0, 0), Padding = new Thickness(10, 2),
+                Child = T($"à {Duration(l.Start)} : {who} a frappé {l.Who}{span} ({Fmt.Plural(l.Attacks, "attaque")}, {Fmt.Big(l.Damage)} dégâts){taunt}",
+                    12, Tok.Text, wrap: true),
+            });
+        }
+        panel.Children.Add(T($"À part (pas des pertes d'aggro) : {Fmt.Plural(a.Zone, "sort")} de zone sur plusieurs joueurs à la fois, " +
+                             $"{Fmt.Plural(a.Random, "sort")} sur un autre joueur choisi par le boss (mécaniques). Attaque de tank : un sort du boss " +
+                             "qui, quand il ne frappe qu'une cible, te vise au moins une fois sur deux. D'après les coups du boss lus par le Pet Meter.",
+            11, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        return Card(panel, "Aggro du boss", T(a.YouAreTank ? Fmt.Pct(a.Share) : Fmt.Plural(a.OnYou, "fois", "fois"), 12, color, FontWeight.SemiBold, mono: true));
     }
 
     /// <summary>

@@ -51,6 +51,8 @@ public sealed record CombatLog
     /// et leur part portent sur le combat du groupe (<see cref="GroupDuration"/> : du premier au dernier coup de quiconque).
     /// </summary>
     public List<CombatPlayer>? Players { get; init; }
+    /// <summary>Qui le boss a frappé, coup par coup (Pet Meter v0.21.2) : la carte « Aggro du boss ».</summary>
+    public List<CombatBossHit>? BossHits { get; init; }
     public double? GroupDuration { get; init; }
     /// <summary>Global de plusieurs combats : durée de chacun (lancers possibles et pauses comptés combat par combat).</summary>
     public List<double>? Segments { get; init; }
@@ -137,6 +139,9 @@ public sealed record CombatPlayer(bool Me, string? Name, string? ClassCode, int?
     /// <summary>Ses lancers datés depuis le début du combat du groupe (Pet Meter v0.21.1) : sa rotation s'analyse comme la tienne.</summary>
     public List<CombatCast>? Casts { get; init; }
 }
+
+/// <summary>Un coup du boss : secondes depuis ton premier coup, sort, cible (« me », un nom ; null : une créature), joueur ou non, dégâts.</summary>
+public sealed record CombatBossHit(double T, long Skill, string? To, bool Player, double Damage);
 
 /// <summary>Un sort principal d'un joueur du combat : part de ses dégâts (0 à 1), utilisations.</summary>
 public sealed record CombatPlayerSkill(string Name, double Share, int Casts, double Damage = 0, int Hits = 0);
