@@ -72,6 +72,10 @@ sealed class UiState
     public int? CombatIndex { get; set; }
     public int? CombatGroup { get; set; }
     public string? CombatSkill { get; set; }
+    /// <summary>Combat : joueur du groupe comparé sur la frise de rotation (null : le meilleur DPS de ta classe, sinon le meilleur DPS).</summary>
+    public string? CombatRival { get; set; }
+    /// <summary>Combat : boss de la courbe d'apprentissage (null : celui que tu as le plus essayé).</summary>
+    public string? CombatBoss { get; set; }
     public HashSet<Area> Collapsed { get; } = [];
     /// <summary>Sections repliables ouvertes (refonte visuelle), par identifiant.</summary>
     public HashSet<string> Open { get; } = [];
@@ -2841,6 +2845,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             blocks.Add(T("En JcJ, une macro ne réagit pas à l'adversaire : garde-la pour le farm et les boss, joue tes contrôles et tes défenses à la main.",
                 12, Tok.Warn, wrap: true).WithLineHeight(1.4));
         const string cols = "110,220,*";
+        // Icône à gauche de chaque compétence ; une place vide quand une autre de la liste a la sienne (noms alignés), rien sinon.
+        var withIcons = m.Lines.SelectMany(l => l.Slots).Select(sl => sl.Skill).Concat(m.Manual.Select(x => x.Skill)).Any(n => OwnSkill(n) is not null);
         for (var i = 0; i < m.Lines.Count; i++)
         {
             var line = m.Lines[i];
@@ -2851,7 +2857,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             {
                 Padding = new Thickness(20, 6),
                 Child = Columns(cols, T(Place(k), 12, k == 0 ? Accent.Main : Tok.Text2, FontWeight.SemiBold, mono: true),
-                    sl.Detail is { Length: > 0 } detail ? Tip(T(sl.Skill, 13), detail) : T(sl.Skill, 13),
+                    WithIcon(SkillIcon(sl.Skill, 18, withIcons), sl.Detail is { Length: > 0 } detail ? Tip(T(sl.Skill, 13), detail) : T(sl.Skill, 13)),
                     T(sl.Why, 12, Tok.Text2, wrap: true)),
             });
             blocks.Add(TableCard($"Ligne {i + 1} · {line.Name}", T($"étape {i + 1} de la macro", 11, Tok.Muted, mono: true),
@@ -2877,7 +2883,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         {
             var list = new StackPanel { Spacing = 6 };
             foreach (var x in m.Manual)
-                list.Children.Add(ColumnsSpaced("220,*", 12, T(x.Skill, 13), T(x.Why, 12, Tok.Text2, wrap: true).WithLineHeight(1.4)));
+                list.Children.Add(ColumnsSpaced("220,*", 12, WithIcon(SkillIcon(x.Skill, 18, withIcons), T(x.Skill, 13)), T(x.Why, 12, Tok.Text2, wrap: true).WithLineHeight(1.4)));
             blocks.Add(Card(list, $"À la main · {m.Manual.Count}"));
         }
         if (m.Missing.Count > 0)
@@ -2906,7 +2912,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         };
         string[] keys = ["1", "2", "3", "4", "R", "F", "C", "V", "Maj + 1", "Maj + 2", "Maj + 3", "Maj + 4"];
         for (var i = 0; i < m.Manual.Count && i < keys.Length; i++)
-            rows.Add(Columns(cols, T(m.Manual[i].Skill, 13), T(keys[i], 12, Tok.Text, FontWeight.SemiBold, mono: true)));
+            rows.Add(Columns(cols, WithIcon(SkillIcon(m.Manual[i].Skill, 18, false), T(m.Manual[i].Skill, 13)), T(keys[i], 12, Tok.Text, FontWeight.SemiBold, mono: true)));
         var panel = new StackPanel { Spacing = 6 };
         foreach (var row in rows) panel.Children.Add(row);
         panel.Children.Add(T("Une proposition pour garder la main gauche sur ZQSD : à adapter à ton clavier et à tes habitudes. Les compétences à la main " +
@@ -3176,7 +3182,11 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             .Where(g => g.Count() >= 2)
             .OrderByDescending(g => g.Count()).ThenByDescending(g => g.Max(x => x.Log.ImportedAtUtc))
             .ToList();
-        if (byBoss.Count > 0) list.Children.Add(BossTrials(byBoss));
+        if (byBoss.Count > 0)
+        {
+            list.Children.Add(BossTrials(byBoss));
+            list.Children.Add(BossCurve(byBoss));
+        }
         for (var g = 0; g < CombatSessions.Count; g++)
         {
             var session = CombatSessions[g];
@@ -3260,6 +3270,149 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 Background = i == best ? Tok.Good : i == values.Count - 1 ? Accent.Main : Tok.Faint,
             });
         return panel;
+    }
+
+    /// <summary>
+    /// Courbe d'apprentissage d'un boss : essai par essai (le plus ancien à gauche), ton DPS, la durée du combat et ta part
+    /// d'aggro (si le Pet Meter a lu les coups du boss), chacun avec sa tendance (droite des moindres carrés) et un mot clair ;
+    /// survol : l'essai ; clic : l'ouvrir. Le boss se choisit au-dessus quand il y en a plusieurs.
+    /// </summary>
+    Control BossCurve(List<IGrouping<string, (CombatLog Log, int Index)>> groups)
+    {
+        var group = groups.FirstOrDefault(g => g.Key == s.CombatBoss) ?? groups[0];
+        var tries = group.OrderBy(x => x.Log.ImportedAtUtc).ToList();
+        var profile = db.Resolve(r.Character.ClassCode, GameMode.PvE, inputs.UsesDesigned);
+        var tank = profile.Role.Key == "tank";
+        var aggro = tries.Select(x => AggroAnalyzer.Analyze(x.Log, profile, db)).ToList();
+        var dps = tries.Select(x => (double?)x.Log.Dps).ToList();
+        var durations = tries.Select(x => (double?)x.Log.Duration).ToList();
+        var shares = aggro.Select(a => a is null ? null : (double?)a.Share).ToList();
+        // Bulles courtes : les trois graphiques sont côte à côte, chacun étroit.
+        var tips = tries.Select((x, i) => $"essai {i + 1} · {x.Log.ImportedAtUtc.ToLocalTime():dd/MM HH:mm}\n{Fmt.Big(x.Log.Dps)} DPS\n{Duration(x.Log.Duration)}" +
+                                          (shares[i] is { } sh ? $" · aggro {Fmt.Pct(sh)}" : "") + "\nclic : l'ouvrir").ToList();
+        void Open(int i) => update(st => { st.CombatIndex = tries[i].Index; st.CombatGroup = null; st.CombatSkill = null; st.CombatList = false; });
+
+        // Les mots : DPS en % par essai (pente ÷ moyenne), durée en secondes par essai, aggro en points par essai.
+        (string Text, IBrush Color) DpsWords()
+        {
+            if (Trend(dps) is not { } t || t.Mean <= 0) return ("Pas de tendance.", Tok.Muted);
+            var pct = t.Slope / t.Mean;
+            return Math.Abs(pct) < 0.01 ? ("Tu stagnes : moins de 1 % d'écart d'un essai à l'autre.", Tok.Text2)
+                : pct > 0 ? ($"Tu progresses de {Fmt.Num(Math.Round(pct * 100, 1))} % par essai.", Tok.Good)
+                : ($"Tu baisses de {Fmt.Num(Math.Round(-pct * 100, 1))} % par essai.", Tok.Warn);
+        }
+        (string Text, IBrush Color) DurationWords()
+        {
+            if (Trend(durations) is not { } t) return ("Pas de tendance.", Tok.Muted);
+            return Math.Abs(t.Slope) < 1 ? ("Durée stable d'un essai à l'autre.", Tok.Text2)
+                : t.Slope < 0 ? ($"Le combat raccourcit de {Duration(-t.Slope)} par essai.", Tok.Good)
+                : ($"Le combat s'allonge de {Duration(t.Slope)} par essai.", Tok.Warn);
+        }
+        (string Text, IBrush Color) AggroWords()
+        {
+            if (Trend(shares) is not { } t) return ("Pas assez d'essais avec les coups du boss pour une tendance.", Tok.Muted);
+            var points = t.Slope * 100;
+            if (Math.Abs(points) < 1) return (tank ? "Aggro tenue pareil d'un essai à l'autre." : "Aggro prise pareil d'un essai à l'autre.", Tok.Text2);
+            var word = $"{Fmt.Num(Math.Round(Math.Abs(points), 1))} point{(Math.Abs(points) >= 2 ? "s" : "")}";
+            return tank
+                ? points > 0 ? ($"Tu tiens mieux l'aggro : +{word} par essai.", Tok.Good) : ($"Tu tiens moins l'aggro : −{word} par essai.", Tok.Warn)
+                : points > 0 ? ($"Tu prends l'aggro plus souvent : +{word} par essai.", Tok.Warn) : ($"Tu prends moins l'aggro : −{word} par essai.", Tok.Good);
+        }
+
+        Control Panel(string label, List<double?> values, IBrush color, (string Text, IBrush Color) words, double? scale = null) => new StackPanel
+        {
+            Spacing = 6,
+            Children = { Label(label), new TrendChart(values, tips, color, scale) { Clicked = Open }, T(words.Text, 12, words.Color, wrap: true).WithLineHeight(1.4) },
+        };
+        var dpsWords = DpsWords();
+        var panels = new List<Control>
+        {
+            Panel("DPS", dps, Accent.Main, dpsWords),
+            Panel("Durée du combat", durations, Tok.Info, DurationWords()),
+        };
+        if (shares.Any(v => v is not null)) panels.Add(Panel(tank ? "Aggro tenue (attaques de tank sur toi)" : "Aggro prise (attaques de tank sur toi)", shares, tank ? Tok.Good : Tok.Warn, AggroWords(), 1));
+
+        var body = new StackPanel { Spacing = 12 };
+        if (groups.Count > 1)
+        {
+            var pick = new WrapPanel();
+            pick.Children.Add(T("Boss", 12, Tok.Muted).WithMargin(0, 0, 8, 4));
+            foreach (var g in groups)
+            {
+                var key = g.Key;
+                pick.Children.Add(Choice([($"{g.Key} · {g.Count()}", g == group, () => update(st => st.CombatBoss = key))]).WithMargin(0, 0, 6, 4));
+            }
+            body.Children.Add(pick);
+        }
+        var first = tries[0].Log.ImportedAtUtc.ToLocalTime();
+        var last = tries[^1].Log.ImportedAtUtc.ToLocalTime();
+        body.Children.Add(T($"{group.Key} : {char.ToLowerInvariant(dpsWords.Text[0])}{dpsWords.Text[1..^1]} ({Fmt.Plural(tries.Count, "essai")} du {first:dd/MM} au {last:dd/MM})." +
+                            (tries.Count == 2 ? " Deux essais seulement : tendance à confirmer." : ""), 13, dpsWords.Color, FontWeight.SemiBold, wrap: true).WithLineHeight(1.4));
+        var grid = new Avalonia.Controls.Primitives.UniformGrid { Columns = panels.Count };
+        foreach (var p in panels) grid.Children.Add(p.WithMargin(0, 0, 18, 0));
+        body.Children.Add(grid);
+        body.Children.Add(T("Tendance (pointillés) : droite des moindres carrés sur tes essais gardés, le dernier en couleur. La durée dépend aussi du groupe ; " +
+                            "l'aggro vient des coups du boss lus par le Pet Meter (v0.21.2 et plus). Survol : l'essai ; clic : l'ouvrir.", 11, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        return Card(body, $"Courbe d'apprentissage · {group.Key}", T(Fmt.Plural(tries.Count, "essai"), 12, Tok.Muted, mono: true));
+    }
+
+    /// <summary>
+    /// Tendance d'une suite d'essais (0, 1, 2…) : droite des moindres carrés sur les valeurs connues, sa pente par essai, son
+    /// ordonnée à l'origine et la moyenne ; null à moins de deux valeurs.
+    /// </summary>
+    static (double Slope, double Intercept, double Mean)? Trend(IReadOnlyList<double?> values)
+    {
+        var points = values.Select((v, i) => (X: (double)i, Y: v)).Where(p => p.Y is not null).Select(p => (p.X, Y: p.Y!.Value)).ToList();
+        if (points.Count < 2) return null;
+        var mx = points.Average(p => p.X);
+        var my = points.Average(p => p.Y);
+        var sxx = points.Sum(p => (p.X - mx) * (p.X - mx));
+        if (sxx <= 0) return null;
+        var slope = points.Sum(p => (p.X - mx) * (p.Y - my)) / sxx;
+        return (slope, my - slope * mx, my);
+    }
+
+    /// <summary>
+    /// Essais en barres (le plus ancien à gauche ; le dernier et le survolé en couleur, les autres pâlis ; un essai sans valeur :
+    /// un tiret) et la tendance en pointillés ; échelle de 0 à la plus grande valeur, ou à <paramref name="scale"/> ; survol :
+    /// l'essai.
+    /// </summary>
+    sealed class TrendChart(List<double?> values, List<string> tips, IBrush fill, double? scale = null) : HoverChart
+    {
+        readonly double peak = Math.Max(1e-9, scale ?? values.Max(v => v ?? 0));
+        readonly (double Slope, double Intercept, double Mean)? trend = Trend(values);
+
+        protected override Size MeasureOverride(Size available) => new(double.IsInfinity(available.Width) ? 200 : available.Width, 72);
+
+        double Slot(Size size) => size.Width / Math.Max(1, values.Count);
+
+        protected override int HitAt(Point p, Size size) =>
+            values.Count == 0 || p.X < 0 || p.X >= size.Width ? -1 : Math.Min(values.Count - 1, (int)(p.X / Slot(size)));
+
+        protected override string? TipOf(int i) => tips[i];
+
+        protected override void Draw(DrawingContext ctx, Size size)
+        {
+            var slot = Slot(size);
+            var bar = Math.Clamp(slot * 0.6, 3, 26);
+            double Y(double v) => size.Height - 1 - Math.Clamp(v / peak, 0, 1) * (size.Height - 5);
+            for (var i = 0; i < values.Count; i++)
+            {
+                if (i == Hovered) ctx.FillRectangle(Tok.HoverStrong, new Rect(i * slot, 0, slot, size.Height));
+                var x = i * slot + (slot - bar) / 2;
+                if (values[i] is not { } v)
+                {
+                    ctx.FillRectangle(Tok.Faint, new Rect(x, size.Height - 4, bar, 2));
+                    continue;
+                }
+                var y = Y(v);
+                ctx.FillRectangle(i == values.Count - 1 || i == Hovered ? fill : Tok.Alpha(fill, 0.45), new Rect(x, y, bar, Math.Max(1, size.Height - 1 - y)));
+            }
+            ctx.FillRectangle(Tok.Border, new Rect(0, size.Height - 1, size.Width, 1));  // ligne de base
+            if (trend is { } t)
+                ctx.DrawLine(new Pen(Tok.Text, 1.5, new DashStyle([4, 3], 0)),
+                    new Point(slot / 2, Y(t.Intercept)), new Point((values.Count - 0.5) * slot, Y(t.Intercept + t.Slope * (values.Count - 1))));
+        }
     }
 
     static IBrush LevelColor(Severity level) => level switch { Severity.Critical => Tok.Bad, Severity.Important => Tok.Warn, Severity.Advice => Tok.Info, _ => Tok.Text2 };
@@ -3362,6 +3515,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         if (log.Players?.Any(p => !p.Me) == true) page.Children.Add(CombatPlayers(log));
         if (AggroAnalyzer.Analyze(log, db.Resolve(r.Character.ClassCode, log.Kind == "pvp" ? GameMode.PvP : GameMode.PvE), db) is { } aggro)
             page.Children.Add(AggroCard(log, aggro));
+        if (log.Kind != "pvp" && AggroAnalyzer.Mechanics(log) is { } mechanics) page.Children.Add(BossMechanicsCard(log, mechanics));
 
         // 2. À corriger en priorité : au plus 3 cartes ; le reste replié.
         if (todo.Count > 0)
@@ -3406,7 +3560,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             Card(damage, "Où vont tes dégâts", T(log.Source == "Pet Meter" || log.Pages > 0 ? "mesuré sur ce combat" : "", 12, Tok.Muted)),
             Card(recharge, "Tes sorts à recharge", T("lancés / possibles", 12, Tok.Muted))));
 
-        // 4. Frise du combat : chaque lancer des sorts à recharge, et les pauses.
+        // 4. Frise de rotation (tes lancers, et ceux d'un joueur du groupe), puis chaque lancer des sorts à recharge et les pauses.
+        if (log.Casts is { Count: > 2 } && log.Duration > 0) page.Children.Add(RotationStrip(log));
         if (log.Casts is { Count: > 2 } casts && log.Duration > 0)
         {
             var frise = new StackPanel { Spacing = 6 };
@@ -3473,6 +3628,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var mid = values.Count / 2;
         var axis = ColumnsSpaced("*,*,*", 0, T("0 s", 11, Tok.Muted, mono: true), T(Duration(mid), 11, Tok.Muted, mono: true).Centered(),
             T(Duration(values.Count), 11, Tok.Muted, mono: true).AlignRight());
+        var charts = new StackPanel { Spacing = 6, Children = { chart } };
+        (Control Strip, Control Text)? survival = log.TakenTimeline is not null || log.HealsTimeline is not null ? Survival(log, values.Count) : null;
+        if (survival is not null) charts.Children.Add(survival.Value.Strip);
+        charts.Children.Add(axis);
         var text = new StackPanel { Spacing = 4 };
         text.Children.Add(T($"De ton premier à ton dernier coup sur {who} : {Duration(log.Duration)}, {Fmt.Big(log.TotalDamage)} dégâts, " +
                             $"{Fmt.Big(log.Dps)} par seconde.", 13, Tok.Text, wrap: true));
@@ -3481,8 +3640,173 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                                 $"tu as commencé à frapper {who} à {Duration(offset)}. Le reste de l'écran ne compte que {who}.", 12, Tok.Text2, wrap: true).WithLineHeight(1.4));
         if (idle > 0)
             text.Children.Add(T($"{idle} s sans coup sur {who} : mécanique, déplacement, adds ou temps mort.", 12, idle * 10 > values.Count ? Tok.Warn : Tok.Muted, wrap: true));
-        return Card(new StackPanel { Spacing = 8, Children = { chart, axis, text } }, $"Tes dégâts sur {who}, seconde par seconde",
+        if (survival is not null) text.Children.Add(survival.Value.Text);
+        return Card(new StackPanel { Spacing = 8, Children = { charts, text } }, $"Tes dégâts sur {who}, seconde par seconde",
             T($"pic {Fmt.Big(values.Max())}/s", 11, Tok.Muted, mono: true));
+    }
+
+    /// <summary>
+    /// Ta survie sous la courbe de tes dégâts (Pet Meter : dégâts reçus et soins reçus seconde par seconde, sur le même axe) :
+    /// la bande, et en mots le total, la part des dégâts reçus que les soins ont rendue, et le pire passage (5 s d'affilée).
+    /// </summary>
+    (Control Strip, Control Text) Survival(CombatLog log, int seconds)
+    {
+        var taken = log.TakenTimeline ?? [];
+        var heals = log.HealsTimeline ?? [];
+        static double At(List<double> v, int i) => i < v.Count ? v[i] : 0;
+        var takenTotal = Enumerable.Range(0, seconds).Sum(i => At(taken, i));
+        var healsTotal = Enumerable.Range(0, seconds).Sum(i => At(heals, i));
+        var lines = new StackPanel { Spacing = 4 };
+        lines.Children.Add(T("Sous la courbe, ta survie : soins reçus vers le haut (vert), dégâts reçus vers le bas (orange), même échelle. Survol : la seconde.",
+            12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        if (takenTotal <= 0)
+            lines.Children.Add(T($"Aucun dégât reçu pendant ce combat ({Fmt.Big(healsTotal)} soins reçus).", 12, Tok.Good, wrap: true));
+        else
+        {
+            var window = Math.Min(5, seconds);
+            var (worst, start) = Enumerable.Range(0, Math.Max(1, seconds - window + 1))
+                .Select(i => (Sum: Enumerable.Range(i, window).Sum(k => At(taken, k)), Start: i)).MaxBy(x => x.Sum);
+            var healed = Enumerable.Range(start, window).Sum(k => At(heals, k));
+            var cover = healsTotal / takenTotal;
+            lines.Children.Add(T($"{Fmt.Big(takenTotal)} dégâts reçus, {Fmt.Big(healsTotal)} soins reçus : les soins ont rendu {Fmt.Pct(cover)} de ce que tu as pris.",
+                12, Tok.Text2, wrap: true).WithLineHeight(1.4));
+            lines.Children.Add(T($"Pire passage : {Fmt.Big(worst)} dégâts reçus en {window} s à partir de {Duration(start)} (soins pendant ce temps : {Fmt.Big(healed)}).",
+                12, healed < 0.5 * worst ? Tok.Warn : Tok.Text2, wrap: true).WithLineHeight(1.4));
+        }
+        return (new SurvivalStrip(taken, heals, seconds), lines);
+    }
+
+    /// <summary>Instant précis d'un combat, au dixième : « 42,3 s », « 1 min 07,5 ».</summary>
+    static string Clock(double t)
+    {
+        var fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
+        var sign = t < 0 ? "−" : "";
+        t = Math.Abs(t);
+        return t < 60 ? $"{sign}{t.ToString("0.0", fr)} s" : $"{sign}{(int)t / 60} min {(t % 60).ToString("00.0", fr)}";
+    }
+
+    /// <summary>
+    /// Graphique dessiné directement (léger : pas un élément par lancer ni par seconde) dont le survol montre une bulle, dessinée
+    /// elle aussi : <see cref="HitAt"/> dit quel élément est sous la souris, <see cref="TipOf"/> ce qu'en dit la bulle (première
+    /// ligne en clair, les suivantes plus pâles) ; un clic sur un élément appelle <see cref="Clicked"/> s'il est donné.
+    /// </summary>
+    abstract class HoverChart : Control
+    {
+        static readonly Avalonia.Input.Cursor HandCursor = new(Avalonia.Input.StandardCursorType.Hand);
+        static readonly Typeface SansFace = new(Fonts.Sans);
+        static readonly Typeface MonoFace = new(Fonts.Mono);
+        Point? pointer;
+
+        /// <summary>Dessiné après ses voisins : une bulle qui déborde du graphique passe au-dessus du texte d'en dessous.</summary>
+        protected HoverChart() => ZIndex = 1;
+
+        /// <summary>Élément survolé (-1 : aucun).</summary>
+        protected int Hovered { get; private set; } = -1;
+        public Action<int>? Clicked { get; init; }
+
+        protected abstract int HitAt(Point p, Size size);
+        protected abstract string? TipOf(int index);
+        protected abstract void Draw(DrawingContext ctx, Size size);
+
+        /// <summary>Texte à dessiner ; avec <paramref name="maxWidth"/>, sur une ligne coupée de points de suspension.</summary>
+        protected static FormattedText Text(string text, double size, IBrush color, bool mono = false, double maxWidth = 0)
+        {
+            var t = new FormattedText(text, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, mono ? MonoFace : SansFace, size, color);
+            if (maxWidth > 0)
+            {
+                t.MaxTextWidth = maxWidth;
+                t.MaxLineCount = 1;
+                t.Trimming = TextTrimming.CharacterEllipsis;
+            }
+            return t;
+        }
+
+        protected override void OnPointerMoved(Avalonia.Input.PointerEventArgs e)
+        {
+            base.OnPointerMoved(e);
+            pointer = e.GetPosition(this);
+            var hit = HitAt(pointer.Value, Bounds.Size);
+            if (hit != Hovered)
+            {
+                Hovered = hit;
+                if (hit >= 0 && Clicked is not null) Cursor = HandCursor;
+                else ClearValue(CursorProperty);
+            }
+            InvalidateVisual();
+        }
+
+        protected override void OnPointerExited(Avalonia.Input.PointerEventArgs e)
+        {
+            base.OnPointerExited(e);
+            pointer = null;
+            Hovered = -1;
+            ClearValue(CursorProperty);
+            InvalidateVisual();
+        }
+
+        protected override void OnPointerPressed(Avalonia.Input.PointerPressedEventArgs e)
+        {
+            base.OnPointerPressed(e);
+            if (Clicked is null || Hovered < 0 || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+            e.Handled = true;
+            Clicked(Hovered);
+        }
+
+        public sealed override void Render(DrawingContext ctx)
+        {
+            var size = Bounds.Size;
+            ctx.FillRectangle(Brushes.Transparent, new Rect(size));  // toute la surface réagit au survol
+            Draw(ctx, size);
+            if (pointer is not { } p || Hovered < 0 || TipOf(Hovered) is not { Length: > 0 } tip) return;
+            var lines = tip.Split('\n').Select((l, i) => Text(l, 12, i == 0 ? Tok.Text : Tok.Text2)).ToList();
+            var w = lines.Max(l => l.Width) + 18;
+            var h = lines.Sum(l => l.Height) + 10;
+            // À droite de la souris, sinon à gauche, sinon dans la largeur du graphique (un graphique étroit, côte à côte avec d'autres).
+            var x = p.X + 16 + w <= size.Width ? p.X + 16 : p.X - 16 - w >= 0 ? p.X - 16 - w : Math.Clamp(p.X - w / 2, 0, Math.Max(0, size.Width - w));
+            var y = Math.Max(0, Math.Min(p.Y - h / 2, size.Height - h));
+            ctx.DrawRectangle(Tok.HoverStrong, new Pen(Tok.Faint), new RoundedRect(new Rect(x, y, w, h), 3));
+            var ty = y + 5;
+            foreach (var l in lines)
+            {
+                ctx.DrawText(l, new Point(x + 9, ty));
+                ty += l.Height;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Ta survie seconde par seconde, sous la courbe de tes dégâts et sur le même axe : soins reçus vers le haut (vert), dégâts
+    /// reçus vers le bas (orange), sur une même échelle ; survol : la seconde.
+    /// </summary>
+    sealed class SurvivalStrip(List<double> taken, List<double> heals, int seconds) : HoverChart
+    {
+        readonly double peak = Math.Max(1e-9, Math.Max(taken.DefaultIfEmpty(0).Max(), heals.DefaultIfEmpty(0).Max()));
+
+        static double At(List<double> v, int i) => i < v.Count ? v[i] : 0;
+
+        protected override Size MeasureOverride(Size available) => new(double.IsInfinity(available.Width) ? 300 : available.Width, 56);
+
+        protected override int HitAt(Point p, Size size) =>
+            seconds <= 0 || p.X < 0 || p.X >= size.Width ? -1 : Math.Min(seconds - 1, (int)(p.X / (size.Width / seconds)));
+
+        protected override string? TipOf(int i) => $"à {Duration(i)}\n{Fmt.Big(At(taken, i))} dégâts reçus · {Fmt.Big(At(heals, i))} soins reçus";
+
+        protected override void Draw(DrawingContext ctx, Size size)
+        {
+            var w = size.Width / Math.Max(1, seconds);
+            var gap = w >= 4 ? 1 : 0;
+            var mid = Math.Round(size.Height / 2);
+            var half = mid - 1;
+            if (Hovered >= 0) ctx.FillRectangle(Tok.HoverStrong, new Rect(Hovered * w, 0, Math.Max(1, w), size.Height));
+            for (var i = 0; i < seconds; i++)
+            {
+                var up = At(heals, i) / peak * half;
+                var down = At(taken, i) / peak * half;
+                if (up > 0) ctx.FillRectangle(Tok.Good, new Rect(i * w, mid - up, Math.Max(1, w - gap), up));
+                if (down > 0) ctx.FillRectangle(Tok.Warn, new Rect(i * w, mid + 1, Math.Max(1, w - gap), down));
+            }
+            ctx.FillRectangle(Tok.Border, new Rect(0, mid, size.Width, 1));  // ligne de base
+        }
     }
 
     /// <summary>
@@ -3499,7 +3823,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         foreach (var p in players.OrderByDescending(p => p.Damage))
         {
             var cls = p.ClassCode is { } code ? db.FindClass(code)?.Name : null;
-            var name = p.Name ?? (cls is not null && p.Number is { } n ? $"{cls} {n}" : "joueur inconnu");
+            var name = PlayerName(p);
             Control action;
             if (p.Me) action = T("toi", 12, Tok.Muted);
             else if (p.Name is { } known)
@@ -3510,13 +3834,13 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 action = Tip(button, $"Importer {known} depuis le site officiel (région de ton perso) et l'ouvrir dans un onglet : stats, équipement, compétences, conseils.");
             }
             else action = Tip(T("nom inconnu", 12, Tok.Muted), "Ce joueur n'est pas apparu près de toi pendant l'enregistrement : le Pet Meter n'a pas lu son nom.");
-            var skills = p.Skills.Count == 0 ? "" : "Sorts principaux : " + string.Join(" · ", p.Skills.Take(6).Select(k =>
-                $"{k.Name} {Fmt.Pct(k.Share)}" + (k.Casts > 0 ? $" ({k.Casts}×)" : "")));
-            var tip = $"{name}{(cls is null ? "" : $" · {cls}")} : {Fmt.Big(p.Damage)} dégâts" + (p.Crit is { } c ? $", {Fmt.Pct(c)} de critiques" : "") +
-                      (skills.Length > 0 ? $"\n{skills}" : "");
+            var tip = $"{name}{(cls is null ? "" : $" · {cls}")} : {Fmt.Big(p.Damage)} dégâts" + (p.Crit is { } c ? $", {Fmt.Pct(c)} de critiques" : "");
+            // Survol du nom : ses sorts principaux, chacun avec son icône.
+            var nameBlock = Tip(T(name, 13, p.Me ? Accent.Main : p.Name is null ? Tok.Text2 : null, p.Me ? FontWeight.SemiBold : FontWeight.Normal), tip);
+            ToolTip.SetTip(nameBlock, PlayerTip(p, tip));
             action.HorizontalAlignment = HorizontalAlignment.Right;
             var row = Columns(cols,
-                Tip(T(name, 13, p.Me ? Accent.Main : p.Name is null ? Tok.Text2 : null, p.Me ? FontWeight.SemiBold : FontWeight.Normal), tip),
+                nameBlock,
                 T(cls ?? "—", 12, Tok.Text2), T(p.Power is { } pw ? Fmt.Big(pw) : "—", 12, Tok.Muted, mono: true),
                 T(Fmt.Big(p.Dps), 12, p.Me ? Accent.Main : null, mono: true), T(Fmt.Pct(p.Share), 12, Tok.Text, FontWeight.SemiBold, mono: true),
                 action);
@@ -3540,6 +3864,274 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         }, "Joueurs du combat", T(Fmt.Plural(players.Count, "joueur"), 12, Tok.Muted));
     }
 
+    /// <summary>Nom d'un joueur du combat : son nom, sinon « Templier 2 » (classe et numéro dans sa classe).</summary>
+    string PlayerName(CombatPlayer p) =>
+        p.Name ?? (p.ClassCode is { } code && db.FindClass(code)?.Name is { } cls && p.Number is { } n ? $"{cls} {n}" : "joueur inconnu");
+
+    /// <summary>Clé d'un joueur du combat (choix gardés d'un affichage à l'autre) : son nom, sinon sa classe et son numéro.</summary>
+    static string PlayerKey(CombatPlayer p) => p.Name ?? $"{p.ClassCode}{p.Number}";
+
+    /// <summary>
+    /// Frise de rotation : tes lancers sur une ligne (un trait par lancer, une couleur par sort), et en dessous ceux d'un joueur
+    /// du groupe sur le même combat (par défaut le meilleur DPS de ta classe, sinon le meilleur DPS) ; survol : le sort et
+    /// l'instant. Un même sort a la même couleur sur les deux lignes ; en mots, le rythme de chacun et, entre joueurs de la
+    /// même classe, les sorts que l'un lance plus souvent que l'autre.
+    /// </summary>
+    Control RotationStrip(CombatLog log)
+    {
+        var others = log.Players?.Where(p => !p.Me && p.Casts is { Count: > 2 }).ToList() ?? [];
+        var rival = others.FirstOrDefault(p => PlayerKey(p) == s.CombatRival)
+                    ?? others.Where(p => p.ClassCode == r.Character.ClassCode).MaxBy(p => p.Dps) ?? others.MaxBy(p => p.Dps);
+        // Face à un autre joueur, tes lancers tels que le Pet Meter les date pour le groupe (même départ : le premier coup de
+        // quiconque sur la cible) ; seul, ceux de ton combat (départ : ton premier coup).
+        var meCasts = rival is not null && log.Players!.FirstOrDefault(p => p.Me)?.Casts is { Count: > 2 } own ? own : log.Casts!;
+        var lines = new List<(string Name, IBrush Color, List<CombatCast> Casts, string? Class)> { ("Toi", Accent.Main, meCasts, r.Character.ClassCode) };
+        if (rival is not null) lines.Add((PlayerName(rival), Tok.Text, rival.Casts!, rival.ClassCode));
+        var start = Math.Min(0, lines.Min(l => l.Casts[0].T));
+        var end = Math.Max(rival is not null ? log.GroupDuration ?? log.Duration : log.Duration, lines.Max(l => l.Casts[^1].T));
+
+        // Une couleur par sort pour les plus lancés (sur les deux lignes), la couleur secondaire d'abord ; les autres en gris.
+        var palette = AccentTheme.All.Select(a => a.Main).Where(b => !ReferenceEquals(b, Accent.Main)).Prepend(Accent.Main).ToList();
+        var colors = lines.SelectMany(l => l.Casts).GroupBy(c => c.Code).OrderByDescending(g => g.Count()).Take(palette.Count)
+            .Select((g, i) => (g.Key, Brush: palette[i])).ToDictionary(x => x.Key, x => x.Brush);
+        var lanes = new TimeLanes(start, end, 130);
+        foreach (var (name, color, casts, _) in lines)
+            lanes.Lane(name, color, casts.Select((c, i) => new TimeLanes.Mark(c.T, colors.GetValueOrDefault(c.Code) ?? Tok.Faint,
+                $"{c.Name}\n{name} · à {Clock(c.T)}" + (i > 0 ? $" · {Clock(c.T - casts[i - 1].T)} après le lancer d'avant" : ""))));
+
+        var body = new StackPanel { Spacing = 10 };
+        if (others.Count > 1)
+        {
+            var pick = new WrapPanel();
+            pick.Children.Add(T("Comparer à", 12, Tok.Muted).WithMargin(0, 0, 8, 4));
+            foreach (var p in others.OrderByDescending(p => p.Dps))
+            {
+                var key = PlayerKey(p);
+                pick.Children.Add(Choice([($"{PlayerName(p)} · {Fmt.Big(p.Dps)}", p == rival, () => update(st => st.CombatRival = key))]).WithMargin(0, 0, 6, 4));
+            }
+            body.Children.Add(pick);
+        }
+        body.Children.Add(lanes);
+
+        // Légende : par ligne, les sorts en couleur et leur nombre de lancers.
+        var legend = new StackPanel { Spacing = 4 };
+        foreach (var (name, color, casts, cls) in lines)
+        {
+            var wrap = new WrapPanel();
+            wrap.Children.Add(T(name, 12, color, FontWeight.SemiBold).WithMargin(0, 0, 10, 2));
+            foreach (var g in casts.GroupBy(c => c.Code).Where(g => colors.ContainsKey(g.Key)).OrderByDescending(g => g.Count()))
+            {
+                var item = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(0, 0, 12, 2) };
+                item.Children.Add(new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(2), Background = colors[g.Key], VerticalAlignment = VerticalAlignment.Center });
+                if (SpellIcon(g.First().Name, g.Key, cls, 16) is { } icon) item.Children.Add(icon);
+                item.Children.Add(T(g.First().Name, 12, Tok.Text2));
+                item.Children.Add(T($"×{g.Count()}", 11, Tok.Muted, mono: true));
+                wrap.Children.Add(item);
+            }
+            var rest = casts.Count(c => !colors.ContainsKey(c.Code));
+            if (rest > 0) wrap.Children.Add(T($"gris : {Fmt.Plural(rest, "autre lancer", "autres lancers")}", 12, Tok.Muted).WithMargin(0, 0, 0, 2));
+            legend.Children.Add(wrap);
+        }
+        body.Children.Add(legend);
+
+        // En mots : le rythme de chacun ; entre joueurs de la même classe, les sorts lancés nettement plus par l'un que par l'autre.
+        static string Pace(List<CombatCast> casts)
+        {
+            var gaps = casts.Zip(casts.Skip(1)).Select(x => x.Second.T - x.First.T).ToList();
+            var pauses = gaps.Count(g => g > 2.5);
+            var minutes = Math.Max(1, casts[^1].T - casts[0].T) / 60;
+            return $"{Fmt.Plural(casts.Count, "lancer")} ({Fmt.Num(Math.Round(casts.Count / minutes, 1))} par minute), " +
+                   (pauses == 0 ? "aucune pause de plus de 2,5 s" : $"{Fmt.Plural(pauses, "pause")} de plus de 2,5 s (la plus longue : {Clock(gaps.Max())})");
+        }
+        var words = new StackPanel { Spacing = 4 };
+        foreach (var (name, _, casts, _) in lines) words.Children.Add(T($"{name} : {Pace(casts)}.", 12, Tok.Text2, wrap: true).WithLineHeight(1.4));
+        if (rival is not null && rival.ClassCode == r.Character.ClassCode)
+        {
+            var mine = meCasts.GroupBy(c => c.Name).ToDictionary(g => g.Key, g => g.Count());
+            var theirs = rival.Casts!.GroupBy(c => c.Name).ToDictionary(g => g.Key, g => g.Count());
+            var both = mine.Keys.Union(theirs.Keys).Select(k => (Name: k, Me: mine.GetValueOrDefault(k), Them: theirs.GetValueOrDefault(k))).ToList();
+            var more = both.Where(x => x.Them - x.Me >= 2).OrderByDescending(x => x.Them - x.Me).Take(3).ToList();
+            var less = both.Where(x => x.Me - x.Them >= 2).OrderByDescending(x => x.Me - x.Them).Take(3).ToList();
+            var them = lines[1].Name;
+            if (more.Count > 0)
+                words.Children.Add(T($"{them} lance plus souvent : " + string.Join(", ", more.Select(x => $"{x.Name} ({x.Them} fois, toi {x.Me})")) + ".",
+                    12, Tok.Warn, wrap: true).WithLineHeight(1.4));
+            if (less.Count > 0)
+                words.Children.Add(T("Tu lances plus souvent : " + string.Join(", ", less.Select(x => $"{x.Name} ({x.Me} fois, {them} {x.Them})")) + ".",
+                    12, Tok.Text2, wrap: true).WithLineHeight(1.4));
+            if (more.Count == 0 && less.Count == 0)
+                words.Children.Add(T($"Mêmes sorts, à peu près autant de fois que {them}.", 12, Tok.Good, wrap: true));
+        }
+        else if (rival is not null)
+            words.Children.Add(T($"{lines[1].Name} n'est pas de ta classe : compare surtout le rythme (lancers par minute, pauses).", 12, Tok.Muted, wrap: true));
+        else
+            words.Children.Add(T("Seul ou sans les lancers des autres joueurs (Pet Meter v0.21.1 et plus, en groupe) : ta ligne seule.", 12, Tok.Muted, wrap: true));
+        body.Children.Add(words);
+        var title = rival is null ? "Frise de rotation" : $"Frise de rotation · toi et {lines[1].Name}";
+        return Card(body, title, T("survol : le sort et l'instant", 11, Tok.Muted, mono: true));
+    }
+
+    /// <summary>
+    /// Icône d'un sort par son nom (et son code s'il est connu) : celle de ta compétence pour ta classe ; pour un autre joueur,
+    /// celle d'un perso de sa classe importé sur ce PC (<see cref="KnownSkillIcons"/>). Rien si l'icône manque (pas d'espace
+    /// réservé).
+    /// </summary>
+    Control? SpellIcon(string name, long? code, string? classCode, double size = 16)
+    {
+        if ((classCode is null || classCode == r.Character.ClassCode) && SkillIcon(name, size, false) is { } own) return own;
+        var (byId, byName) = KnownSkillIcons();
+        var key = $"{classCode}|{GameDatabase.NormalizeLabel(name)}";
+        var url = code is { } c && byId.TryGetValue(c / 10000 * 10000, out var byCode) ? byCode
+            : byName.TryGetValue(key, out var named) ? named
+            : SpellCodes().TryGetValue(key, out var spell) && byId.TryGetValue(spell, out var bySpell) ? bySpell : null;
+        return url is null ? null : IconCache.Box(url, size, Tok.Border, Tok.Frame);
+    }
+
+    /// <summary>« CLASSE|nom » d'un sort des données → son code de compétence (sans variante) : de là, son icône par <see cref="KnownSkillIcons"/>.</summary>
+    Dictionary<string, long> SpellCodes() => spellCodes ??= db.Spells
+        .GroupBy(x => $"{x.Value.Class}|{GameDatabase.NormalizeLabel(x.Value.Name)}")
+        .ToDictionary(g => g.Key, g => g.Min(x => x.Key) / 10000 * 10000);
+    Dictionary<string, long>? spellCodes;
+
+    /// <summary>
+    /// Icônes des compétences de tous les persos importés sur ce PC (fiches de %APPDATA%\Aion2Builder\characters, toutes
+    /// classes), par code de compétence et par « CLASSE|nom » : un sort d'un autre joueur a son icône dès qu'un perso de sa classe
+    /// a été importé. Relu seulement quand le dossier change (vérifié une fois par affichage).
+    /// </summary>
+    (Dictionary<long, string> ById, Dictionary<string, string> ByName) KnownSkillIcons()
+    {
+        if (iconsChecked) return (iconIndex.ById, iconIndex.ByName);
+        iconsChecked = true;
+        try
+        {
+            var dir = new DirectoryInfo(AppPaths.CharactersDir);
+            var files = dir.Exists ? dir.GetFiles("*.json") : [];
+            var stamp = string.Join("|", files.Select(f => $"{f.Name}:{f.LastWriteTimeUtc.Ticks}"));
+            if (stamp == iconIndex.Stamp) return (iconIndex.ById, iconIndex.ByName);
+            var byId = new Dictionary<long, string>();
+            var byName = new Dictionary<string, string>();
+            foreach (var file in files)
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(file.FullName));
+                    var root = doc.RootElement;
+                    if (!root.TryGetProperty("classCode", out var cls) || !root.TryGetProperty("skills", out var skills)
+                        || skills.ValueKind != System.Text.Json.JsonValueKind.Array) continue;
+                    foreach (var k in skills.EnumerateArray())
+                    {
+                        if (!k.TryGetProperty("icon", out var icon) || icon.ValueKind != System.Text.Json.JsonValueKind.String || icon.GetString() is not { Length: > 0 } url) continue;
+                        if (k.TryGetProperty("id", out var id) && id.TryGetInt64(out var skillId)) byId.TryAdd(skillId, url);
+                        if (k.TryGetProperty("name", out var n) && n.ValueKind == System.Text.Json.JsonValueKind.String)
+                            byName.TryAdd($"{cls.GetString()}|{GameDatabase.NormalizeLabel(n.GetString()!)}", url);
+                    }
+                }
+                catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException or UnauthorizedAccessException or InvalidOperationException or FormatException)
+                {
+                    // Fiche abîmée ou d'un ancien format : ignorée.
+                }
+            }
+            iconIndex = (stamp, byId, byName);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        return (iconIndex.ById, iconIndex.ByName);
+    }
+    static (string? Stamp, Dictionary<long, string> ById, Dictionary<string, string> ByName) iconIndex = (null, [], []);
+    bool iconsChecked;
+
+    /// <summary>Icône du sort qu'un conseil nomme (« Lame déferlante » : …) ; rien sinon.</summary>
+    Control? FindingIcon(string title, string? classCode, double size = 16) =>
+        Regex.Match(title, "«\\s*(.+?)\\s*»") is { Success: true } m ? SpellIcon(m.Groups[1].Value, null, classCode, size) : null;
+
+    /// <summary>Infobulle d'un joueur du combat : ses dégâts, puis ses sorts principaux avec leur icône, leur part de ses dégâts et leurs lancers.</summary>
+    Control PlayerTip(CombatPlayer p, string head)
+    {
+        var panel = new StackPanel { Spacing = 4 };
+        panel.Children.Add(T(head, 12, Tok.Text));
+        if (p.Skills.Count > 0) panel.Children.Add(Label("Sorts principaux").WithMargin(0, 4, 0, 0));
+        foreach (var k in p.Skills.Take(6))
+            panel.Children.Add(ColumnsSpaced("220,44,40", 8, WithIcon(SpellIcon(k.Name, null, p.ClassCode, 16), T(k.Name, 12, Tok.Text2), 6),
+                T(Fmt.Pct(k.Share), 12, Tok.Text, mono: true).AlignRight(), T(k.Casts > 0 ? $"{k.Casts}×" : "", 11, Tok.Muted, mono: true).AlignRight()));
+        return panel;
+    }
+
+    /// <summary>
+    /// Frise à plusieurs lignes sur un même axe de temps : nom de la ligne à gauche, un trait par lancer à sa couleur (plus haut
+    /// quand il pèse plus : poids de 0 à 1), les temps en dessous ; survol : la bulle du trait le plus proche (à 6 px près) et
+    /// un trait vertical à son instant sur toutes les lignes.
+    /// </summary>
+    sealed class TimeLanes(double start, double end, double labelWidth = 150) : HoverChart
+    {
+        public sealed record Mark(double T, IBrush Color, string Tip, double Weight = 1);
+
+        readonly List<(string Name, IBrush Color, List<Mark> Marks)> lanes = [];
+        const double Row = 24, Axis = 18;
+        /// <summary>Numéro d'un trait : ligne × Stride + rang dans la ligne.</summary>
+        const int Stride = 1_000_000;
+
+        public TimeLanes Lane(string name, IBrush color, IEnumerable<Mark> marks)
+        {
+            lanes.Add((name, color, marks.OrderBy(m => m.T).ToList()));
+            return this;
+        }
+
+        protected override Size MeasureOverride(Size available) => new(double.IsInfinity(available.Width) ? 400 : available.Width, lanes.Count * Row + Axis);
+
+        double X(double t, double width) => labelWidth + 4 + Math.Clamp((t - start) / Math.Max(1, end - start), 0, 1) * Math.Max(1, width - labelWidth - 8);
+
+        protected override int HitAt(Point p, Size size)
+        {
+            var lane = (int)Math.Floor(p.Y / Row);
+            if (p.X < labelWidth || lane < 0 || lane >= lanes.Count) return -1;
+            var marks = lanes[lane].Marks;
+            var best = -1;
+            var distance = 6.0;
+            for (var j = 0; j < marks.Count; j++)
+            {
+                var d = Math.Abs(X(marks[j].T, size.Width) - p.X);
+                if (d <= distance) (distance, best) = (d, j);
+            }
+            return best < 0 ? -1 : lane * Stride + best;
+        }
+
+        protected override string? TipOf(int index) => lanes[index / Stride].Marks[index % Stride].Tip;
+
+        protected override void Draw(DrawingContext ctx, Size size)
+        {
+            var (hoverLane, hoverMark) = Hovered >= 0 ? (Hovered / Stride, Hovered % Stride) : (-1, -1);
+            for (var i = 0; i < lanes.Count; i++)
+            {
+                var (name, color, marks) = lanes[i];
+                var y = i * Row;
+                var label = Text(name, 12, color, maxWidth: labelWidth - 10);
+                ctx.DrawText(label, new Point(0, y + (Row - label.Height) / 2));
+                ctx.DrawRectangle(Tok.Frame, null, new RoundedRect(new Rect(labelWidth, y + 3, Math.Max(0, size.Width - labelWidth), Row - 6), 3));
+                // Traits de 2 px, affinés jusqu'à 1 px quand les lancers se serrent (un combat de 3 min en compte des centaines).
+                var tick = Math.Clamp((size.Width - labelWidth - 8) / Math.Max(1, marks.Count) * 0.6, 1, 2);
+                for (var j = 0; j < marks.Count; j++)
+                {
+                    var m = marks[j];
+                    var h = 6 + 10 * Math.Clamp(m.Weight, 0, 1);
+                    var on = i == hoverLane && j == hoverMark;
+                    var w = on ? 3 : tick;
+                    ctx.FillRectangle(on ? Tok.Text : m.Color, new Rect(X(m.T, size.Width) - w / 2, y + (Row - h) / 2, w, h));
+                }
+            }
+            if (hoverLane >= 0)
+                ctx.FillRectangle(Tok.Alpha(Tok.Text, 0.3), new Rect(X(lanes[hoverLane].Marks[hoverMark].T, size.Width) - 0.5, 0, 1, lanes.Count * Row));
+            // Axe : début, milieu, fin.
+            var ay = lanes.Count * Row + 3;
+            var first = Text(Duration(start), 11, Tok.Muted, mono: true);
+            var middle = Text(Duration((start + end) / 2), 11, Tok.Muted, mono: true);
+            var last = Text(Duration(end), 11, Tok.Muted, mono: true);
+            var x0 = labelWidth + 4;
+            var x1 = Math.Max(x0, size.Width - 4);
+            ctx.DrawText(first, new Point(x0, ay));
+            ctx.DrawText(middle, new Point((x0 + x1 - middle.Width) / 2, ay));
+            ctx.DrawText(last, new Point(x1 - last.Width, ay));
+        }
+    }
+
     /// <summary>
     /// « Aggro du boss » : la part de ses attaques de tank (celles qui visent d'habitude une seule cible, toi) que tu as prises,
     /// chaque perte d'aggro (qui, quand, combien de temps, ton sort de menace prêt ou non), et à part ses mécaniques (zone,
@@ -3559,14 +4151,23 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         foreach (var l in a.Losses)
         {
             var span = l.End - l.Start >= 1 ? $" pendant {Duration(l.End - l.Start)}" : "";
-            var taunt = l.Taunt is null ? "" : l.TauntWait is > 0.5 and var w
-                ? $" · {l.Taunt} en recharge (encore {w:0} s)"
-                : l.TauntedBack ? $" · {l.Taunt} relancée dans les 5 s" : $" · {l.Taunt} était prête : relance-la";
+            var inlines = new InlineCollection { new Run($"à {Duration(l.Start)} : {who} a frappé {l.Who}{span} ({Fmt.Plural(l.Attacks, "attaque")}, {Fmt.Big(l.Damage)} dégâts)") };
+            if (l.Taunt is { } taunt)
+            {
+                // Ton sort de menace, son icône à gauche de son nom.
+                inlines.Add(new Run(" · "));
+                if (SpellIcon(taunt, null, r.Character.ClassCode, 14) is { } icon)
+                {
+                    icon.Margin = new Thickness(0, 0, 4, -3);
+                    inlines.Add(new InlineUIContainer(icon));
+                }
+                inlines.Add(new Run(l.TauntWait is > 0.5 and var w ? $"{taunt} en recharge (encore {w:0} s)"
+                    : l.TauntedBack ? $"{taunt} relancée dans les 5 s" : $"{taunt} était prête : relance-la"));
+            }
             panel.Children.Add(new Border
             {
                 BorderBrush = Tok.Warn, BorderThickness = new Thickness(2, 0, 0, 0), Padding = new Thickness(10, 2),
-                Child = T($"à {Duration(l.Start)} : {who} a frappé {l.Who}{span} ({Fmt.Plural(l.Attacks, "attaque")}, {Fmt.Big(l.Damage)} dégâts){taunt}",
-                    12, Tok.Text, wrap: true),
+                Child = new TextBlock { FontSize = 12, Foreground = Tok.Text, TextWrapping = TextWrapping.Wrap, Inlines = inlines },
             });
         }
         panel.Children.Add(T($"À part (pas des pertes d'aggro) : {Fmt.Plural(a.Zone, "sort")} de zone sur plusieurs joueurs à la fois, " +
@@ -3574,6 +4175,96 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                              "qui, quand il ne frappe qu'une cible, te vise au moins une fois sur deux. D'après les coups du boss lus par le Pet Meter.",
             11, Tok.Muted, wrap: true).WithLineHeight(1.4));
         return Card(panel, "Aggro du boss", T(a.YouAreTank ? Fmt.Pct(a.Share) : Fmt.Plural(a.OnYou, "fois", "fois"), 12, color, FontWeight.SemiBold, mono: true));
+    }
+
+    /// <summary>
+    /// Chronologie des mécaniques du boss (coups du boss lus par le Pet Meter v0.21.2) : ses lancers dans le temps, une ligne par
+    /// type (attaques de tank, sorts de zone, sorts sur une cible au hasard), le trait plus haut quand il fait plus de dégâts ;
+    /// survol : le sort, qui il a touché et combien. En dessous, chaque sort de mécanique : combien de fois, à quel rythme, qui.
+    /// </summary>
+    Control BossMechanicsCard(CombatLog log, BossMechanics m)
+    {
+        var who = Who(log);
+        // Les sorts des boss n'ont pas de nom dans les données : une lettre par sort, dans l'ordre de sa première apparition.
+        var letters = m.Casts.Select(c => c.Skill).Distinct().Select((code, i) => (code, i))
+            .ToDictionary(x => x.code, x => x.i < 26 ? ((char)('A' + x.i)).ToString() : $"{x.i + 1}");
+        static string Person(string to) => to == "me" ? "toi" : to;
+        static string KindWord(BossCastKind k) => k switch
+        {
+            BossCastKind.Tank => "attaque de tank", BossCastKind.Zone => "sort de zone", _ => "sort sur une cible au hasard",
+        };
+        string CastTip(BossCast c) =>
+            $"à {Clock(c.T)} · sort {letters[c.Skill]} · {KindWord(c.Kind)}\n" +
+            string.Join("\n", c.Hits.Take(6).Select(h => $"{Person(h.Who)} : {Fmt.Big(h.Damage)} dégâts")) +
+            (c.Hits.Count > 6 ? $"\n… et {Fmt.Plural(c.Hits.Count - 6, "autre joueur", "autres joueurs")}" : "") +
+            (c.Hits.Count > 1 ? $"\n{Fmt.Plural(c.Hits.Count, "joueur")} touchés, {Fmt.Big(c.Damage)} dégâts en tout" : "") +
+            $"\ncode du sort {c.Skill}";
+        IBrush MarkColor(BossCast c) => c.Kind switch
+        {
+            BossCastKind.Tank => c.Hits[0].Who == m.Tank ? Tok.Text2 : Tok.Warn,
+            BossCastKind.Zone => c.Hits.Any(h => h.Who == "me") ? Tok.Bad : Tok.Alpha(Tok.Bad, 0.5),
+            _ => c.Hits.Any(h => h.Who == "me") ? Accent.Main : Tok.Info,
+        };
+        var start = Math.Min(0, m.Casts[0].T);
+        var end = Math.Max(log.Duration, m.Casts[^1].T);
+        var lanes = new TimeLanes(start, end, 160);
+        (BossCastKind Kind, string Label, IBrush Color)[] kinds =
+            [(BossCastKind.Tank, "Attaques de tank", Tok.Text2), (BossCastKind.Zone, "Sorts de zone", Tok.Bad), (BossCastKind.Random, "Cible au hasard", Tok.Info)];
+        foreach (var (kind, label, color) in kinds)
+        {
+            var list = m.Casts.Where(c => c.Kind == kind).ToList();
+            if (list.Count == 0) continue;
+            var max = list.Max(c => c.Damage);
+            lanes.Lane($"{label} · {list.Count}", color, list.Select(c => new TimeLanes.Mark(c.T, MarkColor(c), CastTip(c), max > 0 ? c.Damage / max : 1)));
+        }
+        var tankName = m.Tank is { } t ? Person(t) : null;
+        var body = new StackPanel { Spacing = 10 };
+        body.Children.Add(lanes);
+        body.Children.Add(T("Trait plus haut = plus de dégâts. " +
+                            (tankName is null ? "" : $"Attaques de tank : grises sur {tankName}, orange sur un autre joueur. ") +
+                            "Zone : rouge vif quand tu as été touché. Cible au hasard : en couleur secondaire quand c'était toi.",
+            11, Tok.Muted, wrap: true).WithLineHeight(1.4));
+
+        // Chaque sort de mécanique (zone, cible au hasard) : combien de fois, toutes les combien de secondes, qui il touche.
+        const string cols = "54,170,46,110,*";
+        var rows = new StackPanel { Spacing = 4 };
+        foreach (var g in m.Casts.GroupBy(c => c.Skill)
+                     .Select(g => (Skill: g.Key, Casts: g.ToList(), Kind: g.GroupBy(c => c.Kind).MaxBy(k => k.Count())!.Key))
+                     .Where(x => x.Kind != BossCastKind.Tank).OrderBy(x => x.Casts[0].T))
+        {
+            var times = g.Casts.Select(c => c.T).ToList();
+            var every = times.Count >= 2 ? (times[^1] - times[0]) / (times.Count - 1) : (double?)null;
+            var touched = g.Casts.SelectMany(c => c.Hits).GroupBy(h => h.Who).OrderByDescending(x => x.Count()).ThenByDescending(x => x.Sum(h => h.Damage)).ToList();
+            var perCast = g.Casts.Average(c => c.Hits.Count);
+            var targets = g.Kind == BossCastKind.Zone
+                ? $"{Fmt.Num(Math.Round(perCast, 1))} joueurs par lancer, {Fmt.Big(g.Casts.Sum(c => c.Damage) / Math.Max(1, g.Casts.Sum(c => c.Hits.Count)))} chacun"
+                : string.Join(", ", touched.Take(3).Select(x => $"{Person(x.Key)} {x.Count()}×"));
+            var onMe = g.Casts.Count(c => c.Hits.Any(h => h.Who == "me"));
+            rows.Children.Add(Columns(cols,
+                T($"sort {letters[g.Skill]}", 12, g.Kind == BossCastKind.Zone ? Tok.Bad : Tok.Info, FontWeight.SemiBold, mono: true),
+                T(KindWord(g.Kind), 12, Tok.Text2),
+                T($"{g.Casts.Count}×", 12, Tok.Text, mono: true),
+                T(every is { } e ? $"toutes les {Duration(e)}" : $"à {Duration(times[0])}", 12, Tok.Text2, mono: true),
+                Tip(T(targets + (onMe > 0 && g.Kind == BossCastKind.Zone ? $" · toi {onMe}×" : ""), 12, onMe > 0 ? Tok.Text : Tok.Muted),
+                    $"Sort {letters[g.Skill]} (code {g.Skill}) : 1er lancer à {Clock(times[0])}" + (times.Count > 1 ? $", dernier à {Clock(times[^1])}" : "") + ".\n" +
+                    "Touchés : " + string.Join(", ", touched.Select(x => $"{Person(x.Key)} {x.Count()}× ({Fmt.Big(x.Sum(h => h.Damage))})")))));
+        }
+        if (rows.Children.Count > 0)
+        {
+            body.Children.Add(Label("Ses mécaniques, sort par sort"));
+            body.Children.Add(rows);
+        }
+        if (m.Tank is not null)
+        {
+            var tankCasts = m.Casts.Where(c => c.Kind == BossCastKind.Tank).ToList();
+            var onTank = tankCasts.Count(c => c.Hits[0].Who == m.Tank);
+            var skills = tankCasts.Select(c => c.Skill).Distinct().Select(code => $"sort {letters[code]}");
+            body.Children.Add(T($"Attaques de tank ({string.Join(", ", skills)}) : {tankCasts.Count} lancers, {Fmt.Pct((double)onTank / Math.Max(1, tankCasts.Count))} sur {tankName}" +
+                                (m.Tank == "me" ? " (toi)." : "."), 12, Tok.Text2, wrap: true).WithLineHeight(1.4));
+        }
+        body.Children.Add(T($"D'après les coups de {who} sur les joueurs lus par le Pet Meter : un sort qui ne touche personne (esquivé, hors de portée) n'apparaît pas. " +
+                            "Les sorts des boss n'ont pas de nom dans les données : une lettre par sort, dans l'ordre où il apparaît.", 11, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        return Card(body, "Mécaniques du boss · chronologie", T(Fmt.Plural(m.Casts.Count, "lancer"), 12, Tok.Muted, mono: true));
     }
 
     /// <summary>
@@ -3605,7 +4296,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                         Spacing = 2,
                         Children =
                         {
-                            T(f.Title, 13, null, FontWeight.SemiBold, wrap: true),
+                            WithIcon(FindingIcon(f.Title, p.ClassCode), T(f.Title, 13, null, FontWeight.SemiBold, wrap: true), 6),
                             T(f.Detail, 12, Tok.Text2, wrap: true).WithLineHeight(1.4),
                             f.Action is { } act ? T("→ " + act.Replace("écran Build", "Aion 2 Builder, écran Build"), 12, Accent.Main, wrap: true) : new Border(),
                         },
@@ -3632,7 +4323,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         DockPanel.SetDock(badge, Dock.Right);
         head.Children.Add(badge);
         head.Children.Add(T($"#{index + 1}", 12, Tok.Muted, mono: true));
-        var body = new StackPanel { Spacing = 10, Children = { head, T(f.Title, 14, Tok.Text, FontWeight.SemiBold, wrap: true).WithLineHeight(1.3) } };
+        var body = new StackPanel { Spacing = 10, Children = { head, WithIcon(FindingIcon(f.Title, r.Character.ClassCode, 18), T(f.Title, 14, Tok.Text, FontWeight.SemiBold, wrap: true).WithLineHeight(1.3)) } };
         if (review is { Possible: { } possible }) body.Children.Add(Pips(review.Skill.Uses, possible, 18));
         body.Children.Add(T(f.Action ?? f.Detail, 13, Tok.Text2, wrap: true).WithLineHeight(1.4));
         var id = $"combat:why:{index}";
