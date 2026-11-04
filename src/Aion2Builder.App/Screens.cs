@@ -74,6 +74,9 @@ sealed class UiState
     public int? CombatIndex { get; set; }
     public int? CombatGroup { get; set; }
     public string? CombatSkill { get; set; }
+    /// <summary>Progression : la comparaison côte à côte avec un autre perso (fichier enregistré) au lieu des courbes.</summary>
+    public bool ProgressCompare { get; set; }
+    public string? CompareWith { get; set; }
     public HashSet<Area> Collapsed { get; } = [];
     /// <summary>Sections repliables ouvertes (refonte visuelle), par identifiant.</summary>
     public HashSet<string> Open { get; } = [];
@@ -1900,6 +1903,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     ("vue", Mode, Accent.Main), ("build", inputs.UsesDesigned ? "conçu" : "joueurs", null),
                     ("importé", c.FetchedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm"), null),
                 ]),
+                Tip(Clickable(T("comparer à un autre perso ›", 12, Accent.Main), () => update(st => { st.Screen = Screen.Progress; st.ProgressCompare = true; }),
+                    hover: Tok.HoverStrong, padding: new Thickness(0, 2)), "Toi et un autre perso enregistré (un onglet ouvert d'abord), côte à côte : notes, stats, pièces, compétences, Daevanion."),
             },
         });
         panel.Children.Add(SectionHeader("Score"));
@@ -5381,10 +5386,17 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         return Card(new StackPanel { Spacing = 8, Children = { grid, legend } }, "Jour par jour", T($"{count} derniers jours", 11, Tok.Muted, mono: true));
     }
 
+    /// <summary>« dans le temps · côte à côte » : les deux vues de la Progression.</summary>
+    Control ProgressModes() => Choice([
+        ("dans le temps", !s.ProgressCompare, () => update(st => st.ProgressCompare = false)),
+        ("côte à côte", s.ProgressCompare, () => update(st => st.ProgressCompare = true)),
+    ]);
+
     Control ProgressScreen()
     {
+        if (s.ProgressCompare) return ComparePage();
         if (progress.Count < 2)
-            return Page($"Progression · {progress.Count} import", null,
+            return Page($"Progression · {progress.Count} import", ProgressModes(),
                 T("Un seul import pour l'instant. Actualise ton personnage (Ctrl+R) après tes progrès : chaque import qui change quelque chose " +
                   "(pièces, compétences, cases Daevanion, niveau d'objet) ajoute un point ici, avec ce qui a changé.", 13, Tok.Muted, wrap: true).WithLineHeight(1.5));
         var first = progress[0];
@@ -5447,8 +5459,163 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         if (older.Children.Count > 0)
             recent.Children.Add(Expander(Fmt.Plural(older.Children.Count, "import plus ancien", "imports plus anciens"),
                 IsOpen("progress:older"), () => Toggle("progress:older"), () => older, new Thickness(10, 4)));
-        return Page($"Progression · {progress.Count} imports depuis le {first.FetchedAtUtc.ToLocalTime():dd/MM/yyyy}", null,
+        return Page($"Progression · {progress.Count} imports depuis le {first.FetchedAtUtc.ToLocalTime():dd/MM/yyyy}", ProgressModes(),
             curvesBlock, Card(recent, "Imports, du plus récent au plus ancien", padding: new Thickness(0)));
+    }
+
+    // ----- Progression : comparaison côte à côte -----
+
+    /// <summary>Analyses des persos comparés (fichier, date de l'import, mode) : refaites seulement quand l'un d'eux change.</summary>
+    static readonly Dictionary<string, AdviceReport> CompareMemo = [];
+
+    /// <summary>Un perso enregistré, analysé dans le mode de la vue avec ses propres réglages (sans familiers ni combats).</summary>
+    AdviceReport? Analyzed(SavedCharacter saved)
+    {
+        var key = $"{saved.Path}|{saved.FetchedAtUtc.Ticks}|{r.Mode}";
+        lock (CompareMemo)
+            if (CompareMemo.TryGetValue(key, out var known)) return known;
+        try
+        {
+            var store = new CharacterStore();
+            var other = store.Load(saved.Path);
+            var report = new Advisor(db).Analyze(other, r.Mode, store.LoadInputs(other));
+            lock (CompareMemo)
+            {
+                if (CompareMemo.Count >= 8) CompareMemo.Clear();
+                CompareMemo[key] = report;
+            }
+            return report;
+        }
+        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or InvalidDataException or InvalidOperationException or KeyNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>« +12 » en vert, « −5 » en rouge, « = » en gris : l'écart de toi à l'autre (plus haut = mieux, sauf <paramref name="lowerIsBetter"/>).</summary>
+    static TextBlock Gap(double d, string unit = "", bool lowerIsBetter = false)
+    {
+        var good = lowerIsBetter ? d < 0 : d > 0;
+        return T(Math.Abs(d) < 0.05 ? "=" : $"{(d > 0 ? "+" : "−")}{Fmt.Num(Math.Abs(Math.Round(d, 1)))}{unit}", 12,
+            Math.Abs(d) < 0.05 ? Tok.Muted : good ? Tok.Good : Tok.Bad, Math.Abs(d) < 0.05 ? FontWeight.Normal : FontWeight.SemiBold, mono: true).AlignRight();
+    }
+
+    /// <summary>
+    /// Toi et un autre perso enregistré (un onglet ouvert d'abord, ou tout perso importé : ami, joueur ouvert depuis un combat),
+    /// sur deux colonnes : l'essentiel (niveau d'objet, puissance, notes), les stats principales de ta classe, les pièces et leur
+    /// enchantement, les compétences (même classe) et le Daevanion ; l'écart en couleur (vert : tu es devant).
+    /// </summary>
+    Control ComparePage()
+    {
+        var me = r.Character;
+        var tabs = UiPrefs.Load().Tabs ?? [];
+        var saved = new CharacterStore().List()
+            .Where(c => !(c.Name.Equals(me.Name, StringComparison.OrdinalIgnoreCase) && c.ServerName == me.ServerName && c.Region == me.Region))
+            .OrderByDescending(c => tabs.Contains(c.Path)).ThenByDescending(c => c.ClassCode == me.ClassCode).ThenByDescending(c => c.FetchedAtUtc).ToList();
+        if (saved.Count == 0)
+            return Page("Progression · côte à côte", ProgressModes(), T("Aucun autre perso enregistré. Ouvre d'abord celui à comparer (écran d'import, ou « ouvrir sa fiche » " +
+                "d'un joueur dans l'écran Combat) : il apparaît ici, à côté de toi.", 13, Tok.Muted, wrap: true).WithLineHeight(1.5));
+        var pick = saved.FirstOrDefault(c => c.Path == s.CompareWith) ?? saved[0];
+        string ClassName(string code) => db.FindClass(code)?.Name ?? code;
+        var picker = new ComboBox
+        {
+            ItemsSource = saved.Select(c => $"{c.Name} · {ClassName(c.ClassCode)} · niv. d'objet {Fmt.Big(c.ItemLevel)} · {c.ServerName}{(tabs.Contains(c.Path) ? " · onglet ouvert" : "")}").ToList(),
+            SelectedIndex = saved.IndexOf(pick), FontSize = 12, MinHeight = 0, Padding = new Thickness(8, 2), MinWidth = 320,
+        };
+        picker.SelectionChanged += (_, _) =>
+        {
+            if (picker.SelectedIndex >= 0 && saved[picker.SelectedIndex].Path != pick.Path) update(st => st.CompareWith = saved[picker.SelectedIndex].Path);
+        };
+        var head = ColumnsSpaced("110,*", 12, T("Comparer à", 13, weight: FontWeight.Medium), picker);
+        if (Analyzed(pick) is not { } o)
+            return Page("Progression · côte à côte", ProgressModes(), head, T($"Le fichier de {pick.Name} est illisible.", 13, Tok.Warn));
+        var other = o.Character;
+        var sameClass = other.ClassCode == me.ClassCode;
+        const string cols = "*,190,190,90";
+        Border Header() => TableHeader(cols, "", "Toi", other.Name, "Écart");
+        Border Row(Control label, Control mine, Control theirs, Control gap) => new()
+        {
+            Padding = new Thickness(20, 5), BorderBrush = Tok.RowLine, BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = Columns(cols, label, mine, theirs, gap),
+        };
+        Border NumRow(string label, double mine, double theirs, Func<double, string> show, string unit = "") =>
+            Row(T(label, 13), T(show(mine), 12, Tok.Text, mono: true), T(show(theirs), 12, Tok.Text2, mono: true), Gap(mine - theirs, unit));
+
+        // L'essentiel : classe, niveaux, notes.
+        int Nodes(AdviceReport x) => x.Daevanion.Boards.Where(b => b.Pool == DaevanionPlanner.NormalPool).Sum(b => b.Board.OpenNodes);
+        var summary = new List<Control>
+        {
+            Row(T("Classe", 13), T($"{r.Profile.Class.Name} · niv. {me.Level}", 12, Tok.Text), T($"{o.Profile.Class.Name} · niv. {other.Level}", 12, Tok.Text2),
+                T(sameClass ? "" : "≠ classe", 12, Tok.Warn, mono: true).AlignRight()),
+            NumRow("Niveau d'objet", me.ItemLevel, other.ItemLevel, v => Fmt.Big(v)),
+            NumRow("Puissance", me.CombatPower, other.CombatPower, v => Fmt.Big(v)),
+            NumRow($"Note globale ({Mode})", r.Scores.Overall, o.Scores.Overall, v => Fmt.Num(v)),
+            NumRow("Note Stats", r.Scores.Stats, o.Scores.Stats, v => Fmt.Num(v)),
+            NumRow("Note Équipement", r.Scores.Gear, o.Scores.Gear, v => Fmt.Num(v)),
+            NumRow("Note Compétences", r.Scores.Skills, o.Scores.Skills, v => Fmt.Num(v)),
+            NumRow("Note Daevanion", r.Scores.Daevanion, o.Scores.Daevanion, v => Fmt.Num(v)),
+            NumRow("Cases Daevanion", Nodes(r), Nodes(o), v => Fmt.Big(v)),
+        };
+
+        // Stats principales : celles qui comptent pour ta classe dans ce mode, la plus importante d'abord.
+        var stats = r.Stats.Stats.Where(x => x.Weight >= 0.5 && (x.Budget > 0 || o.Stats.Get(x.Def.Key) is { Budget: > 0 }))
+            .OrderByDescending(x => x.Weight).Take(16).Select(x =>
+            {
+                var t = o.Stats.Get(x.Def.Key);
+                var unit = x.Def.Kind == StatKind.Percent ? " %" : "";
+                return (Control)Tip(Row(T(x.Def.Name, 13), T(x.Display, 12, Tok.Text, mono: true), T(t?.Display ?? "—", 12, Tok.Text2, mono: true),
+                        Gap(x.BenchValue - (t?.BenchValue ?? 0), unit)),
+                    $"{x.Def.Name} : importance {x.Weight:0.00} pour ta classe en {GameDatabase.ModeName(r.Mode)}. Comparé sur la valeur des joueurs " +
+                    $"({(x.Def.Kind == StatKind.Percent ? "le %" : "la valeur chiffrée")}).");
+            }).ToList();
+
+        // Pièces : une ligne par emplacement, nom dans la couleur du grade, niveau d'objet + enchantement ; écart de niveau d'objet effectif.
+        Control Piece(EquippedItem? i) => i is null ? T("vide", 12, Tok.Bad)
+            : Tip(T($"{i.ItemLevel} +{i.EnchantLevel} · {i.Name}", 12, Tok.B(db.Grade(i.Grade).Color), mono: true), $"{i.Name} — {db.Grade(i.Grade).Name}, niveau {i.ItemLevel} +{i.EnchantLevel} / {i.MaxEnchantLevel}\n{string.Join("\n", i.MainStats.Select(e => e.Raw))}");
+        var slots = me.Equipment.Select(i => i.Slot).Union(other.Equipment.Select(i => i.Slot))
+            .OrderBy(sl => DollLayout.Select(d => d.Slot).ToList().IndexOf(sl) is var k and >= 0 ? k : 100 + (sl.StartsWith("Arcana") ? sl[^1] : 0)).ToList();
+        var pieces = slots.Select(sl =>
+        {
+            var a = me.Equipment.FirstOrDefault(i => i.Slot == sl);
+            var b = other.Equipment.FirstOrDefault(i => i.Slot == sl);
+            return (Control)Row(T(db.SlotName(sl), 13), Piece(a), Piece(b), Gap((a?.Power ?? 0) - (b?.Power ?? 0)));
+        }).ToList();
+
+        // Compétences (même classe) : niveau total de chaque compétence utile, la plus importante d'abord ; les différences d'abord.
+        var skills = new List<Control>();
+        if (sameClass)
+        {
+            var theirs = other.Skills.Where(x => x.Acquired).GroupBy(x => x.Name).ToDictionary(g => g.Key, g => g.Max(x => x.Level));
+            foreach (var a in r.Skills.Skills.Where(a => a.Priority > 0 && (a.Skill.Acquired || theirs.ContainsKey(a.Skill.Name)))
+                         .OrderByDescending(a => a.Skill.Level != theirs.GetValueOrDefault(a.Skill.Name)).ThenByDescending(a => a.Priority).Take(24))
+            {
+                var mine = a.Skill.Acquired ? a.Skill.Level : 0;
+                var t = theirs.GetValueOrDefault(a.Skill.Name);
+                skills.Add(Tip(Row(WithIcon(SkillIcon(a.Skill, 18), T(a.Skill.Name, 13)), T(mine > 0 ? $"niv. {mine}" : "non apprise", 12, mine > 0 ? Tok.Text : Tok.Muted, mono: true),
+                        T(t > 0 ? $"niv. {t}" : "non apprise", 12, t > 0 ? Tok.Text2 : Tok.Muted, mono: true), Gap(mine - t)),
+                    $"{a.Skill.Name} — {a.Role}, importance {a.Priority:0.00} en {GameDatabase.ModeName(r.Mode)} ; niveau visé {a.Target}. Niveau total (points, Daevanion, équipement)."));
+            }
+        }
+
+        // Daevanion : cases ouvertes par plateau.
+        var boards = me.Boards.Select(b => b.Name).Union(other.Boards.Select(b => b.Name)).Select(name =>
+        {
+            var a = me.Boards.FirstOrDefault(b => b.Name == name);
+            var b = other.Boards.FirstOrDefault(x => x.Name == name);
+            return (Name: name, Mine: a?.OpenNodes ?? 0, Theirs: b?.OpenNodes ?? 0, Total: Math.Max(a?.TotalNodes ?? 0, b?.TotalNodes ?? 0));
+        }).Where(x => x.Mine + x.Theirs > 0).Select(x => (Control)Row(T(x.Name, 13), T($"{x.Mine} / {x.Total}", 12, Tok.Text, mono: true),
+            T($"{x.Theirs} / {x.Total}", 12, Tok.Text2, mono: true), Gap(x.Mine - x.Theirs))).ToList();
+
+        return Page($"Progression · toi et {other.Name} · {Mode}", ProgressModes(),
+            head,
+            T($"{other.Name} : importé le {other.FetchedAtUtc.ToLocalTime():dd/MM/yyyy HH:mm}, analysé dans la même vue avec ses réglages (sans familiers ni combats). " +
+              "Écart : toi moins lui, en vert quand tu es devant." + (sameClass ? "" : " Classes différentes : stats jugées selon ta classe, compétences non comparées."),
+                12, Tok.Muted, wrap: true).WithLineHeight(1.4),
+            TableCard("L'essentiel", null, Header(), summary),
+            stats.Count > 0 ? TableCard($"Stats principales de ta classe · {stats.Count}", T("importance ≥ 0,5", 11, Tok.Muted, mono: true), Header(), stats) : null,
+            TableCard($"Pièces et enchantements · {pieces.Count}", T("niveau d'objet +enchantement", 11, Tok.Muted, mono: true), Header(), pieces),
+            skills.Count > 0 ? TableCard($"Compétences · {skills.Count}", T("différences d'abord", 11, Tok.Muted, mono: true), Header(), skills) : null,
+            boards.Count > 0 ? TableCard($"Daevanion · {boards.Count} plateaux", T("cases ouvertes", 11, Tok.Muted, mono: true), Header(), boards) : null);
     }
 
     Control Details()
