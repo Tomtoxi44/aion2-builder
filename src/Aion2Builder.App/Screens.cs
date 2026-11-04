@@ -4068,7 +4068,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             {
                 T("● compétence · ■ stat", 12, Tok.Muted),
                 new TextBlock { FontSize = 12, Foreground = Tok.Muted, Inlines = new InlineCollection { new Run("1 2 3") { Foreground = Accent.Main, FontWeight = FontWeight.Bold }, new Run(" à prendre, dans l'ordre") } },
+                new TextBlock { FontSize = 12, Foreground = Tok.Muted, TextWrapping = TextWrapping.Wrap, Inlines = new InlineCollection { new Run("━") { Foreground = Accent.Main, FontWeight = FontWeight.Bold }, new Run(" le chemin, de case en case") } },
+                T(s.DaevaRoute ? "case teintée : dans tes points" : "case teintée : faisable avec tes points libres", 12, Tok.Muted, wrap: true),
                 s.DaevaRoute ? T("chiffres sur les cases pleines : ordre depuis le centre", 12, Tok.Muted) : new Control(),
+                T("survole une ligne de la liste : sa case s'allume", 12, Tok.Muted, wrap: true),
                 new TextBlock { FontSize = 12, Foreground = Tok.Muted, Inlines = new InlineCollection { new Run("✕") { Foreground = Tok.Bad, FontWeight = FontWeight.Bold }, new Run(" à retirer") } },
                 T("coût : gris 1 · vert 2 · bleu 3 · orange 4", 12, Tok.Muted),
             },
@@ -4122,8 +4125,27 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 T($"{x.Cost:0} pt · Σ {Fmt.Num(x.Cumulative)}", 11, Tok.Muted, mono: true),
                 T(tag.Text, 11, tag.Color, mono: true)),
             () => update(st => st.Board = boardId), hover: Tok.Hover, padding: new Thickness(6, 3));
+        // Survol de la ligne : sa case s'allume sur le plateau affiché (s'il s'agit du même plateau).
+        IBrush? brush = null;
+        var thickness = default(Thickness);
+        row.PointerEntered += (_, _) =>
+        {
+            if (!boardCells.TryGetValue(x.Node.Id, out var cell)) return;
+            (brush, thickness) = (cell.BorderBrush, cell.BorderThickness);
+            cell.BorderBrush = Tok.Text;
+            cell.BorderThickness = new Thickness(3);
+        };
+        row.PointerExited += (_, _) =>
+        {
+            if (brush is null || !boardCells.TryGetValue(x.Node.Id, out var cell)) return;
+            (cell.BorderBrush, cell.BorderThickness) = (brush, thickness);
+            brush = null;
+        };
         return Tip(row, $"{x.Board.Name} ligne {x.Node.Row} col. {x.Node.Col} — {(x.IsPassage ? "case de passage vers les suivantes" : Reason(x.Node))}");
     }
+
+    /// <summary>Cases du plateau affiché, par identifiant : la liste des prochaines cases les allume au survol.</summary>
+    readonly Dictionary<long, Border> boardCells = [];
 
     Border MoreToggle(int hidden, string what) =>
         Clickable(T(s.AllNext ? "▴ réduire" : $"▾ voir la suite ({hidden} {what} de plus)", 12, Accent.Main), () => update(st => st.AllNext = !st.AllNext),
@@ -4184,7 +4206,11 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         return panel;
     }
 
-    /// <summary>Grille 15 × 15 : case ouverte pleine, fermée en contour, à prendre numérotée, à retirer barrée.</summary>
+    /// <summary>
+    /// Grille 15 × 15 : case ouverte pleine, fermée en contour, à prendre numérotée et teintée (plus fort si tes points libres la
+    /// couvrent), à retirer barrée ; un trait relie chaque case à prendre à la case d'où on l'atteint (ouverte, ou prise juste
+    /// avant dans le plan) : le chemin se lit de case en case, dans l'ordre des numéros.
+    /// </summary>
     Control BoardGrid(BoardSummary summary)
     {
         const int size = 30, gap = 2;
@@ -4193,6 +4219,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var respec = route is null ? WorthRespec(summary.Pool) : null;
         Dictionary<long, int> numbers;
         HashSet<long> removed;
+        HashSet<long> affordable;
         if (route is not null)
         {
             // Route conçue : toutes les cases de la route numérotées dans l'ordre depuis le centre (ouvertes comprises).
@@ -4200,15 +4227,19 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             numbers = inBudget.ToDictionary(x => x.Node.Id, x => x.Step);
             var kept = inBudget.Select(x => x.Node.Id).ToHashSet();
             removed = board.Nodes.Where(n => n.Open && !n.IsStart && !kept.Contains(n.Id)).Select(n => n.Id).ToHashSet();
+            affordable = kept;
         }
         else
         {
-            numbers = respec is not null
-                ? respec.Add.Where(x => x.Board.Id == board.Id).ToDictionary(x => x.Node.Id, x => x.Step)
-                : r.Daevanion.Steps.Where(x => x.Board.Id == board.Id).ToDictionary(x => x.Node.Id, x => x.Step);
+            var steps = respec is not null ? respec.Add.Where(x => x.Board.Id == board.Id).ToList() : r.Daevanion.Steps.Where(x => x.Board.Id == board.Id).ToList();
+            numbers = steps.ToDictionary(x => x.Node.Id, x => x.Step);
+            affordable = steps.Where(x => x.Affordable).Select(x => x.Node.Id).ToHashSet();
             removed = respec?.Remove.Where(x => x.Board.Id == board.Id).Select(x => x.Node.Id).ToHashSet() ?? [];
         }
         var canvas = new Canvas { Width = 15 * (size + gap) - gap, Height = 15 * (size + gap) - gap };
+        static double Center(int index) => (index - 1) * (size + gap) + size / 2.0;
+        boardCells.Clear();
+        var labels = new List<Control>();
         foreach (var n in board.Nodes)
         {
             var open = n.Open || n.IsStart;
@@ -4217,24 +4248,58 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             int? step = numbers.TryGetValue(n.Id, out var st) ? st : null;
             // Une case déjà ouverte qui fait partie de la route garde sa couleur, avec son numéro en sombre.
             var openStep = open && step is not null;
+            var planned = step is not null && !open;
             var cell = new Border
             {
                 Width = size, Height = size,
                 CornerRadius = new CornerRadius(n.IsSkill ? size / 2.0 : 3),
-                Background = isRemoved ? Tok.CellOff : open ? grade : Tok.CellOff,
-                BorderBrush = isRemoved ? Tok.Bad : step is not null && !open ? Accent.Main : open ? grade : Tok.Alpha(grade, 0.33),
-                BorderThickness = new Thickness(isRemoved || step is not null && !open ? 2 : 1),
+                Background = isRemoved ? Tok.CellOff : open ? grade : planned ? Tok.Alpha(Accent.Main, affordable.Contains(n.Id) ? 0.34 : 0.14) : Tok.CellOff,
+                BorderBrush = isRemoved ? Tok.Bad : planned ? Accent.Main : open ? grade : Tok.Alpha(grade, 0.33),
+                BorderThickness = new Thickness(isRemoved || planned ? 2 : 1),
                 Opacity = open || step is not null || isRemoved ? 1 : 0.55,
-                Child = isRemoved ? T("✕", 11, Tok.Bad, FontWeight.SemiBold, mono: true).Centered()
-                    : step is null ? null : T(step.ToString()!, step >= 100 ? 9 : 11, openStep ? Tok.OnAccent : Accent.Main, FontWeight.SemiBold, mono: true).Centered(),
             };
             Tip(cell, $"{(n.Name.Length > 0 ? n.Name : n.Type)} — {Fmt.Plural(db.Settings.Daevanion.NodeCost.GetValueOrDefault(n.Grade, 0), "point")}\n" +
                       string.Join("\n", n.Effects.Select(e => e.Raw)) +
-                      (isRemoved ? "\nÀ retirer : " + Reason(n) : n.Open ? "\n(ouverte)" : step is not null ? $"\nÉtape {step} du plan" : ""));
+                      (isRemoved ? "\nÀ retirer : " + Reason(n) : n.Open ? "\n(ouverte)" : step is not null
+                          ? $"\nÉtape {step} du plan{(affordable.Contains(n.Id) ? (route is null ? " · faisable avec tes points libres" : " · dans tes points") : "")}" : ""));
             Canvas.SetLeft(cell, (n.Col - 1) * (size + gap));
             Canvas.SetTop(cell, (n.Row - 1) * (size + gap));
             canvas.Children.Add(cell);
+            boardCells[n.Id] = cell;
+            // Numéros et croix au-dessus du chemin : posés après les traits.
+            var text = isRemoved ? T("✕", 11, Tok.Bad, FontWeight.SemiBold, mono: true).Centered()
+                : step is null ? null : T(step.ToString()!, step >= 100 ? 9 : 11, openStep ? Tok.OnAccent : planned && affordable.Contains(n.Id) ? Tok.Text : Accent.Main, FontWeight.SemiBold, mono: true).Centered();
+            if (text is null) continue;
+            var label = new Border { Width = size, Height = size, Child = text, IsHitTestVisible = false };
+            Canvas.SetLeft(label, (n.Col - 1) * (size + gap));
+            Canvas.SetTop(label, (n.Row - 1) * (size + gap));
+            labels.Add(label);
         }
+
+        // Le chemin : pour chaque case à prendre, la case voisine d'où on l'atteint — la dernière prise avant elle dans le plan,
+        // sinon une case ouverte (ou le centre).
+        var byPos = board.Nodes.GroupBy(n => (n.Row, n.Col)).ToDictionary(g => g.Key, g => g.First());
+        foreach (var (id, step) in numbers.OrderBy(x => x.Value))
+        {
+            var n = board.Nodes.FirstOrDefault(x => x.Id == id);
+            if (n is null || n.IsStart || route is null && n.Open) continue;
+            DaevanionNode? from = null;
+            var best = -1;
+            foreach (var (dr, dc) in new[] { (-1, 0), (1, 0), (0, -1), (0, 1) })
+            {
+                if (!byPos.TryGetValue((n.Row + dr, n.Col + dc), out var m) || removed.Contains(m.Id)) continue;
+                if (numbers.TryGetValue(m.Id, out var ms) && ms < step && ms > best) (from, best) = (m, ms);
+                else if (best < 0 && from is null && (m.IsStart || route is null && m.Open)) from = m;
+            }
+            if (from is null) continue;
+            canvas.Children.Add(new Line
+            {
+                StartPoint = new Point(Center(from.Col), Center(from.Row)), EndPoint = new Point(Center(n.Col), Center(n.Row)),
+                Stroke = Tok.Alpha(Accent.Main, affordable.Contains(n.Id) ? 0.85 : 0.5), StrokeThickness = 4, StrokeLineCap = PenLineCap.Round,
+                IsHitTestVisible = false,
+            });
+        }
+        foreach (var label in labels) canvas.Children.Add(label);
         return new Border
         {
             Padding = new Thickness(12), Background = Tok.Frame, BorderBrush = Tok.Border, BorderThickness = new Thickness(1),
