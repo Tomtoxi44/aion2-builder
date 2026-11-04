@@ -25,6 +25,7 @@ try
         "data" => Data(cli),
         "pets" or "familiers" => await Pets(cli),
         "simulate" or "simuler" => Simulate(cli),
+        "enchant" or "enchanter" => await EnchantCommand(cli),
         "progress" or "progression" => Progress(cli),
         "rotation" => Rotation(cli),
         "combat" => CombatCommand(cli),
@@ -63,6 +64,7 @@ static int Help()
           simulate <nom> [--daevanion next|respec|route] [--n 20] [--skills] [--build joueurs|concu] [--gear] [--mode pvp]
                  [--arcanes epique|unique] [--carte calice|manuscrit|boussole|cloche|miroir]
                                                               Et si… : notes, familles et stats avant → après
+          enchant <nom> <emplacement> [--mode pvp]            Simulateur d'enchantement : stats (site officiel), niveau d'objet et note, niveau par niveau
           progress <nom>                                      Imports successifs et ce qui a changé
           rotation <classe|nom> [--targets 4] [--duration 120] [--mode pvp]
                                                               Rotations simulées : joueurs contre conçue
@@ -532,6 +534,30 @@ static void PrintImported(CharacterSnapshot s, GameDatabase db, string path)
     Console.WriteLine($"  {s.Equipment.Count} pièces ({s.Equipment.Count(i => i.HasDetail)} détaillées), {s.Skills.Count} compétences, " +
                       $"{s.Boards.Count(b => b.Nodes.Count > 0)}/{s.Boards.Count} plateaux Daevanion détaillés");
     Console.WriteLine($"  Enregistré : {path}");
+}
+
+/// <summary>Simulateur d'enchantement d'une pièce : stats lues sur le site officiel à chaque niveau, niveau d'objet et note recalculée.</summary>
+static async Task<int> EnchantCommand(Args cli)
+{
+    var (store, snapshot) = Saved(cli, "Précise un personnage et un emplacement : enchant <nom> <emplacement> (ex. Torso, Ring1)");
+    var slot = cli.Positional(1) ?? throw new InvalidOperationException("Précise un emplacement : enchant <nom> <emplacement> (ex. Torso, Ring1)");
+    var db = GameDataStore.Load();
+    var item = snapshot.Equipment.FirstOrDefault(i => i.Slot.Equals(slot, StringComparison.OrdinalIgnoreCase) || db.SlotName(i.Slot).Equals(slot, StringComparison.OrdinalIgnoreCase))
+               ?? throw new InvalidOperationException($"Pas de pièce « {slot} » : {string.Join(", ", snapshot.Equipment.Select(i => i.Slot))}.");
+    var mode = (cli.Get("mode") ?? "pve").ToLowerInvariant() is "pvp" or "jcj" ? GameMode.PvP : GameMode.PvE;
+    var inputs = store.LoadInputs(snapshot);
+    var pets = new PetStore().Load().Collection;
+    var before = new Advisor(db).Analyze(snapshot, mode, inputs, pets);
+    var max = Math.Min(15, item.MaxEnchantLevel);
+    Console.WriteLine($"{db.SlotName(item.Slot)} : {item.Name} ({item.Grade}, niveau {item.ItemLevel} +{item.EnchantLevel} / {item.MaxEnchantLevel}) · {string.Join(", ", item.MainStats.Select(e => e.Raw))}");
+    var table = await EnchantTables.Load(db, snapshot, item, item.EnchantLevel + 1, max);
+    foreach (var (level, stats) in table.OrderBy(kv => kv.Key))
+    {
+        var after = Simulator.Run(db, before, inputs, pets, new SimulationOptions { Item = item with { EnchantLevel = level, MainStats = stats } });
+        Console.WriteLine($"  +{level,-3} {string.Join(", ", stats.Select(e => e.Raw)),-44} niveau d'objet {after.Character.ItemLevel} · note {before.Scores.Overall} → {after.Scores.Overall} " +
+                          $"(stats {after.Scores.Stats}, équipement {after.Scores.Gear})");
+    }
+    return 0;
 }
 
 namespace Aion2Builder.Cli

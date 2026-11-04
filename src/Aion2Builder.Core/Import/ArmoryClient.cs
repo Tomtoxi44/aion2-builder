@@ -152,6 +152,17 @@ public sealed class ArmoryClient(HttpClient http) : IDisposable
             DateTime.UtcNow);
     }
 
+    /// <summary>
+    /// Fiche d'une pièce portée à un niveau d'enchantement donné (le site la calcule pour n'importe quel niveau jusqu'au
+    /// maximum de la pièce, au-delà il renvoie le maximum) ; null si le site ne la trouve pas.
+    /// </summary>
+    public Task<string?> ItemDetail(string region, int serverId, string characterId, long itemId, int slotPos, int enchantLevel, CancellationToken ct = default)
+    {
+        var id = Uri.EscapeDataString(Uri.UnescapeDataString(characterId));
+        return Get($"{Site}/api/character/equipment/item?id={itemId}&enchantLevel={enchantLevel}&characterId={id}&serverId={serverId}&slotPos={slotPos}" +
+                   $"&region={Region(region)}&lang={Lang}", ct, allowNotFound: true);
+    }
+
     public async Task<CharacterSnapshot> Fetch(GameDatabase data, string region, int serverId, string characterId,
         IProgress<string>? progress = null, CancellationToken ct = default) =>
         ArmoryMapper.Map(await FetchRaw(region, serverId, characterId, progress, ct), data);

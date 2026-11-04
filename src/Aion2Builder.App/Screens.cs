@@ -1497,6 +1497,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
         return Page($"Équipement · enchantement · {Mode}", badges, kpis,
             TableCard("Pièce par pièce", T("vert = fait · orange = à monter", 11, Tok.Muted, mono: true), TableHeader(cols, "Emplacement", "Niveau", "", "Conseil"), rows),
+            EnchantSimulator(),
             Expander("Les règles, en détail", IsOpen("enchant:rules"), () => Toggle("enchant:rules"), () => new StackPanel
             {
                 Spacing = 6, Margin = new Thickness(22, 0, 0, 0),
@@ -1507,6 +1508,173 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     T(rules.Transmute, 12, Tok.Text2, wrap: true).WithLineHeight(1.45),
                 },
             }));
+    }
+
+    /// <summary>Simulation d'enchantement d'une pièce : en cours, échouée, ou les niveaux calculés (pièce à ce niveau et analyse refaite).</summary>
+    sealed class EnchantRun
+    {
+        public volatile bool Busy = true;
+        public string? Error;
+        public List<(int Level, EquippedItem Item, AdviceReport After)>? Levels;
+    }
+
+    /// <summary>Simulations d'enchantement déjà lancées, par analyse affichée puis par emplacement.</summary>
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<AdviceReport, Dictionary<string, EnchantRun>> EnchantRuns = new();
+
+    /// <summary>
+    /// La simulation d'enchantement d'une pièce, lancée en arrière-plan la première fois : stats de la pièce à chaque niveau lues
+    /// sur le site officiel (gardées sur ce PC), puis l'analyse refaite sur une copie du perso pour chaque niveau. L'écran se
+    /// redessine quand c'est prêt.
+    /// </summary>
+    EnchantRun EnchantRunFor(EquippedItem item, int max)
+    {
+        var runs = EnchantRuns.GetOrCreateValue(r);
+        EnchantRun run;
+        lock (runs)
+        {
+            if (runs.TryGetValue(item.Slot, out var known)) return known;
+            runs[item.Slot] = run = new EnchantRun();
+        }
+        var (report, sim, refresh, data) = (r, simulate, update, db);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var table = await Aion2Builder.Import.EnchantTables.Load(data, report.Character, item, item.EnchantLevel + 1, max);
+                run.Levels = table.OrderBy(kv => kv.Key).Select(kv =>
+                {
+                    var piece = item with { EnchantLevel = kv.Key, MainStats = kv.Value };
+                    return (kv.Key, piece, sim(new SimulationOptions { Item = piece }));
+                }).ToList();
+            }
+            catch (Exception ex)
+            {
+                run.Error = ex is Aion2Builder.Import.ArmoryException ? ex.Message : $"Simulation impossible : {ex.Message}";
+            }
+            finally
+            {
+                run.Busy = false;
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => refresh(_ => { }));
+            }
+        });
+        return run;
+    }
+
+    /// <summary>
+    /// Simulateur d'enchantement de la pièce choisie : de son niveau actuel jusqu'à son maximum (+15 au plus), ce que donne chaque
+    /// niveau — ses stats principales (lues sur le site officiel, qui calcule la fiche de la pièce à chaque niveau), le niveau
+    /// d'objet et la note globale recalculée (même calcul que « Et si »), et la chance de réussite connue. Pas de coût : il n'est
+    /// pas connu.
+    /// </summary>
+    Control? EnchantSimulator()
+    {
+        var pieces = r.Gear.Slots.Where(p => p.Item is { HasDetail: true, MaxEnchantLevel: > 0 }).ToList();
+        if (pieces.Count == 0) return null;
+        var p = pieces.FirstOrDefault(x => x.Slot == SelectedSlot?.Slot) ?? pieces.OrderByDescending(x => x.Item!.MaxEnchantLevel - x.Item.EnchantLevel).First();
+        var item = p.Item!;
+        var rules = db.Progression.Roadmap.Enchant;
+        var max = Math.Min(15, item.MaxEnchantLevel);
+
+        var picker = new ComboBox
+        {
+            ItemsSource = pieces.Select(x => $"{x.SlotName} · +{x.Item!.EnchantLevel} / {x.Item.MaxEnchantLevel}").ToList(),
+            SelectedIndex = pieces.IndexOf(p), FontSize = 12, MinHeight = 0, Padding = new Thickness(8, 2), VerticalAlignment = VerticalAlignment.Center,
+        };
+        picker.SelectionChanged += (_, _) =>
+        {
+            if (picker.SelectedIndex >= 0 && pieces[picker.SelectedIndex].Slot != p.Slot) update(st => st.Slot = pieces[picker.SelectedIndex].Slot);
+        };
+        var title = $"Simulateur · {p.SlotName} · +{item.EnchantLevel} → +{max}";
+        var body = new StackPanel { Spacing = 10 };
+        body.Children.Add(T($"{item.Name} — {db.Grade(item.Grade).Name}, niveau {item.ItemLevel} +{item.EnchantLevel}. " +
+                            $"Jusqu'à +{rules.Guaranteed} : réussite garantie" +
+                            (rules.Rates.Count > 0 && max > rules.Guaranteed ? $" ; de +{rules.Guaranteed + 1} à +{rules.Guaranteed + rules.Rates.Count} : une chance par essai ({string.Join(", ", rules.Rates.Select(v => $"{v} %"))})." : ".") +
+                            " Coûts : non connus, le site officiel ne les donne pas.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        if (item.EnchantLevel >= max)
+        {
+            body.Children.Add(T(max < 15
+                ? $"Au maximum de ce grade (+{max}) : pour aller plus haut, il faut passer au grade supérieur."
+                : $"Déjà au maximum (+{max}).", 13, Tok.Good, wrap: true));
+            return Card(body, title, picker);
+        }
+
+        var run = EnchantRunFor(item, max);
+        if (run.Busy)
+        {
+            body.Children.Add(new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 8,
+                Children = { Spinner(14, Accent.Main), T($"Lecture des stats de +{item.EnchantLevel + 1} à +{max} sur le site officiel, puis calcul de la note…", 12, Tok.Text2) },
+            });
+            return Card(body, title, picker);
+        }
+        if (run.Error is { } error || run.Levels is not { Count: > 0 } levels)
+        {
+            var slot = p.Slot;
+            body.Children.Add(new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 10,
+                Children =
+                {
+                    T(run.Error ?? "Le site officiel n'a renvoyé aucun niveau pour cette pièce.", 12, Tok.Warn, wrap: true),
+                    Clickable(T("réessayer", 12, Accent.Main), () =>
+                    {
+                        lock (EnchantRuns.GetOrCreateValue(r)) EnchantRuns.GetOrCreateValue(r).Remove(slot);
+                        update(_ => { });
+                    }, hover: Tok.HoverStrong, padding: new Thickness(4, 0)),
+                },
+            });
+            return Card(body, title, picker);
+        }
+
+        // Une ligne par niveau : stats de la pièce gagnées depuis ton niveau actuel, niveau d'objet, note, chance de réussite.
+        string Name(Aion2Builder.Model.Effect e) => e.StatKey is { } key ? db.StatName(key) : Regex.Replace(e.Raw, @"\s*[\d.,]+.*$", "");
+        string Gain(Aion2Builder.Model.Effect now, Aion2Builder.Model.Effect? before)
+        {
+            var d = now.Value - (before?.Value ?? 0);
+            return $"{Name(now)} {(d >= 0 ? "+" : "−")}{Fmt.Num(Math.Abs(Math.Round(d, 1)))}{(now.IsPercent ? " %" : "")}";
+        }
+        const string cols = "54,*,96,110,74";
+        var rows = new List<Control>();
+        foreach (var (level, piece, after) in levels)
+        {
+            var gains = piece.MainStats.Select(e => (e, before: item.MainStats.FirstOrDefault(b => b.StatKey == e.StatKey && b.Raw.Split(' ')[0] == e.Raw.Split(' ')[0])))
+                .Where(x => Math.Abs(x.e.Value - (x.before?.Value ?? 0)) > 1e-6).Select(x => Gain(x.e, x.before)).ToList();
+            var delta = after.Scores.Overall - r.Scores.Overall;
+            var chance = level <= rules.Guaranteed ? "garanti" : level - rules.Guaranteed - 1 < rules.Rates.Count ? $"{rules.Rates[level - rules.Guaranteed - 1]} %" : "—";
+            var changes = Simulator.StatChanges(r, after);
+            var row = new Border
+            {
+                Padding = new Thickness(20, 5), BorderBrush = Tok.RowLine, BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = Columns(cols,
+                    T($"+{level}", 13, Accent.Main, FontWeight.SemiBold, mono: true),
+                    T(gains.Count > 0 ? string.Join(" · ", gains) : "rien de plus", 12, gains.Count > 0 ? Tok.Text2 : Tok.Muted, mono: true, wrap: true),
+                    T($"+{level - item.EnchantLevel} · {Fmt.Big(after.Character.ItemLevel)}", 12, Tok.Good, mono: true),
+                    T(delta == 0 ? $"{after.Scores.Overall} (=)" : $"{r.Scores.Overall} → {after.Scores.Overall}", 12, delta > 0 ? Tok.Good : delta < 0 ? Tok.Bad : Tok.Muted, delta != 0 ? FontWeight.SemiBold : FontWeight.Normal, mono: true),
+                    T(chance, 12, level <= rules.Guaranteed ? Tok.Good : Tok.Warn, mono: true)),
+            };
+            rows.Add(Tip(row, $"{p.SlotName} à +{level} : {string.Join(", ", piece.MainStats.Select(e => e.Raw))} (fiche du site officiel).\n" +
+                              $"Score d'équipement {Fmt.Big(r.Character.ItemLevel)} → {Fmt.Big(after.Character.ItemLevel)}.\n" +
+                              $"Notes : stats {r.Scores.Stats} → {after.Scores.Stats}, équipement {r.Scores.Gear} → {after.Scores.Gear} ; globale {r.Scores.Overall} → {after.Scores.Overall}.\n" +
+                              (changes.Count > 0 ? "Tes totaux : " + string.Join(", ", changes.Take(4).Select(x => $"{x.After.Def.Name} {x.Before.Display} → {x.After.Display}")) + "." : "Tes totaux ne changent pas.")));
+        }
+        if (levels[^1].Level < max)
+            rows.Add(T($"Le site officiel ne donne pas la pièce au-delà de +{levels[^1].Level}.", 12, Tok.Muted).WithMargin(20, 6));
+        body.Children.Add(new Border
+        {
+            BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), ClipToBounds = true,
+            Child = Table(),
+        });
+        StackPanel Table()
+        {
+            var table = new StackPanel { Children = { TableHeader(cols, "Niveau", "Gain de la pièce", "Niv. d'objet", "Note globale", "Réussite") } };
+            foreach (var row in rows) table.Children.Add(row);
+            return table;
+        }
+        body.Children.Add(T("Stats : la fiche de la pièce à chaque niveau, lue sur le site officiel (seul le bonus d'enchantement change). Niveau d'objet : " +
+                            "1 point par niveau. Note : toute l'analyse refaite sur une copie de ton perso, comme dans « Et si » ; elle ne bouge que si " +
+                            "le niveau change le statut de la pièce ou l'équilibre de tes stats.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        return Card(body, title, picker);
     }
 
     /// <summary>Les 5 emplacements d'arcanes, dans l'ordre du jeu.</summary>
