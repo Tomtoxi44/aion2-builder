@@ -82,7 +82,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     Action<Action<UiState>> update, Action<PlayerInputs> onInputs, string? petKeyHint, Action<string?> onPets,
     IReadOnlyList<ProgressPoint> progress, Func<SimulationOptions, AdviceReport> simulate,
     IReadOnlyList<(string Path, CombatLog Log)> combats, Action importCombat, Action<string> deleteCombat, Action reloadCombats, Action refresh,
-    IReadOnlyList<SavedPeer> savedPeers, Action<string, string> addPeer, Action<string> removePeer)
+    IReadOnlyList<SavedPeer> savedPeers, Action<string, string> addPeer, Action<string> removePeer, Action importInGame)
 {
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
@@ -1865,7 +1865,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         if (cmp.CapExceeded(x) is { } cap) return ($"plafond {StatValue(x, cap.Value)} dépassé", Tok.Warn, tip);
         if (cmp.NextTarget(x) is { } next)
             return ($"↑ {StatValue(x, next.Value)} · {next.Label}", x.Weight >= 0.6 ? Tok.Bad : Tok.Warn,
-                $"Il te manque {StatValue(x, next.Value - x.BenchValue)}.\n{tip}");
+                $"Il te manque {StatValue(x, next.Value - x.GameValue)}" + (x.Hidden is null ? "" : $" (en jeu : {StatValue(x, x.GameValue)})") + $".\n{tip}");
         return ($"✓ {StatValue(x, targets[^1].Value)} atteint", Tok.Good, tip);
     }
 
@@ -1975,10 +1975,12 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         {
             var (importance, importanceColor) = StatImportance(x);
             var (advised, advisedColor, advisedTip) = Advised(x, cmp);
-            var targets = cmp.TargetsFor(x).Select(t => t.Value).ToList();
+            // Valeurs des guides (en jeu) placées sur l'échelle des joueurs (sans la part cachée), avec tes stats en jeu.
+            var targets = cmp.TargetsFor(x).Select(t => t.Value - x.Shift).ToList();
             var cells = new List<Control>
             {
-                T(x.Def.Name, 13), T(importance, 12, importanceColor), Tip(T(CompactTotal(x), 13, mono: true), x.Display),
+                T(x.Def.Name, 13), T(importance, 12, importanceColor),
+                Tip(T(CompactTotal(x), 13, mono: true), x.Display + (x.Hidden is null ? "" : $"\nEn jeu : {StatValue(x, x.GameValue)}")),
                 Tip(T(advised, 12, advisedColor), advisedTip),
             };
             if (players)
@@ -2042,7 +2044,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             ? $"{who[0].ToString().ToUpperInvariant()}{who[1..]}, stats totales calculées comme les tiennes. « Dans la moyenne » : à 3 % près."
             : $"pas d'échantillon de joueurs en {GameDatabase.ModeName(r.Mode)} pour ta classe à ton niveau.");
 
-        var blocks = new List<Control?> { Expander("Comment lire cette page", IsOpen("stats:how"), () => Toggle("stats:how"), () => Card(how, null)), ComparedPlayers() };
+        var blocks = new List<Control?> { Expander("Comment lire cette page", IsOpen("stats:how"), () => Toggle("stats:how"), () => Card(how, null)), ComparedPlayers(), InGameStats() };
         blocks.AddRange(cmp.Families.Where(f => f.Stats.Count > 0 || Math.Abs(f.Share.Gap) > tolerance).Select(f => FamilyCard(f, cmp, cmp.Families)));
         blocks.Add(DivineCard());
         blocks.Add(Clickable(T(s.AllStats ? "▴ masquer le tableau de toutes les stats" : "▾ toutes les stats en tableau (part, part visée, poids)", 12, Accent.Main),
@@ -2120,6 +2122,72 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         });
     }
 
+    /// <summary>Stats de la fenêtre du jeu proposées à la saisie : celles de l'onglet « Stats principales », puis les autres déjà relevées.</summary>
+    static readonly string[] InGameMain = ["Attack", "Defense", "Accuracy", "Evasion", "Critical", "CriticalResist", "HP", "MP", "CombatSpeed", "MoveSpeed"];
+
+    /// <summary>
+    /// « Stats en jeu » (replié, rien d'obligatoire) : tes valeurs de la fenêtre Stats du jeu, lues sur tes captures ou tapées.
+    /// Le Builder en tire la part de chaque stat qu'il ne voit pas (base de la classe, passifs, ailes…) et juge alors les valeurs
+    /// des guides sur ta valeur en jeu ; la comparaison aux joueurs, elle, ne change pas.
+    /// </summary>
+    Control InGameStats()
+    {
+        var n = inputs.InGame.Count;
+        var title = n == 0 ? "Stats en jeu · pas relevées" : $"Stats en jeu · {Fmt.Plural(n, "relevée")} le {inputs.InGameAt?.ToLocalTime():dd/MM}";
+        return Expander(title, IsOpen("stats:ingame"), () => Toggle("stats:ingame"), () =>
+        {
+            var panel = new StackPanel { Spacing = 10 };
+            panel.Children.Add(T("Le site officiel ne donne ni les stats de base de ta classe, ni tes compétences passives, ni les stats de tes ailes : " +
+                "les totaux du Builder sont plus bas que ceux du jeu. La comparaison aux joueurs reste juste (leurs totaux sont calculés pareil), " +
+                "mais les valeurs conseillées par les guides (« Précision 900 ») sont des valeurs en jeu. Donne tes stats en jeu : captures de la " +
+                "fenêtre Stats (touche P, onglets « Stats principales » et « Stats détaillées », sans buff temporaire), ou tape-les. Le Builder en tire " +
+                "la part qu'il ne voit pas, la garde (elle ne dépend que de ton niveau et de tes compétences) et juge les guides sur ta valeur en jeu.",
+                12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+            var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+            actions.Children.Add(Clickable(T("lire mes captures…", 12, Accent.Main, FontWeight.SemiBold, mono: true), importInGame,
+                hover: Tok.HoverStrong, padding: new Thickness(8, 4)));
+            if (n > 0)
+                actions.Children.Add(Clickable(T("tout effacer", 11, Tok.Bad, mono: true),
+                    () => onInputs(inputs with { InGame = new(), Hidden = new(), InGameAt = null, InGameItemLevel = null }), hover: Tok.HoverStrong, padding: new Thickness(6, 4)));
+            if (n > 0 && inputs.InGameItemLevel is { } level && level != r.Character.ItemLevel)
+                actions.Children.Add(T($"relevé au niveau d'objet {level} (aujourd'hui {r.Character.ItemLevel}) : la part cachée reste valable, " +
+                    "sauf nouvelle compétence passive ou nouvelles ailes", 11, Tok.Muted, wrap: true));
+            panel.Children.Add(actions);
+
+            const string cols = "*,150,120,140";
+            var keys = InGameMain.Concat(inputs.InGame.Keys.OrderBy(k => db.Stat(k)?.Name)).Distinct().ToList();
+            var rows = new List<Control>();
+            foreach (var key in keys)
+            {
+                if (r.Stats.Stats.FirstOrDefault(x => x.Def.Key == key) is not { } x) continue;
+                var box = new TextBox
+                {
+                    Text = inputs.InGame.TryGetValue(key, out var v) ? Fmt.Num(v) : "", Watermark = "valeur en jeu", Width = 110, FontSize = 12,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                };
+                void Save()
+                {
+                    var text = Regex.Replace(box.Text ?? "", @"[^\d,.\-]", "").Replace(',', '.');
+                    double? value = text.Length == 0 ? null
+                        : double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : inputs.InGame.GetValueOrDefault(key);
+                    if (value == (inputs.InGame.TryGetValue(key, out var old) ? old : null)) return;
+                    onInputs(InGameStatsReader.WithInGame(r, inputs, new Dictionary<string, double?> { [key] = value }));
+                }
+                box.LostFocus += (_, _) => Save();
+                box.KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Enter) { e.Handled = true; Save(); } };
+                rows.Add(new Border
+                {
+                    Padding = new Thickness(20, 3),
+                    Child = Columns(cols, T(x.Def.Name, 13).WithMargin(0, 4, 0, 0), T(x.Display, 12, Tok.Text2, mono: true).WithMargin(0, 4, 0, 0), box,
+                        T(x.Hidden is { } h ? (h >= 0 ? "+" : "") + StatValue(x, h) : "—", 12, x.Hidden is null ? Tok.Faint : Tok.Text2, mono: true).WithMargin(0, 4, 0, 0)),
+                });
+            }
+            panel.Children.Add(TableCard("Tes stats", T("Entrée ou clic ailleurs pour enregistrer", 11, Tok.Muted, mono: true),
+                TableHeader(cols, "Stat", "Site officiel", "En jeu", "Part cachée"), rows));
+            return Card(panel, null);
+        });
+    }
+
     /// <summary>Toutes les stats en tableau (part, part visée, poids), pour qui veut le détail.</summary>
     Control AllStatsTable()
     {
@@ -2193,6 +2261,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         [
             ("famille", GameDatabase.CategoryName(x.Def.Category), null),
             ("total", x.Display, null),
+            ("en jeu", x.Hidden is null ? "—" : StatValue(x, x.GameValue), x.Hidden is null ? Tok.Faint : null),
             ("part", Fmt.Pct(x.Share), ShareColor(x)),
             ("part visée", Fmt.Pct(x.ExpectedShare), null),
             ("poids", x.Weight.ToString("0.00"), null),

@@ -941,7 +941,7 @@ public sealed class MainWindow : Window
         var views = new ScreenViews(db, r, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key), progress,
             o => Simulator.Run(db, r, inputs, pets.Collection, o),
             combats, () => _ = ImportCombatAsync(), DeleteCombat, ReloadCombats, () => _ = RefreshAsync(),
-            peerStore.Load(), (name, server) => _ = AddPeerAsync(name, server), RemovePeer);
+            peerStore.Load(), (name, server) => _ = AddPeerAsync(name, server), RemovePeer, () => _ = ImportInGameAsync());
         var (content, inspector) = views.Build();
         side = views.Side();
         var grid = new Grid { RowDefinitions = new RowDefinitions("36,*") };
@@ -1607,6 +1607,47 @@ public sealed class MainWindow : Window
         {
             SetStatus(ex.Message, error: true);
             Toast($"Ajout de {name.Trim()} impossible", ex.Message, error: true);
+        }
+    }
+
+    /// <summary>
+    /// Captures de la fenêtre Stats du jeu : lues sur le PC (OCR de Windows), puis le perso est relu sur le site officiel (même
+    /// équipement que sur les captures) et chaque stat lue donne sa part cachée. Ouvre ensuite Stats → Stats en jeu pour vérifier.
+    /// </summary>
+    async Task ImportInGameAsync()
+    {
+        if (current is null || report is null) { Toast("Ouvre d'abord un personnage", error: true); return; }
+        var files = await StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = $"Captures de la fenêtre Stats de {current.Name} (Stats principales, Stats détaillées)",
+            AllowMultiple = true,
+            FileTypeFilter = [new Avalonia.Platform.Storage.FilePickerFileType("Images") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.bmp"] }],
+        });
+        var paths = files.Where(f => f.Path.IsFile).Select(f => f.Path.LocalPath).ToList();
+        if (paths.Count == 0) return;
+        SetStatus($"Lecture de {Fmt.Plural(paths.Count, "capture")}…");
+        try
+        {
+            var pages = new List<IReadOnlyList<OcrWord>>();
+            foreach (var path in paths) pages.Add(await ScreenshotOcr.Words(path, InGameStatsReader.MinOcrSize));
+            var values = InGameStatsReader.Read(db, pages);
+            if (values.Count == 0)
+            {
+                SetStatus("");
+                Toast("Aucune stat lue", "Il faut des captures de la fenêtre « Infos sur les stats » du jeu (touche P), onglet Stats principales ou Stats détaillées.", error: true);
+                return;
+            }
+            await RefreshAsync();  // comparer au même équipement que sur les captures
+            if (report is null || current is null) return;
+            OnInputs(InGameStatsReader.WithInGame(report, inputs, values.ToDictionary(kv => kv.Key, kv => (double?)kv.Value)));
+            Update(st => { st.Screen = Screen.Stats; st.Open.Add("stats:ingame"); });
+            SetStatus($"{Fmt.Plural(values.Count, "stat lue", "stats lues")} en jeu");
+            Toast($"{Fmt.Plural(values.Count, "stat lue", "stats lues")} sur tes captures", "Vérifie-les dans Stats → Stats en jeu : une valeur mal lue se corrige à la main.");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            SetStatus(ex.Message, error: true);
+            Toast("Lecture des captures impossible", ex.Message, error: true);
         }
     }
 

@@ -11,7 +11,7 @@
             "Attack": 1.0, "Critical": 0.8, "Accuracy": 0.8, "CombatSpeed": 0.85, "CooldownReduction": 0.75, "DamageBoost": 1.0,
             "WeaponDamageBoost": 0.9, "CriticalDamage": 0.85, "MultiHit": 0.7, "Pierce": 0.6, "ArmorPierce": 0.5, "PerfectHit": 0.6,
             "PowerfulHit": 0.6, "BackAttack": 0.3, "StatusHit": 0.2, "RestorationPierce": 0.0, "SealStoneDamage": 0.3,
-            "Defense": 0.15, "Evasion": 0.15, "Block": 0.05, "CriticalResist": 0.1, "DamageTolerance": 0.35, "CriticalDamageTolerance": 0.15,
+            "Defense": 0.15, "Evasion": 0.15, "Block": 0.05, "CriticalResist": 0.1, "DamageTolerance": 0.35, "WeaponDamageTolerance": 0.35, "CriticalDamageTolerance": 0.15,
             "StatusResist": 0.15, "Armor": 0.15,
             "HP": 0.4, "Restoration": 0.2, "HealBoost": 0.0, "HPRegen": 0.1, "PotionBoost": 0.1,
             "MP": 0.1, "MPRegen": 0.15, "MPCost": 0.2, "MoveSpeed": 0.15, "Flight": 0.05
@@ -24,7 +24,7 @@
             "Attack": 0.9, "Critical": 0.75, "Accuracy": 0.85, "CombatSpeed": 0.8, "CooldownReduction": 0.7, "DamageBoost": 0.75,
             "WeaponDamageBoost": 0.7, "CriticalDamage": 0.7, "MultiHit": 0.6, "Pierce": 0.75, "ArmorPierce": 0.7, "PerfectHit": 0.6,
             "PowerfulHit": 0.6, "BackAttack": 0.4, "StatusHit": 0.6, "RestorationPierce": 0.5, "SealStoneDamage": 0.1,
-            "Defense": 0.5, "Evasion": 0.55, "Block": 0.3, "CriticalResist": 0.65, "DamageTolerance": 0.7, "CriticalDamageTolerance": 0.55,
+            "Defense": 0.5, "Evasion": 0.55, "Block": 0.3, "CriticalResist": 0.65, "DamageTolerance": 0.7, "WeaponDamageTolerance": 0.7, "CriticalDamageTolerance": 0.55,
             "MultiHitResist": 0.4, "StatusResist": 0.7, "Armor": 0.5, "PerfectResist": 0.55, "PowerfulResist": 0.55, "BackDefense": 0.35,
             "HP": 0.85, "Restoration": 0.4, "HealBoost": 0.0, "HPRegen": 0.2, "PotionBoost": 0.35,
             "MP": 0.15, "MPRegen": 0.2, "MPCost": 0.2, "MoveSpeed": 0.45, "Flight": 0.15
@@ -41,7 +41,7 @@
           "weights": {
             "Attack": 0.55, "Critical": 0.35, "Accuracy": 0.7, "CombatSpeed": 0.5, "CooldownReduction": 0.65, "DamageBoost": 0.45,
             "WeaponDamageBoost": 0.4, "CriticalDamage": 0.3, "MultiHit": 0.3, "Pierce": 0.3, "StatusHit": 0.4,
-            "Defense": 0.9, "Evasion": 0.5, "Block": 0.95, "CriticalResist": 0.6, "DamageTolerance": 1.0, "CriticalDamageTolerance": 0.7,
+            "Defense": 0.9, "Evasion": 0.5, "Block": 0.95, "CriticalResist": 0.6, "DamageTolerance": 1.0, "WeaponDamageTolerance": 1.0, "CriticalDamageTolerance": 0.7,
             "MultiHitResist": 0.5, "StatusResist": 0.6, "Armor": 0.8, "PerfectResist": 0.6, "PowerfulResist": 0.6, "BackDefense": 0.3,
             "HP": 1.0, "Restoration": 0.6, "HealBoost": 0.0, "HPRegen": 0.3, "PotionBoost": 0.3,
             "MP": 0.15, "MPRegen": 0.2, "MPCost": 0.2, "MoveSpeed": 0.15, "Flight": 0.05
@@ -53,7 +53,7 @@
           "weights": {
             "Attack": 0.65, "Critical": 0.45, "Accuracy": 0.75, "CombatSpeed": 0.55, "CooldownReduction": 0.7, "DamageBoost": 0.5,
             "Pierce": 0.5, "StatusHit": 0.75, "RestorationPierce": 0.4,
-            "Defense": 0.85, "Evasion": 0.6, "Block": 0.9, "CriticalResist": 0.75, "DamageTolerance": 0.95, "CriticalDamageTolerance": 0.7,
+            "Defense": 0.85, "Evasion": 0.6, "Block": 0.9, "CriticalResist": 0.75, "DamageTolerance": 0.95, "WeaponDamageTolerance": 0.95, "CriticalDamageTolerance": 0.7,
             "StatusResist": 0.85, "Armor": 0.7, "PerfectResist": 0.6, "PowerfulResist": 0.6,
             "HP": 1.0, "Restoration": 0.6, "HealBoost": 0.0, "PotionBoost": 0.4,
             "MP": 0.15, "MPRegen": 0.2, "MoveSpeed": 0.45, "Flight": 0.15
@@ -70,7 +70,7 @@
           "weights": {
             "Attack": 0.6, "Critical": 0.5, "Accuracy": 0.4, "CombatSpeed": 0.8, "CooldownReduction": 0.9, "DamageBoost": 0.35,
             "CriticalDamage": 0.35, "Pierce": 0.2,
-            "Defense": 0.35, "Evasion": 0.3, "Block": 0.05, "CriticalResist": 0.3, "DamageTolerance": 0.5,
+            "Defense": 0.35, "Evasion": 0.3, "Block": 0.05, "CriticalResist": 0.3, "DamageTolerance": 0.5, "WeaponDamageTolerance": 0.5,
             "HP": 0.6, "Restoration": 0.3, "HealBoost": 1.0, "HPRegen": 0.2, "PotionBoost": 0.15,
             "MP": 0.5, "MPRegen": 0.65, "MPCost": 0.6, "MoveSpeed": 0.2, "Flight": 0.05
           }
@@ -81,7 +81,7 @@
           "weights": {
             "Attack": 0.5, "Critical": 0.4, "Accuracy": 0.5, "CombatSpeed": 0.75, "CooldownReduction": 0.9, "DamageBoost": 0.3,
             "StatusHit": 0.5, "RestorationPierce": 0.3,
-            "Defense": 0.6, "Evasion": 0.6, "Block": 0.2, "CriticalResist": 0.7, "DamageTolerance": 0.8, "StatusResist": 0.85,
+            "Defense": 0.6, "Evasion": 0.6, "Block": 0.2, "CriticalResist": 0.7, "DamageTolerance": 0.8, "WeaponDamageTolerance": 0.8, "StatusResist": 0.85,
             "HP": 0.9, "Restoration": 0.5, "HealBoost": 1.0, "PotionBoost": 0.35,
             "MP": 0.45, "MPRegen": 0.5, "MPCost": 0.5, "MoveSpeed": 0.5, "Flight": 0.15
           }
@@ -97,7 +97,7 @@
           "weights": {
             "Attack": 0.9, "Critical": 0.75, "Accuracy": 0.8, "CombatSpeed": 0.85, "CooldownReduction": 0.85, "DamageBoost": 0.9,
             "WeaponDamageBoost": 0.8, "CriticalDamage": 0.75, "MultiHit": 0.6, "Pierce": 0.5,
-            "Defense": 0.3, "Evasion": 0.25, "Block": 0.1, "CriticalResist": 0.2, "DamageTolerance": 0.45,
+            "Defense": 0.3, "Evasion": 0.25, "Block": 0.1, "CriticalResist": 0.2, "DamageTolerance": 0.45, "WeaponDamageTolerance": 0.45,
             "HP": 0.55, "Restoration": 0.3, "HealBoost": 0.5, "PotionBoost": 0.15,
             "MP": 0.25, "MPRegen": 0.35, "MPCost": 0.35, "MoveSpeed": 0.2, "Flight": 0.05
           }
@@ -108,7 +108,7 @@
           "weights": {
             "Attack": 0.8, "Critical": 0.65, "Accuracy": 0.8, "CombatSpeed": 0.8, "CooldownReduction": 0.8, "DamageBoost": 0.7,
             "Pierce": 0.65, "StatusHit": 0.65, "RestorationPierce": 0.45,
-            "Defense": 0.55, "Evasion": 0.55, "Block": 0.3, "CriticalResist": 0.65, "DamageTolerance": 0.75, "StatusResist": 0.8,
+            "Defense": 0.55, "Evasion": 0.55, "Block": 0.3, "CriticalResist": 0.65, "DamageTolerance": 0.75, "WeaponDamageTolerance": 0.75, "StatusResist": 0.8,
             "HP": 0.9, "Restoration": 0.45, "HealBoost": 0.6, "PotionBoost": 0.35,
             "MP": 0.25, "MPRegen": 0.3, "MoveSpeed": 0.45, "Flight": 0.15
           }

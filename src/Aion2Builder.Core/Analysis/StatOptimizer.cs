@@ -87,8 +87,10 @@ public sealed class StatOptimizer(GameDatabase db)
             var cap = targets.FirstOrDefault(t => t.Cap)?.Value;
             var next = cmp.NextTarget(x) is { Cap: false } n ? n : null;
             double? avg = cmp.Peers is { Count: > 0 } peers ? ClassBenchmark.Sample(peers, x.Def.Key).Average() : null;
-            var reached = targets.LastOrDefault(t => !t.Cap && t.Value <= x.BenchValue + 1e-9);
-            double? target = next?.Value ?? reached?.Value;
+            var reached = targets.LastOrDefault(t => !t.Cap && t.Value <= x.GameValue + 1e-9);
+            // Les guides donnent des valeurs en jeu : ramenées à l'échelle des totaux (sans la part cachée) avec tes stats en jeu.
+            double? target = (next?.Value ?? reached?.Value) - x.Shift;
+            cap -= x.Shift;
             string? label = next?.Label ?? reached?.Label;
             if (avg is { } a && (target is null || a > target)) { target = a; label = "moyenne des joueurs"; }
             goals[x.Def.Key] = (target, label, cap);

@@ -42,6 +42,19 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
                 yield return new StatSource(p.Name, Fresh(e));
     }
 
+    /// <summary>
+    /// Part d'une stat que le site officiel ne montre pas, d'après sa valeur dans la fenêtre Stats du jeu : seules les sources
+    /// valables partout comptent (la fenêtre ne montre pas les bonus JcE ou JcJ) ; une stat chiffrée = (total + part) × (1 + %),
+    /// une stat en % = % + part.
+    /// </summary>
+    public static double HiddenPart(StatTotal x, double inGame)
+    {
+        var all = x.Sources.Where(s => s.Effect.Scope == StatScope.All).ToList();
+        var flat = all.Where(s => !s.Effect.IsPercent).Sum(s => s.Effect.Value);
+        var pct = all.Where(s => s.Effect.IsPercent).Sum(s => s.Effect.Value);
+        return x.Def.Kind == StatKind.Percent ? inGame - pct : inGame / (1 + pct / 100) - flat;
+    }
+
     public StatProfile Profile(CharacterSnapshot c, ResolvedProfile profile)
     {
         var all = Sources(c, db).Concat(extra ?? []).ToList();
@@ -76,7 +89,7 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
             var catWeight = weightByCategory.GetValueOrDefault(r.Def.Category);
             var expected = catWeight > 0 ? profile.Target(r.Def.Category) * w / catWeight : 0;
             return new StatTotal(r.Def, r.Flat, r.Pct, r.Budget, r.Choice, w, choiceTotal > 0 ? r.Choice / choiceTotal : 0, expected,
-                r.Sources.OrderByDescending(s => s.Effect.Value).ToList());
+                r.Sources.OrderByDescending(s => s.Effect.Value).ToList()) { Hidden = profile.Hidden.TryGetValue(r.Def.Key, out var h) ? h : null };
         }).OrderByDescending(s => s.Budget).ToList();
 
         var categories = new[] { StatCategory.Offense, StatCategory.Defense, StatCategory.Sustain, StatCategory.Utility }
@@ -121,7 +134,7 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
             var raise = own.Where(x => x.Weight >= 0.6 && obtainable.ContainsKey(x.Def.Key) && (comparison.NextTarget(x) is not null || Verdict(x) < 0))
                 .OrderByDescending(x => comparison.NextTarget(x) is not null).ThenByDescending(x => x.Weight).Take(3)
                 .Select(x => new StatToRaise(x,
-                    comparison.NextTarget(x) is { } t ? $"il manque {Value(x, t.Value - x.BenchValue)} pour {Value(x, t.Value)}, {t.Label}"
+                    comparison.NextTarget(x) is { } t ? $"il manque {Value(x, t.Value - x.GameValue)} pour {Value(x, t.Value)}, {t.Label}"
                     : peers is null ? "sous la part visée" : "en dessous de la moyenne",
                     WhereToFind(x, obtainable)))
                 .ToList();

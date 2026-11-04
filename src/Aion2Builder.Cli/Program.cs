@@ -28,6 +28,7 @@ try
         "progress" or "progression" => Progress(cli),
         "rotation" => Rotation(cli),
         "combat" => CombatCommand(cli),
+        "stats-jeu" or "ingame" => InGameCommand(cli),
         "route" or "feuille" => RouteCommand(cli),
         "specs" or "specialisations" => SpecsCommand(cli),
         "bench" => await BenchCommand.Run(cli),
@@ -64,6 +65,7 @@ static int Help()
           rotation <classe|nom> [--targets 4] [--duration 120] [--mode pvp]
                                                               Rotations simulées : joueurs contre conçue
           combat <nom> [mots-ocr.tsv…]                        Combat NotMeter lu sur des captures (l'appli les lit seule)
+          stats-jeu <nom> <mots-ocr.tsv…> [--save]            Fenêtre Stats du jeu lue sur des captures : site, en jeu, part cachée
           route <nom> [--mode pvp]                            Feuille de route d'équipement : palier de score suivant, pièces, enchantement
           specs <nom> [--mode pvp]                            Spécialisations à équiper, sort par sort
           list                                                Personnages enregistrés
@@ -235,6 +237,37 @@ static int Simulate(Args cli)
     Console.WriteLine($"Stats qui changent ({changes.Count}) :");
     foreach (var (b, a) in changes.Take(25))
         Console.WriteLine($"  {a.Def.Name,-30} {b.Display,-16} → {a.Display}");
+    return 0;
+}
+
+static List<IReadOnlyList<OcrWord>> OcrPages(Args cli) =>
+    Enumerable.Range(1, 20).Select(cli.Positional).OfType<string>()
+        .Select(f => (IReadOnlyList<OcrWord>)File.ReadAllLines(f).Select(l => l.Split('\t')).Where(p => p.Length >= 5)
+            .Select(p => new OcrWord(p[4], double.Parse(p[0], CultureInfo.InvariantCulture), double.Parse(p[1], CultureInfo.InvariantCulture),
+                double.Parse(p[2], CultureInfo.InvariantCulture), double.Parse(p[3], CultureInfo.InvariantCulture))).ToList()).ToList();
+
+/// <summary>Fenêtre Stats du jeu (mots reconnus par « Aion2Builder.exe --ocr ») : chaque stat lue, sa valeur sur le site, en jeu,
+/// et la part que le site ne montre pas ; --save la garde dans les réglages du perso (comme l'appli).</summary>
+static int InGameCommand(Args cli)
+{
+    var (store, snapshot) = Saved(cli, "Précise un personnage : stats-jeu <nom> <mots-ocr.tsv…> [--save]");
+    var db = GameDataStore.Load();
+    var values = InGameStatsReader.Read(db, OcrPages(cli));
+    var inputs = store.LoadInputs(snapshot);
+    var report = new Advisor(db).Analyze(snapshot, GameMode.PvE, inputs, new PetStore().Load().Collection);
+    Console.WriteLine($"{values.Count} stats lues · {snapshot.Name}, niveau d'objet {snapshot.ItemLevel}");
+    Console.WriteLine($"  {"Stat",-28} {"Site officiel",-20} {"En jeu",10} {"Part cachée",14}");
+    foreach (var x in report.Stats.Stats.Where(x => values.ContainsKey(x.Def.Key)).OrderBy(x => x.Def.Name))
+    {
+        var v = values[x.Def.Key];
+        var h = StatAnalyzer.HiddenPart(x, v);
+        Console.WriteLine($"  {x.Def.Name,-28} {x.Display,-20} {Fmt.Num(v),10} {(h >= 0 ? "+" : "") + Fmt.Num(Math.Round(h, 1)),14}");
+    }
+    if (cli.Has("save"))
+    {
+        store.SaveInputs(snapshot, InGameStatsReader.WithInGame(report, inputs, values.ToDictionary(kv => kv.Key, kv => (double?)kv.Value)));
+        Console.WriteLine("Gardé dans les réglages du perso.");
+    }
     return 0;
 }
 

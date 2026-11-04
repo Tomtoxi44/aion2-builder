@@ -449,6 +449,8 @@ public sealed record ResolvedProfile(ClassProfile Class, RoleProfile Role, GameM
     /// <summary>À qui comparer les stats (<see cref="PlayerInputs.Comparison"/>) et ta liste de joueurs de la classe.</summary>
     public string PeerBasis { get; init; } = "level";
     public IReadOnlyList<BenchPlayer> MyPeers { get; init; } = [];
+    /// <summary>Part cachée de chaque stat, d'après tes stats en jeu (<see cref="PlayerInputs.Hidden"/>).</summary>
+    public IReadOnlyDictionary<string, double> Hidden { get; init; } = new Dictionary<string, double>();
 
     public double Weight(string statKey) => Weights.TryGetValue(statKey, out var w) ? w : Base.DefaultWeight;
     public double Target(StatCategory c) => Base.Targets.GetValueOrDefault(c);

@@ -241,6 +241,15 @@ Le site officiel ne montre pas les points non dépensés (compétences, Daevanio
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par
 personnage. Survole une stat, une famille de stats, une note ou une case Daevanion pour son explication.
 
+**Stats en jeu** (Stats → « Stats en jeu », replié, facultatif). Le site officiel ne donne ni les stats de base de la classe,
+ni les compétences passives, ni les stats des ailes : les totaux du Builder sont plus bas que ceux du jeu (relevé du 04/11 sur
+un Templier : PV +22 400, DÉF +5 100, CRIT +370, Précision +230, ATQ +170 ; les stats en % tombent juste). La comparaison
+aux joueurs reste juste (leurs totaux sont calculés pareil), mais les valeurs conseillées par les guides sont des valeurs en
+jeu. « lire mes captures… » lit sur le PC tes captures de la fenêtre Stats (touche P, onglets Stats principales et Stats
+détaillées, sans buff temporaire), relit ton perso, et garde pour chaque stat la part que le site ne montre pas
+(valeur en jeu = (total + part) × (1 + %)) ; une valeur se corrige ou se tape à la main. Les guides sont alors jugés sur ta
+valeur en jeu. CLI : `stats-jeu <nom> mots.tsv… [--save]` (mots écrits par `Aion2Builder.exe --ocr capture.png mots.tsv 2000`).
+
 ## Ajuster les données
 
 Poids, cibles, paliers, sources d'équipement, coûts Daevanion et libellés de stats sont dans des fichiers JSON
@@ -277,7 +286,8 @@ Les rotations des joueurs (`classes.json` → `play`) viennent des mêmes guides
 
 - Les adresses du site officiel ne sont pas documentées et peuvent changer sans préavis. En cas de souci,
   `import --raw <dossier>` garde les réponses pour diagnostic.
-- Le site n'expose pas les stats de base de la classe : l'analyse porte sur ce qui est visible et contrôlable.
+- Le site n'expose pas les stats de base de la classe, les passifs ni les ailes : l'analyse porte sur ce qui est visible et
+  contrôlable, sauf si tu donnes tes stats en jeu (voir plus haut).
 - Familiers : seuls les effets de possession sont comptés. Les stats tirées par l'analyse de perception d'espèce ne sont
   lisibles ni sur le site officiel ni par le Pet Meter. Le site Aion 2 Todo (offre gratuite) peut mettre une minute à répondre.
 - Les options possibles par type de pièce sont relevées sur des pièces réelles : la liste peut être incomplète.

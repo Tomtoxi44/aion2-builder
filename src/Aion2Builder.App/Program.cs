@@ -12,10 +12,11 @@ sealed class Program
     public static void Main(string[] args)
     {
         // Diagnostic sans fenêtre : « --ocr capture.png mots.tsv » écrit les mots reconnus (x, y, largeur, hauteur, texte),
-        // le format que lit « combat <nom> mots.tsv » du CLI.
-        if (args is ["--ocr", var image, var output])
+        // le format que lit « combat <nom> mots.tsv » du CLI ; « --ocr capture.png mots.tsv 2000 » agrandit d'abord une petite
+        // capture (fenêtre Stats du jeu, lue par « stats-jeu <nom> mots.tsv »).
+        if (args is ["--ocr", var image, var output, ..] && args.Length <= 4)
         {
-            var words = ScreenshotOcr.Words(image).GetAwaiter().GetResult();
+            var words = ScreenshotOcr.Words(image, args.Length == 4 && int.TryParse(args[3], out var min) ? min : 0).GetAwaiter().GetResult();
             static string N(double v) => v.ToString(System.Globalization.CultureInfo.InvariantCulture);
             File.WriteAllLines(output, words.Select(w => $"{N(w.X)}\t{N(w.Y)}\t{N(w.Width)}\t{N(w.Height)}\t{w.Text}"));
             return;

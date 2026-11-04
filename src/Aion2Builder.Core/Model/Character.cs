@@ -132,6 +132,16 @@ public sealed record PlayerInputs
     [System.Text.Json.Serialization.JsonIgnore] public List<GameData.BenchPlayer> MyPeers { get; init; } = [];
 
     /// <summary>
+    /// Tes stats en jeu (fenêtre Stats, lues sur tes captures ou tapées) par clé de stat, et la part de chacune que le site
+    /// officiel ne montre pas (base de la classe, passifs, ailes…), calculée au relevé sur le perso importé à ce moment-là :
+    /// elle ne dépend que du niveau et des compétences, elle reste valable après un nouvel import. Vide : rien ne change.
+    /// </summary>
+    public Dictionary<string, double> InGame { get; init; } = new();
+    public Dictionary<string, double> Hidden { get; init; } = new();
+    public DateTime? InGameAt { get; init; }
+    public int? InGameItemLevel { get; init; }
+
+    /// <summary>
     /// Conseils cochés « fait » (par titre), valables pour l'import <see cref="DoneFor"/> : au prochain import,
     /// le site dit lui-même ce qui a été fait, et la liste repart de zéro.
     /// </summary>

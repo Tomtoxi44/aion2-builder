@@ -37,6 +37,19 @@ public sealed record StatTotal(StatDef Def, double Flat, double Percent, double 
     public string TargetDisplay => Deficit > 0.01 ? $"≥ {Fmt.Pct(ExpectedShare)}" : Weight >= 0.6 && Share > 0 ? "✓" : "";
     /// <summary>Valeur comparée aux repères des joueurs : le % pour une stat en %, la valeur plate sinon.</summary>
     public double BenchValue => Def.Kind == StatKind.Percent ? Percent : Flat;
+    /// <summary>
+    /// Part de la stat que le site officiel ne montre pas (stats de base de la classe, compétences passives, ailes…), tirée de
+    /// tes stats en jeu (<see cref="PlayerInputs.InGame"/>) ; null sans relevé.
+    /// </summary>
+    public double? Hidden { get; init; }
+    /// <summary>
+    /// Valeur en jeu : (total + part cachée) × (1 + %) pour une stat chiffrée, % + part cachée pour une stat en % ; sans relevé,
+    /// la valeur comparée aux joueurs. C'est elle qu'on compare aux valeurs conseillées par les guides (des valeurs en jeu).
+    /// </summary>
+    public double GameValue => Hidden is not { } h ? BenchValue : Def.Kind == StatKind.Percent ? Percent + h : (Flat + h) * (1 + Percent / 100);
+    /// <summary>Écart entre la valeur en jeu et celle comparée aux joueurs (0 sans relevé) : pour placer les valeurs des guides
+    /// sur l'échelle des joueurs.</summary>
+    public double Shift => GameValue - BenchValue;
     public string Display => Def.Kind == StatKind.Percent || Flat == 0
         ? $"{Fmt.Num(Percent)} %" + (Flat > 0 ? $" + {Fmt.Num(Flat)}" : "")
         : Fmt.Num(Flat) + (Percent > 0 ? $" (+{Fmt.Num(Percent)} %)" : "");
@@ -101,10 +114,10 @@ public sealed record StatComparison(List<BenchPlayer>? Peers, string? PeersText,
     public List<StatTarget> TargetsFor(StatTotal x) => Targets.GetValueOrDefault(x.Def.Key) ?? [];
 
     /// <summary>Prochaine valeur conseillée pas encore atteinte ; null si toutes le sont (ou s'il n'y en a pas).</summary>
-    public StatTarget? NextTarget(StatTotal x) => TargetsFor(x).FirstOrDefault(t => t.Value > x.BenchValue + 1e-9);
+    public StatTarget? NextTarget(StatTotal x) => TargetsFor(x).FirstOrDefault(t => t.Value > x.GameValue + 1e-9);
 
     /// <summary>Plafond dépassé : la stat ne sert plus au-delà (2 % de marge).</summary>
-    public StatTarget? CapExceeded(StatTotal x) => TargetsFor(x).FirstOrDefault(t => t.Cap && x.BenchValue > t.Value * 1.02);
+    public StatTarget? CapExceeded(StatTotal x) => TargetsFor(x).FirstOrDefault(t => t.Cap && x.GameValue > t.Value * 1.02);
 
     /// <summary>
     /// Ta valeur face aux joueurs comparés (−1 en dessous, 0 dans la moyenne, 1 au-dessus) ; null sans joueurs ou pour une stat
