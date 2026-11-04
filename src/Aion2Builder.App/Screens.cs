@@ -4506,6 +4506,24 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     });
                 blocks.Add(TableCard("Par rang", T($"{Fmt.Big(total)} ressources", 11, Tok.Muted, mono: true),
                     TableHeader(rankCols, "Rang", "Quantité", "Part"), byRank));
+                // Par ressource, toutes qualités ensemble : laquelle te donne le plus d'éclatantes (et de rang supérieur).
+                var families = items.GroupBy(PetMeterGathering.Family)
+                    .Select(f => (Name: PetMeterGathering.BaseName(f.OrderBy(i => i.Rank).First().Name), Qty: f.Sum(i => i.Qty),
+                        Better: f.Where(i => i.Rank >= 2).Sum(i => i.Qty), Radiant: f.Where(i => i.Rank == 4).Sum(i => i.Qty)))
+                    .OrderByDescending(f => f.Radiant).ThenByDescending(f => f.Qty).ToList();
+                if (families.Count > 1 && families.Count < items.Count)
+                {
+                    const string famCols = "*,90,120,130";
+                    blocks.Add(TableCard("Par ressource, toutes qualités", T("où tombent tes éclatantes", 11, Tok.Muted),
+                        TableHeader(famCols, "Ressource", "Quantité", "Rang supérieur", "Éclatantes"),
+                        families.Select(f => (Control)new Border
+                        {
+                            Padding = new Thickness(20, 4),
+                            Child = Columns(famCols, T(f.Name, 13, Tok.Text), T(Fmt.Big(f.Qty), 12, Tok.Text2, mono: true),
+                                T($"{Fmt.Big(f.Better)} · {Fmt.Pct((double)f.Better / f.Qty)}", 12, f.Better > 0 ? Tok.Text2 : Tok.Muted, mono: true),
+                                T(f.Radiant > 0 ? $"{Fmt.Big(f.Radiant)} · {Fmt.Pct((double)f.Radiant / f.Qty)}" : "—", 12, f.Radiant > 0 ? unique : Tok.Muted, mono: true)),
+                        })));
+                }
                 const string cols = "*,130,90";
                 var rows = items.Select(i => (Control)new Border
                 {

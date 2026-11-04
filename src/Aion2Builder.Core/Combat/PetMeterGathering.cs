@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Aion2Builder.Combat;
 
@@ -98,6 +99,21 @@ public static class PetMeterGathering
         return new GatherServer(list.Sum(s => s.Count), list.Sum(s => s.Failed), list.Sum(s => s.Better),
             list.SelectMany(s => s.Chars ?? []).Distinct().ToList(), items);
     }
+
+    static readonly string[] QualityPrefixes = ["Radiant ", "Pure ", "Fine ", "Fresh "];
+
+    /// <summary>La ressource sans sa qualité, pour regrouper « Od », « Od pur », « Od éclatant » : le nom anglais sans « Radiant »,
+    /// « Pure »…, à défaut le nom français sans « éclatant », « pur »….</summary>
+    public static string Family(GatherItem i)
+    {
+        if (i.Names is not { Count: > 1 } n || n[1].Length == 0) return BaseName(i.Name);
+        foreach (var p in QualityPrefixes)
+            if (n[1].StartsWith(p, StringComparison.Ordinal)) return n[1][p.Length..];
+        return n[1];
+    }
+
+    /// <summary>Nom français sans la qualité : « Minerai d'orichalque éclatant » → « Minerai d'orichalque ».</summary>
+    public static string BaseName(string name) => Regex.Replace(name, " (éclatante?|pure?|d'une grande pureté|fraîche)$", "");
 
     /// <summary>Nom du rang (le jeu le met dans le nom de la ressource) ; le 4 (éclatant) est de rareté Unique, en jaune dans le jeu.</summary>
     public static string RankName(int rank, bool fresh = false) => rank switch
