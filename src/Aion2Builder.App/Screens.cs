@@ -2079,7 +2079,12 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 : inputs.Comparison == "top" ? "Pas encore de top pour cette classe (il arrive avec le relevé du jeudi) : comparaison aux joueurs de ton niveau."
                 : "Pas assez de joueurs notés pour cette classe : comparaison aux joueurs de ton niveau.", 12, Tok.Warn, wrap: true)
             : null;
-        return Expander($"Joueurs comparés · {Peers?.Count ?? 0}", IsOpen("stats:peers"), () => Toggle("stats:peers"), () =>
+        // Très en avance sur le relevé : la suggestion du top de la classe, visible sans ouvrir le bloc.
+        var ahead = basis == "level" && bench is { ItemLevel.Count: >= 12, Top.Count: >= 3 }
+            ? ClassBenchmark.Percentile(bench.ItemLevel, r.Character.ItemLevel) : 0;
+        var title = $"Joueurs comparés · {Peers?.Count ?? 0}" +
+                    (ahead >= 0.9 ? $" · tu es devant {Fmt.Pct(ahead)} des {r.Profile.Class.Name}s relevés : essaie « top de la classe »" : "");
+        return Expander(title, IsOpen("stats:peers"), () => Toggle("stats:peers"), () =>
         {
             var panel = new StackPanel { Spacing = 10 };
             panel.Children.Add(head);

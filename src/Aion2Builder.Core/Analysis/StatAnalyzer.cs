@@ -292,6 +292,17 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
             sp.Stats.Where(x => (category is null || x.Def.Category == category) && x.Weight > s.LowWeight && Can(x) && NotAhead(x))
                 .OrderByDescending(x => x.Deficit * x.Weight).FirstOrDefault();
 
+        // Très en avance sur le relevé de ta classe : « ton niveau » te compare surtout à des joueurs moins équipés ; le top de la
+        // classe (choix des Joueurs comparés, écran Stats) donne un objectif. Une suggestion : rien ne change sans ton choix.
+        if (Basis(p) == "level" && p.Class.Benchmark is { ItemLevel.Count: >= 12, Top.Count: >= 3 } bench
+            && ClassBenchmark.Percentile(bench.ItemLevel, c.ItemLevel) >= 0.9)
+            findings.Add(new Finding(Area.Stats, Severity.Advice, "Compare-toi au top de la classe",
+                $"Ton niveau d'objet ({c.ItemLevel}) dépasse {Fmt.Pct(ClassBenchmark.Percentile(bench.ItemLevel, c.ItemLevel))} des {p.Class.Name}s relevés : " +
+                "les joueurs de ton niveau sont surtout moins équipés que toi, leur moyenne est un repère bas. Le top de la classe (les plus fortes " +
+                "puissances de la semaine) donne un vrai objectif pour tes prochaines pièces et gravures.",
+                "Écran Stats → « Joueurs comparés » → « top de la classe » (ou « les mieux bâtis »). Tu peux revenir à « ton niveau » à tout moment.",
+                20) { Need = Need.Info });
+
         findings.Add(new Finding(Area.Stats, Severity.Info, $"Efficacité des stats : {Fmt.Pct(sp.Efficiency)}",
             $"Part de tes stats ajustables (stats secondaires, Daevanion, titres, stats divines) placée dans des stats utiles pour {who}. Les stats fixes des pièces (DÉF d'une armure, ATQ d'une arme) sont hors calcul : elles viennent avec la pièce."));
 
