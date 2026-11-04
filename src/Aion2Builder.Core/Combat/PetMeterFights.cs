@@ -16,7 +16,7 @@ public static class PetMeterFights
     /// 4 : dégâts seconde par seconde sur la cible principale et combat entier ; 5 : « Boss (code …) » pour un boss sans nom ;
     /// 6 : nom du boss d'après bosses.json ; 7 : de nouveau « Boss (code …) », les noms relevés sans permission étant retirés ;
     /// 8 : joueurs du combat, Pet Meter v0.19.0).</summary>
-    public const int Version = 8;
+    public const int Version = 9;
 
     /// <summary>Types de combats gardés : boss, mannequin, JcJ (« other » : un pack de monstres, un monstre achevé).</summary>
     public static readonly HashSet<string> KeptKinds = ["boss", "dummy", "pvp"];
@@ -94,7 +94,7 @@ public static class PetMeterFights
     /// DPS et part sur le combat du groupe, sorts principaux (code 0 : ses invocations).
     /// </summary>
     public sealed record FightPlayer(bool Me, string? Name, int? Cls, string? Class, int? Number, double? Power, double Damage, double Dps,
-        double Share, double Hits = 0, double Crits = 0, List<FightPlayerSkill>? Skills = null);
+        double Share, double Hits = 0, double Crits = 0, List<FightPlayerSkill>? Skills = null, List<double[]>? Timeline = null);
     public sealed record FightPlayerSkill(long Code, double Damage, double Hits, double Casts);
     /// <summary>Combat du groupe sur la cible principale : du premier au dernier coup de quiconque, dégâts de tous.</summary>
     public sealed record FightGroup(double Duration, double Damage);
@@ -105,10 +105,31 @@ public static class PetMeterFights
         [11] = "GLADIATOR", [12] = "TEMPLAR", [13] = "ASSASSIN", [14] = "RANGER", [15] = "SORCERER", [16] = "ELEMENTALIST", [17] = "CLERIC", [18] = "CHANTER",
     };
 
-    static CombatPlayer Player(FightPlayer p, GameDatabase db) => new(p.Me, p.Name,
-        p.Cls is { } c && ClassByPrefix.TryGetValue(c, out var code) ? code : p.Class is { } n ? db.FindClass(n)?.Code : null,
-        p.Number, p.Power is > 0 ? (long)p.Power : null, p.Damage, p.Dps, p.Share, p.Hits > 0 ? p.Crits / p.Hits : null,
-        (p.Skills ?? []).Select(k => new CombatPlayerSkill(k.Code == 0 ? "Invocations" : Name(db, k.Code), p.Damage > 0 ? k.Damage / p.Damage : 0, (int)k.Casts)).ToList());
+    static CombatPlayer Player(FightPlayer p, GameDatabase db)
+    {
+        // Pet Meter v0.21.1 : ses lancers datés (comme les tiens, une utilisation = les lancers d'un sort à moins de 0,6 s).
+        var casts = p.Timeline is { Count: > 0 } timeline ? Casts(timeline, db) : null;
+        return new(p.Me, p.Name,
+            p.Cls is { } c && ClassByPrefix.TryGetValue(c, out var code) ? code : p.Class is { } n ? db.FindClass(n)?.Code : null,
+            p.Number, p.Power is > 0 ? (long)p.Power : null, p.Damage, p.Dps, p.Share, p.Hits > 0 ? p.Crits / p.Hits : null,
+            (p.Skills ?? []).Select(k => new CombatPlayerSkill(k.Code == 0 ? "Invocations" : Name(db, k.Code), p.Damage > 0 ? k.Damage / p.Damage : 0,
+                casts?.Count(x => x.Code == k.Code) ?? (int)k.Casts, k.Damage, (int)k.Hits)).ToList())
+        { Casts = casts };
+    }
+
+    /// <summary>Lancers datés : chaque utilisation envoie deux messages (le lancer, puis sa suite 0,15 à 0,4 s après) : un même
+    /// sort à moins de 0,6 s ne compte qu'une fois (recoupé avec NotMeter).</summary>
+    static List<CombatCast> Casts(IEnumerable<double[]> raw, GameDatabase db)
+    {
+        var casts = new List<CombatCast>();
+        foreach (var c in raw.Where(c => c.Length >= 2).OrderBy(c => c[0]))
+        {
+            var code = (long)c[1];
+            if (casts.LastOrDefault(x => x.Code == code) is { } previous && c[0] - previous.T < 0.6) continue;
+            casts.Add(new CombatCast(c[0], code, Name(db, code)));
+        }
+        return casts;
+    }
     /// <summary>Combat entier (Pet Meter v0.7.4) : durée et dégâts adds compris, et à quel moment la cible principale a été frappée.</summary>
     public sealed record FightWhole(double Duration, double Damage, double Offset);
     public sealed record FightTarget(long Entity, long Code, double Damage);
@@ -150,15 +171,7 @@ public static class PetMeterFights
 
     public static CombatLog ToLog(Fight f, string path, GameDatabase db)
     {
-        // Lancers : chaque utilisation envoie deux messages (le lancer sur la cible, puis sa suite 0,15 à 0,4 s après) :
-        // un même sort à moins de 0,6 s ne compte qu'une fois (recoupé avec NotMeter : une utilisation par coup).
-        var casts = new List<CombatCast>();
-        foreach (var c in f.Casts.Where(c => c.Length >= 2).OrderBy(c => c[0]))
-        {
-            var code = (long)c[1];
-            if (casts.LastOrDefault(x => x.Code == code) is { } previous && c[0] - previous.T < 0.6) continue;
-            casts.Add(new CombatCast(c[0], code, Name(db, code)));
-        }
+        var casts = Casts(f.Casts, db);
         var skills = f.Skills.Select(s => new CombatSkill(Name(db, s.Code), null, s.Damage, f.Damage > 0 ? s.Damage / f.Damage : 0,
             casts.Count(c => c.Code == s.Code), s.Hits, s.Hits > 0 ? (double)s.Crits / s.Hits : null,
             s.Positioned > 0 ? (double)s.Back / s.Positioned : null, null)).ToList();

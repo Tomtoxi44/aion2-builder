@@ -132,10 +132,14 @@ public sealed record CombatBuff(string Name, double? Uptime, int Count, int? Lev
 /// dans sa classe, puissance de combat, dégâts, DPS, part des dégâts du groupe (0 à 1), critique (0 à 1), sorts principaux.
 /// </summary>
 public sealed record CombatPlayer(bool Me, string? Name, string? ClassCode, int? Number, long? Power, double Damage, double Dps, double Share,
-    double? Crit, List<CombatPlayerSkill> Skills);
+    double? Crit, List<CombatPlayerSkill> Skills)
+{
+    /// <summary>Ses lancers datés depuis le début du combat du groupe (Pet Meter v0.21.1) : sa rotation s'analyse comme la tienne.</summary>
+    public List<CombatCast>? Casts { get; init; }
+}
 
 /// <summary>Un sort principal d'un joueur du combat : part de ses dégâts (0 à 1), utilisations.</summary>
-public sealed record CombatPlayerSkill(string Name, double Share, int Casts);
+public sealed record CombatPlayerSkill(string Name, double Share, int Casts, double Damage = 0, int Hits = 0);
 
 /// <summary>Un lancer du combat : secondes depuis le début, code et nom du sort.</summary>
 public sealed record CombatCast(double T, long Code, string Name);

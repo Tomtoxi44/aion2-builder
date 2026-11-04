@@ -96,6 +96,22 @@ public sealed class CombatAnalyzer(GameDatabase db)
         return row[b.Length];
     }
 
+    /// <summary>
+    /// Le combat vu par un joueur du groupe (ses sorts, ses dégâts et ses lancers datés depuis le début du combat du groupe),
+    /// pour analyser sa rotation comme la tienne. Null sans lancers datés (Pet Meter d'avant la v0.21.1) ou sans classe.
+    /// </summary>
+    public static CombatLog? PlayerLog(CombatLog fight, CombatPlayer p)
+    {
+        if (p.Casts is not { Count: > 2 } casts || p.ClassCode is null) return null;
+        var skills = p.Skills.Select(k => new CombatSkill(k.Name, null, k.Damage, k.Share, k.Casts, k.Hits, null, null, null)).ToList();
+        return new CombatLog
+        {
+            Source = "Pet Meter", ImportedAtUtc = fight.ImportedAtUtc, Character = p.Name ?? "", Target = fight.Target, Kind = fight.Kind,
+            Duration = fight.GroupDuration ?? fight.Duration, TotalDamage = p.Damage, Dps = p.Dps, Hits = skills.Sum(s => s.Hits),
+            SkillCount = skills.Count, Skills = skills, Casts = casts, Map = fight.Map,
+        };
+    }
+
     public CombatReport Analyze(CombatLog log, ResolvedProfile p)
     {
         var mode = p.Mode == GameMode.PvP ? "JcJ" : "JcE";

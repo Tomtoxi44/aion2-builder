@@ -3449,6 +3449,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 T(Fmt.Big(p.Dps), 12, p.Me ? Accent.Main : null, mono: true), T(Fmt.Pct(p.Share), 12, Tok.Text, FontWeight.SemiBold, mono: true),
                 action);
             table.Children.Add(new Border { Padding = new Thickness(20, 6), Background = p.Me ? Accent.Dim : null, Child = row });
+            // Sa rotation, analysée comme la tienne (lancers face aux recharges, sorts jamais lancés, combos, temps morts) :
+            // pour lui dire ce qu'il a fait de mal. Pet Meter v0.21.1 et plus (ses lancers datés).
+            if (!p.Me && CombatAnalyzer.PlayerLog(log, p) is { } theirs)
+                table.Children.Add(PlayerRotation(theirs, p, name, log.Kind == "pvp" ? GameMode.PvP : GameMode.PvE));
         }
         var note = log.GroupDuration is { } group
             ? $"DPS et part sur le combat du groupe ({Duration(group)}, du premier au dernier coup de quiconque sur {Who(log)}) ; ton DPS en haut ne compte que de ton premier à ton dernier coup."
@@ -3462,6 +3466,47 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 T(note + " Survol d'un nom : ses sorts principaux.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4),
             },
         }, "Joueurs du combat", T(Fmt.Plural(players.Count, "joueur"), 12, Tok.Muted));
+    }
+
+    /// <summary>
+    /// Sous un joueur du combat : sa rotation analysée comme la tienne, repliée (« ▸ sa rotation : N points à corriger ») ;
+    /// dépliée, chaque point avec ce qu'il doit faire, à lui transmettre.
+    /// </summary>
+    Control PlayerRotation(CombatLog theirs, CombatPlayer p, string name, GameMode mode)
+    {
+        var key = $"rot:{p.Name ?? $"{p.ClassCode}{p.Number}"}";
+        CombatReport report;
+        try { report = new CombatAnalyzer(db).Analyze(theirs, db.Resolve(p.ClassCode!, mode)); }
+        catch (InvalidOperationException) { return new Border(); }  // classe inconnue des données
+        var fixes = report.Findings.Where(f => f.Severity <= Severity.Advice).OrderBy(f => f.Severity).ThenByDescending(f => f.Priority).ToList();
+        var open = IsOpen(key);
+        var label = fixes.Count == 0 ? $"sa rotation : rien à corriger ({Fmt.Plural(theirs.Casts!.Count, "lancer")})"
+            : $"{(open ? "▾" : "▸")} sa rotation : {Fmt.Plural(fixes.Count, "point")} à corriger";
+        var box = new StackPanel { Spacing = 6, Margin = new Thickness(20, 0, 20, 8) };
+        box.Children.Add(Tip(Clickable(T(label, 12, fixes.Count == 0 ? Tok.Good : Tok.Warn, FontWeight.SemiBold), () => Toggle(key),
+                hover: Tok.HoverStrong, padding: new Thickness(6, 1)),
+            $"La rotation de {name} analysée comme la tienne, d'après ses lancers vus par le Pet Meter : lancers face aux recharges, sorts jamais lancés, combos, temps morts."));
+        if (open)
+        {
+            foreach (var f in fixes)
+                box.Children.Add(new Border
+                {
+                    BorderBrush = f.Severity == Severity.Important ? Tok.Warn : Tok.Border, BorderThickness = new Thickness(2, 0, 0, 0), Padding = new Thickness(10, 2),
+                    Child = new StackPanel
+                    {
+                        Spacing = 2,
+                        Children =
+                        {
+                            T(f.Title, 13, null, FontWeight.SemiBold, wrap: true),
+                            T(f.Detail, 12, Tok.Text2, wrap: true).WithLineHeight(1.4),
+                            f.Action is { } act ? T("→ " + act.Replace("écran Build", "Aion 2 Builder, écran Build"), 12, Accent.Main, wrap: true) : new Border(),
+                        },
+                    },
+                });
+            box.Children.Add(T($"D'après {Fmt.Plural(theirs.Casts!.Count, "lancer")} sur {Duration(theirs.Duration)} ; les buffs des autres joueurs ne sont pas lus. " +
+                               "Pour ses stats et son équipement : « ouvrir sa fiche ».", 11, Tok.Muted, wrap: true));
+        }
+        return box;
     }
 
     /// <summary>Carte « à corriger » : pastille, gain estimé, titre, cases lancés / possibles, ce qu'il faut faire ; « Pourquoi » déplie la raison.</summary>
