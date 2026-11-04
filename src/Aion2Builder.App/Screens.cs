@@ -786,7 +786,13 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     // ----- Équipement : vue d'ensemble et sous-pages (sous-menu du rail) -----
 
     /// <summary>Feuille de route d'équipement (paliers de score, pièces, enchantement), calculée une fois par rendu.</summary>
-    GearRoadmapPlan Route => route ??= GearRoadmap.Build(db, r);
+    // Calculs tirés de l'analyse affichée : gardés tant qu'elle reste la même (l'écran est reconstruit à chaque clic, l'analyse
+    // seulement quand quelque chose change).
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<AdviceReport, GearRoadmapPlan> RouteMemo = new();
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<AdviceReport, OptimizationPlan> OptimizationMemo = new();
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<AdviceReport, List<SkillSpecPlan>> SpecsMemo = new();
+
+    GearRoadmapPlan Route => route ??= RouteMemo.GetValue(r, rep => GearRoadmap.Build(db, rep));
     GearRoadmapPlan? route;
 
     Control GearScreen() => s.GearPage switch
@@ -976,7 +982,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
 
     OptimizationPlan? optimization;
     /// <summary>Optimisation des stats de l'équipement (calculée une fois par affichage).</summary>
-    OptimizationPlan Optimization => optimization ??= new StatOptimizer(db).Plan(r);
+    OptimizationPlan Optimization => optimization ??= OptimizationMemo.GetValue(r, rep => new StatOptimizer(db).Plan(rep));
 
     /// <summary>« Optimiser mes stats » : relit le perso sur le site officiel, puis ouvre la page d'optimisation.</summary>
     Control OptimizeButton()
@@ -2711,7 +2717,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     // ----- Spécialisations : lesquelles équiper, sort par sort -----
 
     /// <summary>Conseil de spécialisations des compétences actives (calculé une fois par rendu).</summary>
-    List<SkillSpecPlan> Specs => specs ??= SpecAdvisor.Plan(db, r);
+    List<SkillSpecPlan> Specs => specs ??= SpecsMemo.GetValue(r, rep => SpecAdvisor.Plan(db, rep));
     List<SkillSpecPlan>? specs;
 
     /// <summary>
