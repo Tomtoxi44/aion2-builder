@@ -4467,6 +4467,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             blocks.Add(ColumnsSpaced("110,*", 12, T("Serveur", 13, weight: FontWeight.Medium),
                 Choice(servers.Select(x => (ServerLabel(x.Key, x.Sum), x.Key == server.Key, (Action)(() => update(st => st.GatherServer = x.Key)))))));
         var unique = Tok.B(db.Grade("Unique").Color);
+        // Couleur du nom en jeu (captures du 04/11) : normal blanc (Commun), « d'une grande pureté » / « fraîche » vert (Rare),
+        // « pur » bleu (Épique), « éclatant » jaune (Unique).
+        var rankColors = new[] { Tok.Text, Tok.Text, Tok.B(db.Grade("Rare").Color), Tok.B(db.Grade("Legend").Color), unique };
+        IBrush RankColor(int rank) => rankColors[Math.Clamp(rank, 1, 4)];
         if (server.Sum is { } g)
         {
             var cap = chosen.FirstOrDefault()?.Cap ?? 1000;
@@ -4496,9 +4500,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                     {
                         Padding = new Thickness(20, 5),
                         Child = Columns(rankCols,
-                            T(x.rank switch { 4 => "Éclatant", 3 => "Pur", 2 => "Grande pureté / fraîche", _ => "Normal" }, 13, x.rank == 4 ? unique : Tok.Text),
+                            T(x.rank switch { 4 => "Éclatant", 3 => "Pur", 2 => "Grande pureté / fraîche", _ => "Normal" }, 13, RankColor(x.rank)),
                             T(Fmt.Big(x.qty), 12, Tok.Text2, mono: true),
-                            RoundBar((double)x.qty / total, x.rank == 4 ? unique : Tok.Muted, 6).WithMargin(0, 5, 0, 0)),
+                            RoundBar((double)x.qty / total, x.rank == 1 ? Tok.Muted : RankColor(x.rank), 6).WithMargin(0, 5, 0, 0)),
                     });
                 blocks.Add(TableCard("Par rang", T($"{Fmt.Big(total)} ressources", 11, Tok.Muted, mono: true),
                     TableHeader(rankCols, "Rang", "Quantité", "Part"), byRank));
@@ -4506,8 +4510,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 var rows = items.Select(i => (Control)new Border
                 {
                     Padding = new Thickness(20, 4),
-                    Child = Columns(cols, T(i.Name, 13, i.Rank == 4 ? unique : Tok.Text),
-                        T(PetMeterGathering.RankName(i.Rank, i.Fresh), 12, i.Rank == 4 ? unique : Tok.Text2), T(Fmt.Big(i.Qty), 12, Tok.Text2, mono: true)),
+                    Child = Columns(cols, T(i.Name, 13, RankColor(i.Rank)),
+                        T(PetMeterGathering.RankName(i.Rank, i.Fresh), 12, i.Rank == 1 ? Tok.Text2 : RankColor(i.Rank)), T(Fmt.Big(i.Qty), 12, Tok.Text2, mono: true)),
                 });
                 blocks.Add(TableCard("Ressources", T(Fmt.Plural(items.Count, "ressource"), 11, Tok.Muted, mono: true),
                     TableHeader(cols, "Ressource", "Rang", "Quantité"), rows));
