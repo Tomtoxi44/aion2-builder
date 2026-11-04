@@ -372,7 +372,7 @@
           "why": "À valider : effet non décrit ; le guide le laisse au niveau 1, mais les Templiers observés le montent souvent haut. N'y mets des points qu'une fois les passifs prioritaires au maximum." },
         { "name": "Volonté de survie", "kind": "Passive", "role": "Survie", "priority": { "PvE": 0.3, "PvP": 0.45 }, "target": { "PvE": 2, "PvP": 2 },
           "why": "À valider : effet non décrit, faible priorité pour le guide (niveau 2)." },
-        { "name": "Défense d'égide", "kind": "Passive", "role": "Blocage et soin", "priority": { "PvE": 0.5, "PvP": 0.5 }, "target": { "PvE": 2, "PvP": 2 },
+        { "name": "Défense d'égide", "kind": "Passive", "role": "Blocage et soin", "priority": { "PvE": 0.4, "PvP": 0.4 }, "target": { "PvE": 2, "PvP": 2 },
           "why": "Blocage +200 et 300 à 360 PV rendus à chaque Blocage réussi (recharge 3 s), avec une épée (infobulle du jeu). Le Blocage est la stat défensive clé du Templier : utile en tank, mais le guide le laisse au niveau 2, après les passifs de dégâts." },
         { "name": "Sceau de protection", "kind": "Passive", "role": "Bouclier d'urgence", "priority": { "PvE": 0.3, "PvP": 0.45 }, "target": { "PvE": 1, "PvP": 1 },
           "why": "À valider : sous 50 % de PV, absorbe automatiquement une partie des dégâts pendant 30 s (recharge 1 min). Ce que rapporte chaque niveau n'est pas connu (le stigma « Protection du compagnon » multiplie ce bouclier par 1,5) : compare l'infobulle en jeu avant d'y retirer des points." },
