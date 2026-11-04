@@ -2200,6 +2200,17 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
             actions.Children.Add(Clickable(T("lire mes captures…", 12, Accent.Main, FontWeight.SemiBold, mono: true), importInGame,
                 hover: Tok.HoverStrong, padding: new Thickness(8, 4)));
+            // La fiche que le jeu envoie au Pet Meter (v0.20.9+) à ta connexion : PV, PM, VIT, Perforation, sans capture. Sur ton clic.
+            if (Aion2Builder.Combat.PetMeterSheet.For(r.Character.Name) is { } sheet
+                && sheet.Values.Any(kv => !inputs.InGame.TryGetValue(kv.Key, out var had) || Math.Abs(had - kv.Value) > 0.001))
+            {
+                var what = string.Join(" · ", sheet.Values.Select(kv => $"{db.Stat(kv.Key)?.Name ?? kv.Key} {Fmt.Num(kv.Value)}"));
+                actions.Children.Add(Tip(Clickable(T($"reprendre du Pet Meter ({sheet.At.ToLocalTime():dd/MM HH:mm})", 12, Accent.Main, FontWeight.SemiBold, mono: true),
+                        () => onInputs(InGameStatsReader.WithInGame(r, inputs, sheet.Values.ToDictionary(kv => kv.Key, kv => (double?)kv.Value))),
+                        hover: Tok.HoverStrong, padding: new Thickness(8, 4)),
+                    $"Valeurs envoyées par le jeu à ta connexion, notées hors combat par le Pet Meter : {what}. ATQ, DÉF, Précision, CRIT… " +
+                    "ne sont pas dans cette fiche (le jeu les calcule) : pour elles, lis tes captures."));
+            }
             if (n > 0)
                 actions.Children.Add(Clickable(T("tout effacer", 11, Tok.Bad, mono: true),
                     () => onInputs(inputs with { InGame = new(), Hidden = new(), InGameAt = null, InGameItemLevel = null }), hover: Tok.HoverStrong, padding: new Thickness(6, 4)));
