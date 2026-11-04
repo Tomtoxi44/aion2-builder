@@ -42,7 +42,8 @@ public sealed class CombatStore
         {
             try
             {
-                if (JsonSerializer.Deserialize<CombatLog>(File.ReadAllText(path), GameDataStore.Json) is { } log) list.Add((path, log));
+                if (JsonSerializer.Deserialize<CombatLog>(File.ReadAllText(path), GameDataStore.Json) is { } log)
+                    list.Add((path, log with { Target = Combat.PetMeterFights.Label(log.Target) }));
             }
             catch (Exception ex) when (ex is JsonException or IOException) { }
         }

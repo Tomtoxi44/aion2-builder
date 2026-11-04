@@ -71,8 +71,19 @@ public static class PetMeterFights
         return fresh.Count;
     }
 
-    /// <summary>Créatures connues : code du Pet Meter → nom.</summary>
+    /// <summary>
+    /// Créatures connues : code du Pet Meter → nom. Les boss ne s'y ajoutent qu'avec un nom vu en jeu par l'utilisateur (page
+    /// Besoins, carte « Noms des boss ») : aucun nom relevé sur un site tiers sans permission.
+    /// </summary>
     static readonly Dictionary<long, string> Creatures = new() { [2400032] = "Mannequin d'entraînement" };
+
+    /// <summary>
+    /// Nom à afficher pour la cible d'un combat enregistré : « Boss (code 2300371) » devient le nom du boss une fois connu, même
+    /// pour les combats importés avant (le nom n'est pas réécrit dans le fichier).
+    /// </summary>
+    public static string Label(string target) =>
+        target.StartsWith("Boss (code ", StringComparison.Ordinal) && target.EndsWith(')')
+        && long.TryParse(target.AsSpan(11, target.Length - 12), out var code) && Creatures.TryGetValue(code, out var name) ? name : target;
 
     public sealed record Fight(int Version, string Meter, string Character, long Entity, string Start, string StartUtc, double Duration,
         double Damage, int Hits, FightTarget Target, List<FightSkill> Skills, List<double[]> Casts, FightTaken Taken, FightHeals Heals, long Map = 0,
