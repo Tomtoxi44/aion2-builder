@@ -59,6 +59,7 @@ static int Help()
                  [--sp N] [--dp N] [--ariel N] [--azphel N]  points non dépensés (compétences, Daevanion), gardés par personnage
                  [--build joueurs|concu]                      build qui guide les conseils (joueurs ou conçu), gardé par personnage
                  [--md <fichier.md>]                          écrit le rapport en Markdown (à garder ou partager)
+                 [--resume]                                   résumé court à coller dans Discord (bouton de l'Accueil)
           simulate <nom> [--daevanion next|respec|route] [--n 20] [--skills] [--build joueurs|concu] [--gear] [--mode pvp]
                  [--arcanes epique|unique] [--carte calice|manuscrit|boussole|cloche|miroir]
                                                               Et si… : notes, familles et stats avant → après
@@ -181,6 +182,11 @@ static async Task<int> Advise(Args cli)
     if (cli.Has("json"))
     {
         Console.WriteLine(JsonSerializer.Serialize<object>(reports.Count == 1 ? reports[0] : reports, GameDataStore.Json));
+        return 0;
+    }
+    if (cli.Has("resume"))
+    {
+        foreach (var r in reports) Console.WriteLine(ReportMarkdown.Summary(r));
         return 0;
     }
     if (cli.Get("md") is { } mdPath)

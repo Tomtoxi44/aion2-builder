@@ -442,7 +442,18 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     Control HomeScreen()
     {
         var (advice, important, _) = Fmt.Counts(r.Findings);
+        // Résumé à coller dans Discord (pour conseiller un ami ouvert depuis « Joueurs du combat », ou te montrer) : un clic le copie.
+        var copyLabel = T("copier le résumé", 12, Accent.Main, FontWeight.SemiBold, mono: true);
+        Control? copy = null;
+        copy = Tip(Clickable(copyLabel, async () =>
+        {
+            if (TopLevel.GetTopLevel(copy)?.Clipboard is not { } clip) return;
+            await Avalonia.Input.Platform.ClipboardExtensions.SetTextAsync(clip, ReportMarkdown.Summary(r));
+            copyLabel.Text = "✓ résumé copié";
+        }, hover: Tok.HoverStrong, padding: new Thickness(6, 2)),
+            "Copie un résumé court à coller dans Discord : note, 5 choses à faire d'abord, stats en retard. Pratique pour conseiller un ami.");
         return Page($"Accueil · {r.Character.Name} · {Mode}", Badges(
+            copy,
             Tip(Badge($"score global {r.Scores.Overall}", Tok.Score(r.Scores.Overall)), HowText),
             Badge(advice == 0 ? "✓ aucun conseil" : Fmt.CountsText(r.Findings), important > 0 ? Tok.Warn : advice > 0 ? Tok.Text2 : Tok.Good)), Doll(), HomeToday());
     }

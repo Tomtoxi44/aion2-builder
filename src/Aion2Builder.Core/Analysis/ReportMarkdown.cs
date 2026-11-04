@@ -10,6 +10,36 @@ namespace Aion2Builder.Analysis;
 /// </summary>
 public static class ReportMarkdown
 {
+    /// <summary>
+    /// Résumé court à envoyer à un ami (Discord : gras en **…**) : qui, la note, les 5 choses à faire d'abord (les importantes
+    /// avant les conseils), les stats en retard sur les joueurs comparés. Rien de privé : tout vient de la fiche publique.
+    /// </summary>
+    public static string Summary(AdviceReport r)
+    {
+        var c = r.Character;
+        var s = new StringBuilder();
+        s.AppendLine($"**{c.Name}** — {r.Profile.Class.Name} niv. {c.Level} · {c.ServerName} · niveau d'objet {Fmt.Big(c.ItemLevel)} · puissance {Fmt.Big(c.CombatPower)}");
+        s.AppendLine($"Note **{r.Scores.Overall}/100** (stats {r.Scores.Stats} · équipement {r.Scores.Gear} · compétences {r.Scores.Skills} · Daevanion {r.Scores.Daevanion}), vue {GameDatabase.ModeName(r.Mode)}");
+        var first = r.ActionPlan.Where(f => f.Severity <= Severity.Important).Concat(r.ActionPlan.Where(f => f.Severity > Severity.Important)).Take(5).ToList();
+        if (first.Count > 0)
+        {
+            s.AppendLine("**À faire d'abord**");
+            var i = 0;
+            foreach (var f in first)
+            {
+                var what = f.Action ?? f.Detail.Split(". ")[0];
+                s.AppendLine($"{++i}. {f.Title}{(string.IsNullOrWhiteSpace(what) ? "" : " → " + what.TrimEnd('.'))}");
+            }
+        }
+        if (r.Findings.FirstOrDefault(f => f.Area == Area.Stats && f.Title.Contains("sous la moyenne", StringComparison.Ordinal)) is { } late)
+        {
+            var cut = late.Detail.IndexOf(" Joueurs comparés", StringComparison.Ordinal);
+            s.AppendLine($"**Stats en retard** : {(cut > 0 ? late.Detail[..cut] : late.Detail).TrimEnd('.', ' ')}");
+        }
+        s.Append("— Aion 2 Builder");
+        return s.ToString();
+    }
+
     public static string Write(AdviceReport r, GameDatabase db, PlayerInputs inputs)
     {
         var c = r.Character;
