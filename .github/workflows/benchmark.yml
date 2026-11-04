@@ -23,7 +23,7 @@ concurrency:
 jobs:
   bench:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 240 # ~19 min par classe : échantillon, puis la puissance de chaque joueur trouvé pour le top
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
