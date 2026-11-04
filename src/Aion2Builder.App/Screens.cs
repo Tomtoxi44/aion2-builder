@@ -49,6 +49,8 @@ sealed class UiState
     /// <summary>Récolte : le jour montré (« AAAA-MM-JJ », « 7 » ou « 30 » derniers jours ; null : le plus récent) et le serveur.</summary>
     public string? GatherDay { get; set; }
     public string? GatherServer { get; set; }
+    /// <summary>Récolte : le perso dont le stock (sac et coffre, Pet Meter) est montré ; null : le perso ouvert.</summary>
+    public string? GatherStockChar { get; set; }
     public bool HomeHow { get; set; }
     public bool StatsHow { get; set; }
     /// <summary>Listes longues (prochains points, prochaines cases) affichées en entier.</summary>
@@ -4923,7 +4925,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             return Page("Récolte", null, Card(new StackPanel { Spacing = 10, Children = {
                 T("Le Pet Meter (v0.17.0 ou plus) garde le résumé de ta récolte de chaque jour : récoltes, ratées, rang supérieur, chaque ressource " +
                   "avec son rang, et les Kinah de monstres. Lance-le et récolte : le résumé apparaît ici, jour par jour.", 13, Tok.Muted, wrap: true).WithLineHeight(1.5),
-                source } }));
+                source } }), GatherStock(days));
         var fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
         var gameToday = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-7));  // jour de jeu : reset à 07:00 UTC
         string DayLabel(GatherDay d) => d.Date == gameToday ? "aujourd'hui" : d.Date == gameToday.AddDays(-1) ? "hier" : d.Date.ToString("ddd dd/MM", fr);
@@ -5037,7 +5039,120 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             blocks.Add(TableCard("Kinah de monstres", T(kinah.Count > 1 ? $"{Fmt.Big(kinah.Sum(x => x.Amount))} en tout" : "par perso", 11, Tok.Muted, mono: true),
                 TableHeader(cols, "Perso", "Kinah"), rows));
         }
+        blocks.Add(GatherStock(days));
         return Page($"Récolte · {period}", Choice(options), blocks.ToArray());
+    }
+
+    static readonly GatherStockStore StockStore = new();
+
+    /// <summary>
+    /// Ton stock de récolte : les ressources (numéros 6106xxxxx) de ton sac et de ton coffre, lues dans l'inventaire noté par le
+    /// Pet Meter (v0.21.0 ou plus), par rang puis par ressource, avec l'écart depuis le jour relevé précédent (historique gardé sur
+    /// ce PC, un relevé par jour de jeu) et la courbe du total. Rien sans fichier d'inventaire ni ressource.
+    /// </summary>
+    Control? GatherStock(IReadOnlyList<GatherDay> days)
+    {
+        if (PetMeterInventory.Load() is not { } inv) return null;
+        var owners = inv.Chars.Values.Where(c => c.Items.Any(i => GatherCatalog.IsResource(i.Item) && i.Qty > 0)).OrderByDescending(c => c.At).ToList();
+        if (owners.Count == 0) return null;
+        var who = owners.FirstOrDefault(c => c.Character == s.GatherStockChar)
+                  ?? owners.FirstOrDefault(c => string.Equals(c.Character, r.Character.Name, StringComparison.OrdinalIgnoreCase)) ?? owners[0];
+        var stacks = who.Items.Where(i => GatherCatalog.IsResource(i.Item) && i.Qty > 0).ToList();
+        var totals = stacks.GroupBy(i => i.Item).ToDictionary(g => g.Key, g => g.Sum(i => i.Qty));
+        var history = StockStore.Record(who.Character, who.At, totals);
+        var today = GatherStockStore.GameDay(who.At);
+        var prevDay = history.Keys.LastOrDefault(k => string.CompareOrdinal(k, today) < 0);
+        var prev = prevDay is null ? null : history[prevDay];
+        var fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
+        var since = prevDay is null ? null : DateOnly.ParseExact(prevDay, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture).ToString("dd/MM", fr);
+
+        var items = totals.Select(kv => GatherCatalog.Item(kv.Key, kv.Value, days)).ToList();
+        var unique = Tok.B(db.Grade("Unique").Color);
+        var rankColors = new[] { Tok.Text, Tok.Text, Tok.B(db.Grade("Rare").Color), Tok.B(db.Grade("Legend").Color), unique };
+        IBrush RankColor(int rank) => rankColors[Math.Clamp(rank, 1, 4)];
+        static string RankLabel(int rank) => rank switch { 4 => "Éclatant", 3 => "Pur", 2 => "Grande pureté / fraîche", _ => "Normal" };
+        // Écart depuis le relevé précédent, pour un ensemble de ressources.
+        Control Change(IEnumerable<long> ids)
+        {
+            if (prev is null) return T("—", 12, Tok.Faint, mono: true);
+            var list = ids.ToList();
+            var d = list.Sum(id => totals.GetValueOrDefault(id)) - list.Sum(id => prev.GetValueOrDefault(id));
+            return Tip(T(d == 0 ? "=" : $"{(d > 0 ? "+" : "−")}{Fmt.Big(Math.Abs(d))}", 12, d > 0 ? Tok.Good : d < 0 ? Tok.Bad : Tok.Muted, mono: true).AlignRight(),
+                $"Depuis le relevé du {since} : {(d >= 0 ? "+" : "−")}{Fmt.Big(Math.Abs(d))}.");
+        }
+        long Qty(IEnumerable<GatherItem> list) => list.Sum(i => totals.GetValueOrDefault(i.Id ?? 0));
+
+        // Conteneurs : sac d'abord, puis coffre, puis les autres (rangements), sans les pièces portées.
+        var containers = stacks.Select(i => inv.ContainerName(i.Cont)).Distinct()
+            .OrderBy(n => n == "sac" ? 0 : n == "coffre" ? 1 : 2).ThenBy(n => n, StringComparer.Ordinal).ToList();
+        long In(string container, IEnumerable<long> ids)
+        {
+            var set = ids.ToHashSet();
+            return stacks.Where(i => inv.ContainerName(i.Cont) == container && set.Contains(i.Item)).Sum(i => i.Qty);
+        }
+
+        var blocks = new StackPanel { Spacing = 12 };
+        if (owners.Count > 1)
+            blocks.Children.Add(ColumnsSpaced("110,*", 12, T("Perso", 13, weight: FontWeight.Medium),
+                Choice(owners.Select(c => (c.Character, c == who, (Action)(() => update(st => st.GatherStockChar = c.Character)))))));
+        var total = totals.Values.Sum();
+        var kpis = new Avalonia.Controls.Primitives.UniformGrid { Columns = 4 };
+        kpis.Children.Add(Kpi("En stock", Fmt.Big(total)).WithMargin(0, 0, 10, 0));
+        kpis.Children.Add(Kpi("Éclatantes (jaunes)", Fmt.Big(Qty(items.Where(i => i.Rank == 4))), Qty(items.Where(i => i.Rank == 4)) > 0 ? unique : null).WithMargin(0, 0, 10, 0));
+        kpis.Children.Add(Kpi("Pures", Fmt.Big(Qty(items.Where(i => i.Rank == 3))), Qty(items.Where(i => i.Rank == 3)) > 0 ? RankColor(3) : null).WithMargin(0, 0, 10, 0));
+        var change = prev is null ? 0 : total - prev.Values.Sum();
+        kpis.Children.Add(Kpi(since is null ? "Évolution" : $"Depuis le {since}", prev is null ? "—" : change == 0 ? "=" : $"{(change > 0 ? "+" : "−")}{Fmt.Big(Math.Abs(change))}",
+            change > 0 ? Tok.Good : change < 0 ? Tok.Bad : null));
+        blocks.Children.Add(kpis);
+
+        // Par rang : une colonne par conteneur, le total et l'écart.
+        var rankCols = "*," + string.Join(",", containers.Select(_ => "90")) + ",90,90";
+        var byRank = Enumerable.Range(1, 4).Reverse().Select(rank => (rank, ids: items.Where(i => i.Rank == rank).Select(i => (long)(i.Id ?? 0)).ToList()))
+            .Where(x => x.ids.Count > 0).Select(x => (Control)new Border
+            {
+                Padding = new Thickness(20, 5),
+                Child = Columns(rankCols, [T(RankLabel(x.rank), 13, RankColor(x.rank)),
+                    .. containers.Select(c => (Control)T(Fmt.Big(In(c, x.ids)), 12, Tok.Text2, mono: true).AlignRight()),
+                    T(Fmt.Big(x.ids.Sum(id => totals.GetValueOrDefault(id))), 12, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(), Change(x.ids)]),
+            }).ToList();
+        blocks.Children.Add(TableCard("Par rang", null, TableHeader(rankCols, ["Rang", .. containers, "Total", since is null ? "Écart" : $"vs {since}"]), byRank));
+
+        // Par ressource, une colonne par rang : où est ton stock, et ce qui a bougé.
+        var families = items.GroupBy(PetMeterGathering.Family)
+            .Select(f => (Name: PetMeterGathering.BaseName(f.OrderBy(i => i.Rank).First().Name), Items: f.ToList()))
+            .OrderByDescending(f => f.Items.Where(i => i.Rank == 4).Sum(i => (long)totals.GetValueOrDefault(i.Id ?? 0)))
+            .ThenByDescending(f => Qty(f.Items)).ToList();
+        const string famCols = "*,80,80,80,80,90,90";
+        var famRows = families.Select(f =>
+        {
+            Control Cell(int rank)
+            {
+                var q = Qty(f.Items.Where(i => i.Rank == rank));
+                return q == 0 ? T("—", 12, Tok.Faint, mono: true).AlignRight() : T(Fmt.Big(q), 12, rank == 1 ? Tok.Text2 : RankColor(rank), mono: true).AlignRight();
+            }
+            var where = string.Join(" · ", containers.Select(c => (c, q: In(c, f.Items.Select(i => (long)(i.Id ?? 0))))).Where(x => x.q > 0).Select(x => $"{x.c} {Fmt.Big(x.q)}"));
+            return (Control)Tip(new Border
+            {
+                Padding = new Thickness(20, 4),
+                Child = Columns(famCols, T(f.Name, 13), Cell(1), Cell(2), Cell(3), Cell(4),
+                    T(Fmt.Big(Qty(f.Items)), 12, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(), Change(f.Items.Select(i => (long)(i.Id ?? 0)))),
+            }, $"{f.Name} : {where}\n" + string.Join("\n", f.Items.OrderBy(i => i.Rank).Select(i => $"{i.Name} : {Fmt.Big(totals.GetValueOrDefault(i.Id ?? 0))}")));
+        }).ToList();
+        blocks.Children.Add(TableCard("Par ressource", T(Fmt.Plural(families.Count, "ressource"), 11, Tok.Muted, mono: true),
+            TableHeader(famCols, "Ressource", "Normal", "Gr. pureté", "Pur", "Éclatant", "Total", since is null ? "Écart" : $"vs {since}"), famRows));
+
+        // Le total, jour par jour (un relevé par jour de jeu où tu as ouvert cette page avec un inventaire à jour).
+        if (history.Count >= 2)
+        {
+            var points = history.Select(kv => new ChartPoint(DateOnly.ParseExact(kv.Key, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture).ToDateTime(new TimeOnly(7, 0), DateTimeKind.Utc),
+                kv.Value.Values.Sum(), $"{kv.Key} : {Fmt.Big(kv.Value.Values.Sum())} ressources en stock, dont " +
+                                       $"{Fmt.Big(kv.Value.Where(x => GatherCatalog.Item(x.Key, x.Value, days).Rank == 4).Sum(x => x.Value))} éclatantes")).ToList();
+            blocks.Children.Add(Card(new TimeChart(points, v => Fmt.Big(v), Accent.Main, 110), "Ton stock, jour par jour", SinceText(points, v => Fmt.Big(v)), new Thickness(8, 8, 12, 6)));
+        }
+        blocks.Children.Add(T($"Lu dans l'inventaire noté par le Pet Meter{(who.Version is { } v ? $" v{v}" : "")} le {who.At.ToLocalTime():dd/MM à HH:mm} (à l'entrée en jeu, puis à chaque " +
+                              "changement) : ressources de récolte dans ton sac et ton coffre, quantités seulement (le Builder ne connaît pas leur prix). " +
+                              "L'écart compare au dernier relevé d'un jour précédent, gardé sur ce PC.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        return Card(blocks, $"Ton stock de récolte · {who.Character}", T($"relevé du {who.At.ToLocalTime():dd/MM HH:mm}", 11, Tok.Muted, mono: true));
     }
 
     /// <summary>
