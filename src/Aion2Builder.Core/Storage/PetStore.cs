@@ -44,14 +44,18 @@ public sealed class PetStore(string? path = null)
     }
 
     /// <summary>
-    /// Clé déjà collée dans le Pet Meter sur ce PC, si son fichier d'état est dans %LOCALAPPDATA%\AION2-pet-meter
-    /// (le Pet Meter le range à côté de son exe quand il peut y écrire : il n'est alors pas trouvé).
+    /// Clé déjà collée dans le Pet Meter sur ce PC : son fichier d'état est dans %LOCALAPPDATA%\AION2-pet-meter, ou à côté
+    /// de son exe quand il peut y écrire (le Pet Meter v0.20.3 et plus note ce dossier dans data_dir.txt).
     /// </summary>
     public static string? PetMeterKey()
     {
-        var file = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AION2-pet-meter", "aion2_pet_meter_state.json");
+        var local = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AION2-pet-meter");
+        var file = System.IO.Path.Combine(local, "aion2_pet_meter_state.json");
         try
         {
+            if (!File.Exists(file) && File.Exists(System.IO.Path.Combine(local, "data_dir.txt"))
+                && File.ReadAllText(System.IO.Path.Combine(local, "data_dir.txt")).Trim() is { Length: > 0 } dir)
+                file = System.IO.Path.Combine(dir, "aion2_pet_meter_state.json");
             var info = new FileInfo(file);
             if (!info.Exists) return null;
             // L'état du Pet Meter peut être gros et il le réécrit pendant le jeu : relu seulement quand il a changé (l'appli
