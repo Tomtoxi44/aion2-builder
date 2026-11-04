@@ -90,7 +90,7 @@ sealed class UiState
 /// Écrans de la refonte « IDE » : pour chacun, le contenu central et l'inspecteur de droite.
 /// Le rapport (<see cref="AdviceReport"/>) ne change pas ; seuls la présentation et la navigation changent.
 /// </summary>
-sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, UiState s,
+sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, UiState s,
     Action<Action<UiState>> update, Action<PlayerInputs> onInputs, string? petKeyHint, Action<string?> onPets,
     IReadOnlyList<ProgressPoint> progress, Func<SimulationOptions, AdviceReport> simulate,
     IReadOnlyList<(string Path, CombatLog Log)> combats, Action importCombat, Action<string> deleteCombat, Action reloadCombats, Action refresh,

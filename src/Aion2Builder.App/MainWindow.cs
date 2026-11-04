@@ -196,6 +196,12 @@ public sealed class MainWindow : Window
             }
         };
         Opened += async (_, _) => await LoadServersAsync(force: false);
+        // Les écrans se préparent une fois la fenêtre affichée (le premier rendu passe avant).
+        Opened += (_, _) =>
+        {
+            shown = true;
+            DispatcherTimer.RunOnce(PrepareScreens, TimeSpan.FromMilliseconds(300));
+        };
         Updater.CleanOld();
         Opened += async (_, _) => await CheckUpdateAsync(manual: false);
         Opened += (_, _) => Updater.ConfirmStarted(); // après une mise à jour : l'ancienne version attend ce signal pour se fermer
@@ -323,6 +329,7 @@ public sealed class MainWindow : Window
         if (report is not null) store.RecordScores(current, prefs.Mode, report.Scores, ProgressPoint.Todos(report.Findings));
         progress = store.Progress(current);
         Render();
+        Dispatcher.UIThread.Post(PrepareScreens, DispatcherPriority.Background);
         return fresh;
     }
 
@@ -940,12 +947,7 @@ public sealed class MainWindow : Window
     /// <summary>Fil d'Ariane, puis le contenu et l'inspecteur, séparés par une poignée qui règle la largeur de l'inspecteur.</summary>
     Control Page(AdviceReport r)
     {
-        var views = new ScreenViews(db, r, inputs, state, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key), progress,
-            o => Simulator.Run(db, r, inputs, pets.Collection, o),
-            combats, () => _ = ImportCombatAsync(), DeleteCombat, ReloadCombats, () => _ = RefreshAsync(),
-            peerStore.Load(), (name, server) => _ = AddPeerAsync(name, server), RemovePeer, () => _ = ImportInGameAsync(),
-            new AccountGather(accountGather ?? [], AccountKey() is not null, accountGatherStatus),
-            (name, classCode, anchor) => _ = OpenPlayerAsync(name, classCode, anchor));
+        var views = Views(r, state);
         var (content, inspector) = views.Build();
         side = views.Side();
         var grid = new Grid { RowDefinitions = new RowDefinitions("36,*") };
@@ -993,7 +995,56 @@ public sealed class MainWindow : Window
         return grid;
     }
 
-    ScrollViewer? contentScroll;
+    ScreenViews Views(AdviceReport r, UiState ui)
+    {
+        var (data, mine, collection) = (db, inputs, pets.Collection);  // ceux de cette analyse, même lus depuis un autre fil
+        return new(db, r, inputs, ui, Update, OnInputs, pets.KeyHint, key => _ = PetsAsync(key), progress,
+            o => Simulate(data, r, mine, collection, o),
+            combats, () => _ = ImportCombatAsync(), DeleteCombat, ReloadCombats, () => _ = RefreshAsync(),
+            peerStore.Load(), (name, server) => _ = AddPeerAsync(name, server), RemovePeer, () => _ = ImportInGameAsync(),
+            new AccountGather(accountGather ?? [], AccountKey() is not null, accountGatherStatus),
+            (name, classCode, anchor) => _ = OpenPlayerAsync(name, classCode, anchor));
+    }
+
+    /// <summary>
+    /// Simulations « et si » déjà faites, par analyse (une nouvelle analyse = de nouvelles simulations) : les cartes d'arcanes en
+    /// lançaient deux complètes à chaque affichage (~300 ms). Partagées avec la préparation en arrière-plan : si elle calcule
+    /// déjà celle qu'on demande, on attend son résultat au lieu de la refaire.
+    /// </summary>
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<AdviceReport, Dictionary<SimulationOptions, Lazy<AdviceReport>>> Simulations = new();
+
+    static AdviceReport Simulate(GameDatabase data, AdviceReport r, PlayerInputs mine, PetCollection? collection, SimulationOptions o)
+    {
+        var known = Simulations.GetValue(r, _ => []);
+        Lazy<AdviceReport> run;
+        lock (known)
+            if (!known.TryGetValue(o, out run!))
+            {
+                if (known.Count >= 24) known.Clear();
+                known[o] = run = new(() => Simulator.Run(data, r, mine, collection, o));
+            }
+        return run.Value;
+    }
+
+    /// <summary>Analyse dont les écrans ont été préparés (ou sont en train de l'être).</summary>
+    AdviceReport? preparedFor;
+    CancellationTokenSource? prepareCts;
+    bool shown;
+
+    /// <summary>
+    /// Calculs des écrans (feuille de route, optimisation, spécialisations, « et si » des arcanes, points des combats…) faits
+    /// d'avance dès qu'une analyse est affichée, sur un fil à priorité basse : le premier affichage de chaque écran les trouve
+    /// dans les mémos au lieu de les faire (150 à 300 ms). Une seule préparation à la fois ; une nouvelle analyse arrête l'ancienne.
+    /// </summary>
+    void PrepareScreens()
+    {
+        if (!shown || report is not { } r || ReferenceEquals(preparedFor, r)) return;
+        preparedFor = r;
+        prepareCts?.Cancel();
+        var cts = prepareCts = new CancellationTokenSource();
+        var views = Views(r, new UiState());  // un état à part : la préparation ne touche pas à celui de l'écran
+        new Thread(() => views.Prepare(cts.Token)) { IsBackground = true, Priority = ThreadPriority.BelowNormal, Name = "Préparation des écrans" }.Start();
+    }    ScrollViewer? contentScroll;
     string? contentScrollKey;
 
     /// <summary>
