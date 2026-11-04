@@ -2845,6 +2845,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             blocks.Add(T("En JcJ, une macro ne réagit pas à l'adversaire : garde-la pour le farm et les boss, joue tes contrôles et tes défenses à la main.",
                 12, Tok.Warn, wrap: true).WithLineHeight(1.4));
         const string cols = "110,220,*";
+        // Icône à gauche de chaque compétence ; une place vide quand une autre de la liste a la sienne (noms alignés), rien sinon.
+        var withIcons = m.Lines.SelectMany(l => l.Slots).Select(sl => sl.Skill).Concat(m.Manual.Select(x => x.Skill)).Any(n => OwnSkill(n) is not null);
         for (var i = 0; i < m.Lines.Count; i++)
         {
             var line = m.Lines[i];
@@ -2855,7 +2857,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             {
                 Padding = new Thickness(20, 6),
                 Child = Columns(cols, T(Place(k), 12, k == 0 ? Accent.Main : Tok.Text2, FontWeight.SemiBold, mono: true),
-                    sl.Detail is { Length: > 0 } detail ? Tip(T(sl.Skill, 13), detail) : T(sl.Skill, 13),
+                    WithIcon(SkillIcon(sl.Skill, 18, withIcons), sl.Detail is { Length: > 0 } detail ? Tip(T(sl.Skill, 13), detail) : T(sl.Skill, 13)),
                     T(sl.Why, 12, Tok.Text2, wrap: true)),
             });
             blocks.Add(TableCard($"Ligne {i + 1} · {line.Name}", T($"étape {i + 1} de la macro", 11, Tok.Muted, mono: true),
@@ -2881,7 +2883,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         {
             var list = new StackPanel { Spacing = 6 };
             foreach (var x in m.Manual)
-                list.Children.Add(ColumnsSpaced("220,*", 12, T(x.Skill, 13), T(x.Why, 12, Tok.Text2, wrap: true).WithLineHeight(1.4)));
+                list.Children.Add(ColumnsSpaced("220,*", 12, WithIcon(SkillIcon(x.Skill, 18, withIcons), T(x.Skill, 13)), T(x.Why, 12, Tok.Text2, wrap: true).WithLineHeight(1.4)));
             blocks.Add(Card(list, $"À la main · {m.Manual.Count}"));
         }
         if (m.Missing.Count > 0)
@@ -2910,7 +2912,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         };
         string[] keys = ["1", "2", "3", "4", "R", "F", "C", "V", "Maj + 1", "Maj + 2", "Maj + 3", "Maj + 4"];
         for (var i = 0; i < m.Manual.Count && i < keys.Length; i++)
-            rows.Add(Columns(cols, T(m.Manual[i].Skill, 13), T(keys[i], 12, Tok.Text, FontWeight.SemiBold, mono: true)));
+            rows.Add(Columns(cols, WithIcon(SkillIcon(m.Manual[i].Skill, 18, false), T(m.Manual[i].Skill, 13)), T(keys[i], 12, Tok.Text, FontWeight.SemiBold, mono: true)));
         var panel = new StackPanel { Spacing = 6 };
         foreach (var row in rows) panel.Children.Add(row);
         panel.Children.Add(T("Une proposition pour garder la main gauche sur ZQSD : à adapter à ton clavier et à tes habitudes. Les compétences à la main " +
@@ -3827,13 +3829,13 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 action = Tip(button, $"Importer {known} depuis le site officiel (région de ton perso) et l'ouvrir dans un onglet : stats, équipement, compétences, conseils.");
             }
             else action = Tip(T("nom inconnu", 12, Tok.Muted), "Ce joueur n'est pas apparu près de toi pendant l'enregistrement : le Pet Meter n'a pas lu son nom.");
-            var skills = p.Skills.Count == 0 ? "" : "Sorts principaux : " + string.Join(" · ", p.Skills.Take(6).Select(k =>
-                $"{k.Name} {Fmt.Pct(k.Share)}" + (k.Casts > 0 ? $" ({k.Casts}×)" : "")));
-            var tip = $"{name}{(cls is null ? "" : $" · {cls}")} : {Fmt.Big(p.Damage)} dégâts" + (p.Crit is { } c ? $", {Fmt.Pct(c)} de critiques" : "") +
-                      (skills.Length > 0 ? $"\n{skills}" : "");
+            var tip = $"{name}{(cls is null ? "" : $" · {cls}")} : {Fmt.Big(p.Damage)} dégâts" + (p.Crit is { } c ? $", {Fmt.Pct(c)} de critiques" : "");
+            // Survol du nom : ses sorts principaux, chacun avec son icône.
+            var nameBlock = Tip(T(name, 13, p.Me ? Accent.Main : p.Name is null ? Tok.Text2 : null, p.Me ? FontWeight.SemiBold : FontWeight.Normal), tip);
+            ToolTip.SetTip(nameBlock, PlayerTip(p, tip));
             action.HorizontalAlignment = HorizontalAlignment.Right;
             var row = Columns(cols,
-                Tip(T(name, 13, p.Me ? Accent.Main : p.Name is null ? Tok.Text2 : null, p.Me ? FontWeight.SemiBold : FontWeight.Normal), tip),
+                nameBlock,
                 T(cls ?? "—", 12, Tok.Text2), T(p.Power is { } pw ? Fmt.Big(pw) : "—", 12, Tok.Muted, mono: true),
                 T(Fmt.Big(p.Dps), 12, p.Me ? Accent.Main : null, mono: true), T(Fmt.Pct(p.Share), 12, Tok.Text, FontWeight.SemiBold, mono: true),
                 action);
@@ -3965,11 +3967,88 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     }
 
     /// <summary>
-    /// Icône d'un sort par son nom (et son code s'il est connu) : celle de ta compétence pour ta classe ; rien si l'icône
-    /// manque (pas d'espace réservé).
+    /// Icône d'un sort par son nom (et son code s'il est connu) : celle de ta compétence pour ta classe ; pour un autre joueur,
+    /// celle d'un perso de sa classe importé sur ce PC (<see cref="KnownSkillIcons"/>). Rien si l'icône manque (pas d'espace
+    /// réservé).
     /// </summary>
-    Control? SpellIcon(string name, long? code, string? classCode, double size = 16) =>
-        classCode is null || classCode == r.Character.ClassCode ? SkillIcon(name, size, false) : null;
+    Control? SpellIcon(string name, long? code, string? classCode, double size = 16)
+    {
+        if ((classCode is null || classCode == r.Character.ClassCode) && SkillIcon(name, size, false) is { } own) return own;
+        var (byId, byName) = KnownSkillIcons();
+        var key = $"{classCode}|{GameDatabase.NormalizeLabel(name)}";
+        var url = code is { } c && byId.TryGetValue(c / 10000 * 10000, out var byCode) ? byCode
+            : byName.TryGetValue(key, out var named) ? named
+            : SpellCodes().TryGetValue(key, out var spell) && byId.TryGetValue(spell, out var bySpell) ? bySpell : null;
+        return url is null ? null : IconCache.Box(url, size, Tok.Border, Tok.Frame);
+    }
+
+    /// <summary>« CLASSE|nom » d'un sort des données → son code de compétence (sans variante) : de là, son icône par <see cref="KnownSkillIcons"/>.</summary>
+    Dictionary<string, long> SpellCodes() => spellCodes ??= db.Spells
+        .GroupBy(x => $"{x.Value.Class}|{GameDatabase.NormalizeLabel(x.Value.Name)}")
+        .ToDictionary(g => g.Key, g => g.Min(x => x.Key) / 10000 * 10000);
+    Dictionary<string, long>? spellCodes;
+
+    /// <summary>
+    /// Icônes des compétences de tous les persos importés sur ce PC (fiches de %APPDATA%\Aion2Builder\characters, toutes
+    /// classes), par code de compétence et par « CLASSE|nom » : un sort d'un autre joueur a son icône dès qu'un perso de sa classe
+    /// a été importé. Relu seulement quand le dossier change (vérifié une fois par affichage).
+    /// </summary>
+    (Dictionary<long, string> ById, Dictionary<string, string> ByName) KnownSkillIcons()
+    {
+        if (iconsChecked) return (iconIndex.ById, iconIndex.ByName);
+        iconsChecked = true;
+        try
+        {
+            var dir = new DirectoryInfo(AppPaths.CharactersDir);
+            var files = dir.Exists ? dir.GetFiles("*.json") : [];
+            var stamp = string.Join("|", files.Select(f => $"{f.Name}:{f.LastWriteTimeUtc.Ticks}"));
+            if (stamp == iconIndex.Stamp) return (iconIndex.ById, iconIndex.ByName);
+            var byId = new Dictionary<long, string>();
+            var byName = new Dictionary<string, string>();
+            foreach (var file in files)
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(file.FullName));
+                    var root = doc.RootElement;
+                    if (!root.TryGetProperty("classCode", out var cls) || !root.TryGetProperty("skills", out var skills)
+                        || skills.ValueKind != System.Text.Json.JsonValueKind.Array) continue;
+                    foreach (var k in skills.EnumerateArray())
+                    {
+                        if (!k.TryGetProperty("icon", out var icon) || icon.ValueKind != System.Text.Json.JsonValueKind.String || icon.GetString() is not { Length: > 0 } url) continue;
+                        if (k.TryGetProperty("id", out var id) && id.TryGetInt64(out var skillId)) byId.TryAdd(skillId, url);
+                        if (k.TryGetProperty("name", out var n) && n.ValueKind == System.Text.Json.JsonValueKind.String)
+                            byName.TryAdd($"{cls.GetString()}|{GameDatabase.NormalizeLabel(n.GetString()!)}", url);
+                    }
+                }
+                catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException or UnauthorizedAccessException or InvalidOperationException or FormatException)
+                {
+                    // Fiche abîmée ou d'un ancien format : ignorée.
+                }
+            }
+            iconIndex = (stamp, byId, byName);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        return (iconIndex.ById, iconIndex.ByName);
+    }
+    static (string? Stamp, Dictionary<long, string> ById, Dictionary<string, string> ByName) iconIndex = (null, [], []);
+    bool iconsChecked;
+
+    /// <summary>Icône du sort qu'un conseil nomme (« Lame déferlante » : …) ; rien sinon.</summary>
+    Control? FindingIcon(string title, string? classCode, double size = 16) =>
+        Regex.Match(title, "«\\s*(.+?)\\s*»") is { Success: true } m ? SpellIcon(m.Groups[1].Value, null, classCode, size) : null;
+
+    /// <summary>Infobulle d'un joueur du combat : ses dégâts, puis ses sorts principaux avec leur icône, leur part de ses dégâts et leurs lancers.</summary>
+    Control PlayerTip(CombatPlayer p, string head)
+    {
+        var panel = new StackPanel { Spacing = 4 };
+        panel.Children.Add(T(head, 12, Tok.Text));
+        if (p.Skills.Count > 0) panel.Children.Add(Label("Sorts principaux").WithMargin(0, 4, 0, 0));
+        foreach (var k in p.Skills.Take(6))
+            panel.Children.Add(ColumnsSpaced("220,44,40", 8, WithIcon(SpellIcon(k.Name, null, p.ClassCode, 16), T(k.Name, 12, Tok.Text2), 6),
+                T(Fmt.Pct(k.Share), 12, Tok.Text, mono: true).AlignRight(), T(k.Casts > 0 ? $"{k.Casts}×" : "", 11, Tok.Muted, mono: true).AlignRight()));
+        return panel;
+    }
 
     /// <summary>
     /// Frise à plusieurs lignes sur un même axe de temps : nom de la ligne à gauche, un trait par lancer à sa couleur (plus haut
@@ -4064,14 +4143,23 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         foreach (var l in a.Losses)
         {
             var span = l.End - l.Start >= 1 ? $" pendant {Duration(l.End - l.Start)}" : "";
-            var taunt = l.Taunt is null ? "" : l.TauntWait is > 0.5 and var w
-                ? $" · {l.Taunt} en recharge (encore {w:0} s)"
-                : l.TauntedBack ? $" · {l.Taunt} relancée dans les 5 s" : $" · {l.Taunt} était prête : relance-la";
+            var inlines = new InlineCollection { new Run($"à {Duration(l.Start)} : {who} a frappé {l.Who}{span} ({Fmt.Plural(l.Attacks, "attaque")}, {Fmt.Big(l.Damage)} dégâts)") };
+            if (l.Taunt is { } taunt)
+            {
+                // Ton sort de menace, son icône à gauche de son nom.
+                inlines.Add(new Run(" · "));
+                if (SpellIcon(taunt, null, r.Character.ClassCode, 14) is { } icon)
+                {
+                    icon.Margin = new Thickness(0, 0, 4, -3);
+                    inlines.Add(new InlineUIContainer(icon));
+                }
+                inlines.Add(new Run(l.TauntWait is > 0.5 and var w ? $"{taunt} en recharge (encore {w:0} s)"
+                    : l.TauntedBack ? $"{taunt} relancée dans les 5 s" : $"{taunt} était prête : relance-la"));
+            }
             panel.Children.Add(new Border
             {
                 BorderBrush = Tok.Warn, BorderThickness = new Thickness(2, 0, 0, 0), Padding = new Thickness(10, 2),
-                Child = T($"à {Duration(l.Start)} : {who} a frappé {l.Who}{span} ({Fmt.Plural(l.Attacks, "attaque")}, {Fmt.Big(l.Damage)} dégâts){taunt}",
-                    12, Tok.Text, wrap: true),
+                Child = new TextBlock { FontSize = 12, Foreground = Tok.Text, TextWrapping = TextWrapping.Wrap, Inlines = inlines },
             });
         }
         panel.Children.Add(T($"À part (pas des pertes d'aggro) : {Fmt.Plural(a.Zone, "sort")} de zone sur plusieurs joueurs à la fois, " +
@@ -4200,7 +4288,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                         Spacing = 2,
                         Children =
                         {
-                            T(f.Title, 13, null, FontWeight.SemiBold, wrap: true),
+                            WithIcon(FindingIcon(f.Title, p.ClassCode), T(f.Title, 13, null, FontWeight.SemiBold, wrap: true), 6),
                             T(f.Detail, 12, Tok.Text2, wrap: true).WithLineHeight(1.4),
                             f.Action is { } act ? T("→ " + act.Replace("écran Build", "Aion 2 Builder, écran Build"), 12, Accent.Main, wrap: true) : new Border(),
                         },
@@ -4227,7 +4315,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         DockPanel.SetDock(badge, Dock.Right);
         head.Children.Add(badge);
         head.Children.Add(T($"#{index + 1}", 12, Tok.Muted, mono: true));
-        var body = new StackPanel { Spacing = 10, Children = { head, T(f.Title, 14, Tok.Text, FontWeight.SemiBold, wrap: true).WithLineHeight(1.3) } };
+        var body = new StackPanel { Spacing = 10, Children = { head, WithIcon(FindingIcon(f.Title, r.Character.ClassCode, 18), T(f.Title, 14, Tok.Text, FontWeight.SemiBold, wrap: true).WithLineHeight(1.3)) } };
         if (review is { Possible: { } possible }) body.Children.Add(Pips(review.Skill.Uses, possible, 18));
         body.Children.Add(T(f.Action ?? f.Detail, 13, Tok.Text2, wrap: true).WithLineHeight(1.4));
         var id = $"combat:why:{index}";
