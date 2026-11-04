@@ -27,6 +27,8 @@ sealed class Program
             Environment.ExitCode = Updater.SelfTest();
             return;
         }
+        // Données et analyse du dernier perso lues sur un autre fil pendant qu'Avalonia démarre (voir Startup).
+        Startup.Begin();
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

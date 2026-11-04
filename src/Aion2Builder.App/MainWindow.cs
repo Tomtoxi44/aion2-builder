@@ -111,6 +111,8 @@ public sealed class MainWindow : Window
     readonly HashSet<string> autoRefreshed = [];
     List<ProgressPoint> progress = [];
     readonly CombatStore combatStore = new();
+    /// <summary>Analyse du dernier perso faite au lancement (<see cref="Startup"/>), reprise par le premier <see cref="Recompute"/>.</summary>
+    Startup.Analysis? startupAnalysis;
     /// <summary>Combats NotMeter importés pour le personnage affiché, le plus récent d'abord.</summary>
     List<(string Path, CombatLog Log)> combats = [];
     string? CurrentKey => currentPath is null ? null : System.IO.Path.GetFileNameWithoutExtension(currentPath);
@@ -144,8 +146,11 @@ public sealed class MainWindow : Window
             prefs.Save();
             if (tipHint is not null) tipHint.IsVisible = false;
         };
-        db = LoadData();
-        pets = petStore.Load();
+        // Données, fiches et analyse du dernier perso : préparées pendant le démarrage d'Avalonia (Startup), attendues ici si besoin.
+        var prepared = Startup.Take();
+        db = LoadData(prepared?.Db);
+        pets = prepared?.Pets ?? petStore.Load();
+        startupAnalysis = prepared?.First;
         region.SelectedItem = ArmoryClient.Regions.Contains(prefs.Region) ? prefs.Region : "eu";
         server.Text = prefs.Server;
         search.Text = prefs.Name;
@@ -211,7 +216,7 @@ public sealed class MainWindow : Window
 
         // Onglets de la dernière session (fichiers encore présents), puis le dernier personnage affiché.
         foreach (var path in (prefs.Tabs ?? []).Append(prefs.LastFile).OfType<string>().Distinct())
-            if (File.Exists(path) && TryLoad(path) is { } saved)
+            if (File.Exists(path) && (prepared?.Snapshots.GetValueOrDefault(path) ?? TryLoad(path)) is { } saved)
             {
                 tabs.Add(path);
                 opened[path] = saved;
@@ -253,11 +258,12 @@ public sealed class MainWindow : Window
 
     // ----- Données, personnage, rapport -----
 
-    GameDatabase LoadData()
+    /// <param name="loaded">Données déjà lues (au lancement, par <see cref="Startup"/>).</param>
+    GameDatabase LoadData(GameDatabase? loaded = null)
     {
         try
         {
-            var data = GameDataStore.Load();
+            var data = loaded ?? GameDataStore.Load();
             var custom = GameDataStore.Sources().Where(s => s.Overridden).Select(s => s.File).ToList();
             dataSource = custom.Count == 0 ? "données par défaut" : $"données personnalisées ({string.Join(", ", custom)})";
             return data;
@@ -314,18 +320,30 @@ public sealed class MainWindow : Window
     int Recompute()
     {
         if (current is null) { Render(); return 0; }
-        combats = CurrentKey is { } key ? combatStore.List(key) : [];
-        // Nouveaux combats du Pet Meter pour ce perso (même nom) : repris tout seuls.
-        // (et ceux convertis par une version plus ancienne du Builder, reconvertis).
         var fresh = 0;
-        if (CurrentKey is { } k)
+        // Au lancement : l'analyse faite pendant le démarrage d'Avalonia, sur la même fiche et dans le même mode, reprise telle quelle.
+        if (startupAnalysis is { } early && ReferenceEquals(early.Character, current) && early.Mode == prefs.Mode)
         {
-            fresh = PetMeterFights.Sync(combatStore, k, current.Name, db);
-            combats = combatStore.List(k);
-            if (fresh > 0) Toast($"{fresh} combat{(fresh > 1 ? "s" : "")} du Pet Meter", "Écran Combat : lancers, combos, temps morts, dégâts subis.");
+            inputs = early.Inputs;
+            combats = early.Combats;
+            fresh = early.Fresh;
+            report = early.Report;
         }
-        try { report = new Advisor(db).Analyze(current, prefs.Mode, inputs with { MyPeers = peerStore.For(current.ClassCode) }, pets.Collection, combats.Select(x => x.Log).ToList()); }
-        catch (InvalidOperationException ex) { report = null; SetStatus(ex.Message, error: true); state.Screen = Screen.Import; }
+        else
+        {
+            combats = CurrentKey is { } key ? combatStore.List(key) : [];
+            // Nouveaux combats du Pet Meter pour ce perso (même nom) : repris tout seuls.
+            // (et ceux convertis par une version plus ancienne du Builder, reconvertis).
+            if (CurrentKey is { } k)
+            {
+                fresh = PetMeterFights.Sync(combatStore, k, current.Name, db);
+                combats = combatStore.List(k);
+            }
+            try { report = new Advisor(db).Analyze(current, prefs.Mode, inputs with { MyPeers = peerStore.For(current.ClassCode) }, pets.Collection, combats.Select(x => x.Log).ToList()); }
+            catch (InvalidOperationException ex) { report = null; SetStatus(ex.Message, error: true); state.Screen = Screen.Import; }
+        }
+        startupAnalysis = null;
+        if (fresh > 0) Toast($"{fresh} combat{(fresh > 1 ? "s" : "")} du Pet Meter", "Écran Combat : lancers, combos, temps morts, dégâts subis.");
         if (report is not null) store.RecordScores(current, prefs.Mode, report.Scores, ProgressPoint.Todos(report.Findings));
         progress = store.Progress(current);
         Render();
@@ -1044,7 +1062,9 @@ public sealed class MainWindow : Window
         var cts = prepareCts = new CancellationTokenSource();
         var views = Views(r, new UiState());  // un état à part : la préparation ne touche pas à celui de l'écran
         new Thread(() => views.Prepare(cts.Token)) { IsBackground = true, Priority = ThreadPriority.BelowNormal, Name = "Préparation des écrans" }.Start();
-    }    ScrollViewer? contentScroll;
+    }
+
+    ScrollViewer? contentScroll;
     string? contentScrollKey;
 
     /// <summary>

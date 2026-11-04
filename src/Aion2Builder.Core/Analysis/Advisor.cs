@@ -16,12 +16,15 @@ public sealed class Advisor(GameDatabase db)
         var stats = new StatAnalyzer(db, petAdvisor.Sources(pets));
         var sp = stats.Profile(c, profile);
 
+        // Le plan Daevanion (le plus long : recherches de chemins) se calcule sur un autre fil pendant l'équipement et les
+        // compétences, dont il ne dépend pas (il ne lit que des données qui ne changent plus).
+        var planner = new DaevanionPlanner(db, stats);
+        var daevanionPlan = Task.Run(() => planner.Plan(c, profile, sp, inputs));
         var gearAdvisor = new GearAdvisor(db, stats);
         var gear = gearAdvisor.Plan(c, profile, sp);
         var skillAdvisor = new SkillAdvisor(db);
         var skills = skillAdvisor.Plan(c, profile, inputs, combats);
-        var planner = new DaevanionPlanner(db, stats);
-        var daevanion = planner.Plan(c, profile, sp, inputs);
+        var daevanion = daevanionPlan.GetAwaiter().GetResult();
         var engravingAdvisor = new EngravingAdvisor(db);
         var engravings = engravingAdvisor.Plan(c, profile, gear, sp);
         var petPlan = petAdvisor.Plan(pets, profile, sp);

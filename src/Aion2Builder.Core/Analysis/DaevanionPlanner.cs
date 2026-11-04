@@ -55,7 +55,7 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
 
     /// <summary>
     /// Plans déjà calculés, par perso affiché (l'objet chargé : une simulation « et si » en est une copie, recalculée). Le plan
-    /// coûte ~150 ms (recherches de chemins) et l'appli recalcule tout à chaque réglage : il est repris tel quel tant que rien
+    /// coûte quelques dizaines de ms (recherches de chemins) et l'appli recalcule tout à chaque réglage : il est repris tel quel tant que rien
     /// de ce dont il dépend ne change (mode, poids, équilibre des familles, totaux des stats, points non dépensés).
     /// </summary>
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<CharacterSnapshot, Dictionary<string, DaevanionPlan>> Memo = new();
@@ -110,6 +110,10 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
             return new PoolBudget(pool, poolBoards.Sum(b => b.Spent), inputs.UnspentFor(pool), poolBoards.Sum(b => b.Total));
         }).ToList();
 
+        // Importance de chaque case, calculée une fois (la réorganisation la demande des milliers de fois).
+        var known = new Dictionary<DaevanionNode, double>(ReferenceEqualityComparer.Instance);
+        double importance(DaevanionNode n) => known.TryGetValue(n, out var v) ? v : known[n] = Importance(n, ctx);
+
         var steps = new List<PlannedNode>();
         var respecs = new List<RespecPlan>();
         var routes = new List<DesignedRoute>();
@@ -130,8 +134,8 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
                 steps.Add(new PlannedNode(++order, pool, board, node, values[node.Id], NodeCost(node), passage, cumulative <= budget.Unspent, cumulative));
             }
 
-            respecs.Add(Respec(pool, poolBoards, grids, values, budget, n => Importance(n, ctx)));
-            routes.Add(Route(pool, poolBoards, grids, values, budget, n => Importance(n, ctx)));
+            respecs.Add(Respec(pool, poolBoards, grids, values, budget, importance));
+            routes.Add(Route(pool, poolBoards, grids, values, budget, importance));
         }
         return new DaevanionPlan(steps, summaries, budgets, respecs, routes);
     }
@@ -204,15 +208,19 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
     {
         var added = new List<(DaevanionBoard Board, DaevanionNode Node)>();
         double Value() => DaevanionPlanner.Value(boards, grids, values, chosen);
+        // Cases qu'on peut retirer sans couper le chemin, de la moins rentable à la plus rentable. Le test du chemin (un parcours
+        // du plateau) n'est fait que sur les premières dans cet ordre, jusqu'à en avoir assez : même résultat que tout tester
+        // puis trier (le tri garde l'ordre d'origine à égalité), sans parcourir le plateau pour chaque case ouverte.
+        IEnumerable<(DaevanionBoard Board, (int, int) Cell, DaevanionNode Node)> Leaves() => boards.SelectMany(b => chosen[b.Id]
+                .Where(cell => !starts[b.Id].Contains(cell) && importance(grids[b.Id][cell]) < db.Settings.Daevanion.RespecMaxImportance)
+                .Select(cell => (Board: b, Cell: cell, Node: grids[b.Id][cell])))
+            .OrderBy(x => values[x.Node.Id] / NodeCost(x.Node))
+            .Where(x => KeepsConnected(chosen[x.Board.Id], starts[x.Board.Id], x.Cell));
 
         for (var accepted = 0; accepted < 80;)
         {
             var before = Value();
-            var leaves = boards.SelectMany(b => chosen[b.Id]
-                    .Where(cell => !starts[b.Id].Contains(cell) && importance(grids[b.Id][cell]) < db.Settings.Daevanion.RespecMaxImportance
-                        && KeepsConnected(chosen[b.Id], starts[b.Id], cell))
-                    .Select(cell => (Board: b, Cell: cell, Node: grids[b.Id][cell])))
-                .OrderBy(x => values[x.Node.Id] / NodeCost(x.Node)).Take(8).ToList();
+            var leaves = Leaves().Take(8).ToList();
             var improved = false;
             foreach (var first in leaves)
             {
@@ -231,11 +239,7 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
                     }
                     foreach (var t in trial) chosen[t.Board.Id].Remove((t.Node.Row, t.Node.Col));
                     if (removed.Count >= 3) break;
-                    var next = boards.SelectMany(b => chosen[b.Id]
-                            .Where(cell => !starts[b.Id].Contains(cell) && importance(grids[b.Id][cell]) < db.Settings.Daevanion.RespecMaxImportance
-                        && KeepsConnected(chosen[b.Id], starts[b.Id], cell))
-                            .Select(cell => (Board: b, Cell: cell, Node: grids[b.Id][cell])))
-                        .OrderBy(x => values[x.Node.Id] / NodeCost(x.Node)).FirstOrDefault();
+                    var next = Leaves().FirstOrDefault();
                     if (next.Node is null || values[next.Node.Id] / NodeCost(next.Node) > values[first.Node.Id] / NodeCost(first.Node) * 2 + 0.05) break;
                     chosen[next.Board.Id].Remove(next.Cell);
                     removed.Add(next);
@@ -276,11 +280,16 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
     {
         var spent = 0.0;
         var count = 0;
+        // Chemins possibles par plateau, gardés d'un tour à l'autre : seul le plateau où l'on vient d'ouvrir des cases change.
+        var paths = new Dictionary<int, List<(List<DaevanionNode> Path, double Value, double Cost)>>();
         while (count < maxNodes)
         {
             (DaevanionBoard Board, List<DaevanionNode> Path, double Ratio, double Value)? best = null;
             foreach (var b in boards)
-                foreach (var (path, value, cost) in Candidates(grids[b.Id], open[b.Id], values, db.Settings.Daevanion.MaxPathLength))
+            {
+                if (!paths.TryGetValue(b.Id, out var candidates))
+                    paths[b.Id] = candidates = Candidates(grids[b.Id], open[b.Id], values, db.Settings.Daevanion.MaxPathLength).ToList();
+                foreach (var (path, value, cost) in candidates)
                 {
                     if (spent + cost > budget + 1e-9) continue;
                     var ratio = value / cost;
@@ -288,9 +297,11 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
                                           || Math.Abs(ratio - best.Value.Ratio) < 1e-9 && value > best.Value.Value))
                         best = (b, path, ratio, value);
                 }
+            }
             if (best is not { } pick) yield break;
 
             var target = pick.Path[^1];
+            paths.Remove(pick.Board.Id);
             foreach (var n in pick.Path)
             {
                 open[pick.Board.Id].Add((n.Row, n.Col));

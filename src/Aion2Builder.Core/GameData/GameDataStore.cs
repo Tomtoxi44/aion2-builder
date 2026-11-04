@@ -32,18 +32,21 @@ public static class GameDataStore
 
     public static GameDatabase Load(string? overrideDir = null)
     {
-        overrideDir ??= AppPaths.DataDir;
-        return new GameDatabase(
-            Read<StatCatalogFile>("stats.json", overrideDir),
-            Read<ClassesFile>("classes.json", overrideDir),
-            Read<ProgressionFile>("progression.json", overrideDir),
-            Read<SettingsFile>("settings.json", overrideDir),
-            Read<SpellsFile>("spells.json", overrideDir),
-            // Toujours celui de l'application : relevé chaque semaine, une copie gardée dans le dossier utilisateur le figerait.
-            JsonSerializer.Deserialize<BenchmarkFile>(ReadEmbedded(BenchmarkFileName), Json),
-            // Relevé avec les joueurs de comparaison, chaque semaine ; absent avant le premier relevé.
-            typeof(GameDataStore).Assembly.GetManifestResourceInfo($"Aion2Builder.Defaults.{GearOptionsFileName}") is null ? null
-                : JsonSerializer.Deserialize<GearOptionsFile>(ReadEmbedded(GearOptionsFileName), Json));
+        var dir = overrideDir ?? AppPaths.DataDir;
+        // Les fichiers sont lus en même temps (un fil chacun) : au lancement, c'est autant de moins avant la première analyse.
+        // Une erreur est rendue telle quelle, dans l'ordre des fichiers, comme une lecture l'un après l'autre.
+        static T Wait<T>(Task<T> task) => task.GetAwaiter().GetResult();
+        var stats = Task.Run(() => Read<StatCatalogFile>("stats.json", dir));
+        var classes = Task.Run(() => Read<ClassesFile>("classes.json", dir));
+        var progression = Task.Run(() => Read<ProgressionFile>("progression.json", dir));
+        var settings = Task.Run(() => Read<SettingsFile>("settings.json", dir));
+        var spells = Task.Run(() => Read<SpellsFile>("spells.json", dir));
+        // Toujours celui de l'application : relevé chaque semaine, une copie gardée dans le dossier utilisateur le figerait.
+        var benchmark = Task.Run(() => JsonSerializer.Deserialize<BenchmarkFile>(ReadEmbedded(BenchmarkFileName), Json));
+        // Relevé avec les joueurs de comparaison, chaque semaine ; absent avant le premier relevé.
+        var gearOptions = Task.Run(() => typeof(GameDataStore).Assembly.GetManifestResourceInfo($"Aion2Builder.Defaults.{GearOptionsFileName}") is null ? null
+            : JsonSerializer.Deserialize<GearOptionsFile>(ReadEmbedded(GearOptionsFileName), Json));
+        return new GameDatabase(Wait(stats), Wait(classes), Wait(progression), Wait(settings), Wait(spells), Wait(benchmark), Wait(gearOptions));
     }
 
     public const string GearOptionsFileName = "gear-options.json";
