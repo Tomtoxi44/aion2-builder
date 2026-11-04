@@ -4435,7 +4435,9 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             kpis.Children.Add(Kpi("Ratées", g.Count > 0 ? $"{Fmt.Big(g.Failed)} · {Fmt.Pct((double)g.Failed / g.Count)}" : Fmt.Big(g.Failed),
                 g.Failed > 0 ? Tok.Warn : null).WithMargin(0, 0, 10, 0));
             kpis.Children.Add(Kpi("Rang supérieur", Fmt.Big(g.Better), g.Better > 0 ? Tok.Info : null).WithMargin(0, 0, 10, 0));
-            kpis.Children.Add(Kpi("Éclatantes (jaunes)", Fmt.Big(radiant), radiant > 0 ? unique : null));
+            // Avec leur fréquence (« 1 sur 200 récoltes ») : comparer ses journées, ses zones.
+            kpis.Children.Add(Kpi("Éclatantes (jaunes)", radiant > 0 && g.Count >= radiant
+                ? $"{Fmt.Big(radiant)} · 1 sur {Fmt.Big(Math.Round((double)g.Count / radiant))}" : Fmt.Big(radiant), radiant > 0 ? unique : null));
             blocks.Add(kpis);
             blocks.Add(T("Récoltes : le compteur du jeu (récoltes commencées, ratées comprises, même faites sans le Pet Meter). Ratées, rang " +
                 "supérieur et ressources : ce que le Pet Meter a vu. Éclatantes : les ressources de rang 4 (« … éclatant »), de rareté Unique, " +
