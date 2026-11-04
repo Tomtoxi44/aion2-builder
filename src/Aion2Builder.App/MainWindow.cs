@@ -29,7 +29,8 @@ sealed record UiPrefs(string Region = "eu", string Server = "", string Name = ""
     int Tab = 0, string Screen = "Home", string Accent = "Orange", bool AutoUpdate = true,
     List<string>? Tabs = null, double InspectorWidth = 340, bool InspectorHidden = false, int AutoRefreshHours = 0,
     List<string>? Mine = null, bool BottomHidden = false, double BottomHeight = 190, string BottomTab = "advice", List<string>? RailOrder = null, string GearPage = "Overview", string SkillPage = "Overview", string BuildPage = "Compare", bool SideHidden = false,
-    bool TipsSeen = false, int UiVersion = 1, bool DetailsByNeed = false, bool AutoInstall = true, string? AutoInstallFailed = null)
+    bool TipsSeen = false, int UiVersion = 1, bool DetailsByNeed = false, bool AutoInstall = true, string? AutoInstallFailed = null,
+    string? PetMeterExe = null)
 {
     static string PathOf => System.IO.Path.Combine(AppPaths.Root, "ui.json");
 
@@ -612,7 +613,9 @@ public sealed class MainWindow : Window
                     ("Paramètres…  Ctrl+,", () => ShowOverlay(Overlay.Settings)), ("Quitter", Close)),
                 Menu("Personnage", ("Actualiser depuis le site officiel  Ctrl+R", () => _ = RefreshAsync()), ("Changer de personnage", ShowImport),
                     ("Fermer l'onglet  Ctrl+W", () => { if (currentPath is not null) CloseTab(currentPath); })),
-                Menu("Données", ("Recharger les données", ReloadData), ("Actualiser les familiers (Aion 2 Todo)", () => _ = PetsAsync(null)), ("Ouvrir le dossier des données", OpenDataFolder)),
+                Menu("Données", ("Recharger les données", ReloadData), ("Actualiser les familiers (Aion 2 Todo)", () => _ = PetsAsync(null)), ("Ouvrir le dossier des données", OpenDataFolder),
+                    ("Lancer le Pet Meter", () => _ = PetMeterAsync()),
+                    ("Choisir l'exe du Pet Meter…", () => _ = ChoosePetMeterAsync())),
                 Menu("Aide", ("Raccourcis clavier  F1", () => ShowOverlay(Overlay.Shortcuts)),
                     ("Comment c'est calculé ?", () => Update(st => { st.Screen = report is null ? Screen.Import : Screen.Home; st.HomeHow = true; })),
                     ("Vérifier les mises à jour", () => _ = CheckUpdateAsync(manual: true)),
@@ -1367,11 +1370,126 @@ public sealed class MainWindow : Window
         left.Children.Add(statusText);
 
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16, VerticalAlignment = VerticalAlignment.Center };
+        right.Children.Add(MeterPill());
         if (current is not null) right.Children.Add(T($"importé {current.FetchedAtUtc.ToLocalTime():dd/MM HH:mm}", 11, Tok.StatusText, mono: true));
         right.Children.Add(T(dataSource, 11, Tok.StatusText, mono: true));
         right.Children.Add(T(Updater.CurrentLabel, 11, Tok.StatusText, mono: true));
         DockPanel.SetDock(right, Dock.Right);
         return new Border { Background = Accent.Bar, Padding = new Thickness(12, 0), Child = new DockPanel { Children = { right, left } } };
+    }
+
+    // ----- Pet Meter : pastille d'état et lancement -----
+
+    PetMeterLink.Status? meter;
+    TextBlock? meterText;
+    Border? meterPill;
+    DispatcherTimer? meterTimer;
+    bool meterStarting;
+
+    /// <summary>
+    /// Pastille de la barre d'état : le Pet Meter en route ou non (relu toutes les 5 s), sa version, ta clé Aion 2 Todo, ses
+    /// derniers combat et récolte reçus (infobulle) ; un clic le lance s'il est arrêté.
+    /// </summary>
+    Control MeterPill()
+    {
+        if (meterTimer is null)
+        {
+            meterTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            meterTimer.Tick += (_, _) => _ = RefreshMeterAsync();
+            meterTimer.Start();
+            _ = RefreshMeterAsync();
+        }
+        meterText = T("", 11, Tok.StatusText, FontWeight.SemiBold, mono: true);
+        meterPill = Clickable(meterText, () => _ = PetMeterAsync(), hover: Tok.Alpha(Brushes.White, 0.12), padding: new Thickness(6, 0));
+        ShowMeter();
+        return meterPill;
+    }
+
+    async Task RefreshMeterAsync()
+    {
+        var chosen = prefs.PetMeterExe;
+        PetMeterLink.Status status;
+        try { status = PetMeterLink.WithKey(await Task.Run(() => PetMeterLink.Read(chosen))); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException) { return; }
+        // Trouvé en cours d'exécution ailleurs que l'exe retenu : c'est celui-là qu'on relancera.
+        if (status.Running && status.Exe is { } exe && exe != prefs.PetMeterExe && (prefs.PetMeterExe is null || !File.Exists(prefs.PetMeterExe)))
+        {
+            prefs = prefs with { PetMeterExe = exe };
+            prefs.Save();
+        }
+        if (status == meter) return;
+        meter = status;
+        ShowMeter();
+    }
+
+    void ShowMeter()
+    {
+        if (meterText is null || meterPill is null) return;
+        var m = meter;
+        meterText.Text = m is null ? "Pet Meter…" : m.Running ? $"● Pet Meter{(m.Version is { } v ? $" {v}" : "")}" : meterStarting ? "Pet Meter : lancement…" : "▶ lancer le Pet Meter";
+        ToolTip.SetTip(meterPill, MeterTip(m));
+    }
+
+    /// <summary>État détaillé (infobulle), une ligne par point.</summary>
+    static string MeterTip(PetMeterLink.Status? m) => m is null ? "Pet Meter : lecture de son état…" : string.Join("\n",
+        m.Running ? "Pet Meter en route" : m.Exe is null ? "Pet Meter arrêté, introuvable : clic pour choisir son exe (aion2-pet-meter.exe)" : "Pet Meter arrêté : clic pour le lancer",
+        $"Version : {m.Version ?? "non lue"}{(m.Version is not null && !m.Running ? " (celle de son dernier fichier)" : "")}",
+        $"Exe : {m.Exe ?? "introuvable (Données → Choisir l'exe du Pet Meter…)"}",
+        $"Clé Aion 2 Todo : {(m.Key ? "trouvée (familiers et récolte de ton compte)" : "aucune (à coller dans le Pet Meter : ⋯ → Clé de synchro)")}",
+        $"Dernier combat reçu : {Ago(m.LastFight) ?? "aucun"}",
+        $"Dernière récolte reçue : {Ago(m.LastGather) ?? "aucune"}");
+
+    /// <summary>« 04/11 18:57 (il y a 3 h) ».</summary>
+    static string? Ago(DateTime? at) => at is not { } t ? null : $"{t:dd/MM HH:mm} ({(DateTime.Now - t) switch
+    {
+        var d when d.TotalMinutes < 60 => $"il y a {Math.Max(1, (int)d.TotalMinutes)} min",
+        var d when d.TotalHours < 24 => $"il y a {(int)d.TotalHours} h",
+        var d => $"il y a {(int)d.TotalDays} j",
+    }})";
+
+    /// <summary>Lance le Pet Meter s'il ne tourne pas (exe trouvé, sinon à choisir) ; en route, rappelle son état.</summary>
+    async Task PetMeterAsync()
+    {
+        var status = meter = PetMeterLink.WithKey(await Task.Run(() => PetMeterLink.Read(prefs.PetMeterExe)));
+        ShowMeter();
+        if (status.Running)
+        {
+            Toast("Le Pet Meter tourne déjà", $"{status.Version ?? "version non lue"} · clé Aion 2 Todo {(status.Key ? "trouvée" : "absente")} · " +
+                $"dernier combat {Ago(status.LastFight) ?? "aucun"} · dernière récolte {Ago(status.LastGather) ?? "aucune"}");
+            return;
+        }
+        if (meterStarting || (status.Exe ?? await ChoosePetMeterAsync()) is not { } exe) return;
+        try
+        {
+            PetMeterLink.Start(exe);
+            meterStarting = true;
+            SetStatus("Pet Meter lancé");
+            Toast("Pet Meter lancé", "Il lit le trafic du jeu pendant que tu joues : ses combats et sa récolte arrivent ici tout seuls.");
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or FileNotFoundException)
+        {
+            SetStatus($"Lancement du Pet Meter impossible : {ex.Message}", error: true);
+            Toast("Lancement du Pet Meter impossible", ex.Message, error: true);
+            return;
+        }
+        ShowMeter();
+        // Un exe « un seul fichier » met quelques secondes à démarrer : la pastille se met à jour ensuite.
+        DispatcherTimer.RunOnce(() => { meterStarting = false; _ = RefreshMeterAsync(); }, TimeSpan.FromSeconds(4));
+    }
+
+    async Task<string?> ChoosePetMeterAsync()
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "Où est le Pet Meter (aion2-pet-meter.exe) ?",
+            AllowMultiple = false,
+            FileTypeFilter = [new Avalonia.Platform.Storage.FilePickerFileType("Programme") { Patterns = ["*.exe"] }],
+        });
+        if (files.FirstOrDefault(f => f.Path.IsFile)?.Path.LocalPath is not { } path) return null;
+        prefs = prefs with { PetMeterExe = path };
+        prefs.Save();
+        _ = RefreshMeterAsync();
+        return path;
     }
 
     // ----- Import -----
