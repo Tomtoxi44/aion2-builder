@@ -1,0 +1,53 @@
+name: Installeur
+
+# Installeur unique (Builder + Pet Meter) : reconstruit après chaque version du Builder avec les dernières versions des
+# deux applis, puis ajouté à la version GitHub du Builder (lien stable :
+# https://github.com/Tomtoxi44/aion2-builder/releases/latest/download/Aion2-Setup.exe).
+on:
+  workflow_run:
+    workflows: [Build]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  setup:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'pull_request')
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dernières versions publiées
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $builder = gh release view -R Tomtoxi44/aion2-builder --json tagName -q .tagName
+          $petMeter = gh release view -R Tomtoxi44/aion2-pet-meter --json tagName -q .tagName
+          New-Item -ItemType Directory -Force dist | Out-Null
+          gh release download $builder -R Tomtoxi44/aion2-builder -p "Aion2Builder.exe" -D dist --clobber
+          gh release download $petMeter -R Tomtoxi44/aion2-pet-meter -p "*.exe" -D dist --clobber
+          $pm = Get-ChildItem dist -Filter "*.exe" | Where-Object Name -ne "Aion2Builder.exe" | Select-Object -First 1
+          if ($pm.Name -ne "aion2-pet-meter.exe") { Rename-Item $pm.FullName "aion2-pet-meter.exe" }
+          Get-ChildItem dist | Format-Table Name, Length
+          "BUILDER_TAG=$builder" >> $env:GITHUB_ENV
+          "PM_TAG=$petMeter" >> $env:GITHUB_ENV
+
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc "/DBuilderVersion=$($env:BUILDER_TAG.TrimStart('v'))" "/DPetMeterVersion=$($env:PM_TAG.TrimStart('v'))" installer\aion2.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup a échoué" }
+          Get-Item installer\Output\Aion2-Setup.exe | Format-Table Name, Length
+
+      - name: Ajout à la version du Builder
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: gh release upload $env:BUILDER_TAG installer\Output\Aion2-Setup.exe --clobber -R Tomtoxi44/aion2-builder
