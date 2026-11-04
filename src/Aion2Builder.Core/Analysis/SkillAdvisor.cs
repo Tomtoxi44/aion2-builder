@@ -389,7 +389,9 @@ public sealed partial class SkillAdvisor(GameDatabase db)
 
         var remove = plan.ToRemove.ToList();
         var add = plan.ToAdd.ToList();
-        string Line(SkillAdvice a) => $"« {a.Skill.Name} » ({a.Role}) : {Levels(a)}. {(a.Delta < 0 ? a.Decision : a.Reason)}";
+        // Retirer des points d'une compétence dont l'effet n'est décrit par aucun guide (« à valider ») : à vérifier en jeu d'abord.
+        string Line(SkillAdvice a) => $"« {a.Skill.Name} » ({a.Role}) : {Levels(a)}. {(a.Delta < 0 ? a.Decision : a.Reason)}" +
+            (a.Delta < 0 && a.Unverified ? " Effet non décrit par les guides : regarde son infobulle en jeu avant de retirer ces points." : "");
         // Important seulement si une compétence monte vers son niveau visé (c'est ce que mesure la note Compétences) ; monter
         // au-delà, jusqu'au maximum, avec des points posés trop haut ailleurs est un petit gain (note et « Et si » ne bougent pas).
         // Important : une compétence majeure sous son niveau visé, ou au moins 3 points qui manquent aux niveaux visés.
@@ -399,7 +401,8 @@ public sealed partial class SkillAdvisor(GameDatabase db)
             ? "Déjà au niveau visé partout : ces points montent des compétences plus utiles au-delà (jusqu'au maximum), un petit gain qui ne change pas la note."
             : $"Il ne manque que {Fmt.Plural(missing, "point")} aux niveaux visés ; le reste monte des compétences plus utiles au-delà (jusqu'au maximum) : un petit gain, la note bouge à peine.";
         if (remove.Count > 0)
-            findings.Add(new Finding(Area.Skills, toTarget ? Severity.Important : Severity.Advice, $"Compétences : retire des points à {string.Join(", ", remove.Select(a => a.Skill.Name))}",
+            findings.Add(new Finding(Area.Skills, toTarget && remove.Any(a => !a.Unverified) ? Severity.Important : Severity.Advice,
+                $"Compétences : retire des points à {string.Join(", ", remove.Select(a => a.Skill.Name))}",
                 (toTarget ? "" : Beyond + "\n") + string.Join("\n", remove.Select(Line)),
                 $"Réinitialise tes compétences (gratuit) et refais la répartition {mode} de l'onglet Compétences : ces points servent davantage ailleurs.",
                 60 + 5 * remove.Sum(a => -a.Delta) * remove.Max(a => 1 - a.Priority) / 3));

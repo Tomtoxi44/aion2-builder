@@ -4434,6 +4434,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             blocks.Add(T("Récoltes : le compteur du jeu (récoltes commencées, ratées comprises, même faites sans le Pet Meter). Ratées, rang " +
                 "supérieur et ressources : ce que le Pet Meter a vu. Éclatantes : les ressources de rang 4 (« … éclatant »), de rareté Unique, " +
                 "en jaune dans le jeu.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+            blocks.Add(GatherDays(days, pick, server.Key, gameToday, span == 30 ? 30 : 14, unique, Pick));
             if (items.Count > 0)
             {
                 const string rankCols = "*,110,200";
@@ -4475,6 +4476,58 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 TableHeader(cols, "Perso", "Kinah"), rows));
         }
         return Page($"Récolte · {period}", Choice(options), blocks.ToArray());
+    }
+
+    /// <summary>
+    /// Récolte jour par jour : une colonne par jour de jeu (les plus récents à droite), la barre = récoltes du jour sur le plafond
+    /// (verte au plafond), en jaune dessous les éclatantes ; le survol donne le détail, un clic ouvre le jour.
+    /// </summary>
+    Control GatherDays(IReadOnlyList<GatherDay> days, string pick, string? serverKey, DateOnly today, int count, IBrush unique, Action<string> open)
+    {
+        var fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
+        var byDay = days.ToDictionary(d => d.Day);
+        var cap = days.FirstOrDefault()?.Cap ?? 1000;
+        var grid = new Grid();
+        for (var i = 0; i < count; i++) grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+        for (var i = 0; i < count; i++)
+        {
+            var date = today.AddDays(i - count + 1);
+            var key = date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            var day = byDay.GetValueOrDefault(key);
+            // Le serveur montré par la page ; sans serveur choisi, tous.
+            var servers = day?.Servers is not { } all ? new List<GatherServer>()
+                : serverKey is null ? all.Values.ToList()
+                : all.TryGetValue(serverKey, out var one) ? [one] : [];
+            var gathered = servers.Sum(s => s.Count);
+            var radiant = servers.SelectMany(s => s.Items ?? []).Where(x => x.Rank == 4).Sum(x => x.Qty);
+            var selected = pick == key;
+            var bar = new Border
+            {
+                Height = gathered > 0 ? Math.Max(2, 80.0 * Math.Min(1, gathered / (double)cap)) : 0, VerticalAlignment = VerticalAlignment.Bottom,
+                Background = gathered >= cap ? Tok.Good : Accent.Main, CornerRadius = new CornerRadius(2, 2, 0, 0), Margin = new Thickness(3, 0),
+            };
+            var track = new Border { Height = 80, Child = bar, Background = selected ? Tok.Hover : Brushes.Transparent, CornerRadius = new CornerRadius(3) };
+            var column = new StackPanel
+            {
+                Spacing = 2,
+                Children =
+                {
+                    track,
+                    T(date.Day.ToString(fr), 10, selected ? Tok.Text : Tok.Muted, mono: true).Centered(),
+                    T(radiant > 0 ? $"{radiant}" : " ", 10, unique, FontWeight.SemiBold, mono: true).Centered(),
+                },
+            };
+            var tip = $"{date.ToString("dddd d MMMM", fr)} : " + (day is null ? "rien d'enregistré"
+                : $"{Fmt.Big(gathered)} récoltes sur {Fmt.Big(cap)}, {Fmt.Big(servers.Sum(s => s.Failed))} ratées, " +
+                  $"{Fmt.Big(servers.Sum(s => s.Better))} au rang supérieur, {Fmt.Plural(radiant, "éclatante")}");
+            Control cell = day is null ? column : Clickable(column, () => open(key), hover: Tok.HoverStrong);
+            cell = Tip(cell, tip);
+            Grid.SetColumn(cell, i);
+            grid.Children.Add(cell);
+        }
+        var legend = T($"Hauteur : récoltes du jour sur {Fmt.Big(cap)} (verte au plafond) · en jaune : les éclatantes · clic : ouvrir le jour",
+            11, Tok.Muted, wrap: true);
+        return Card(new StackPanel { Spacing = 8, Children = { grid, legend } }, "Jour par jour", T($"{count} derniers jours", 11, Tok.Muted, mono: true));
     }
 
     Control ProgressScreen()
