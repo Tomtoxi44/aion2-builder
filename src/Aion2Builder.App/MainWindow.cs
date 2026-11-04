@@ -29,7 +29,7 @@ sealed record UiPrefs(string Region = "eu", string Server = "", string Name = ""
     int Tab = 0, string Screen = "Home", string Accent = "Orange", bool AutoUpdate = true,
     List<string>? Tabs = null, double InspectorWidth = 340, bool InspectorHidden = false, int AutoRefreshHours = 0,
     List<string>? Mine = null, bool BottomHidden = false, double BottomHeight = 190, string BottomTab = "advice", List<string>? RailOrder = null, string GearPage = "Overview", string SkillPage = "Overview", string BuildPage = "Compare", bool SideHidden = false,
-    bool TipsSeen = false, int UiVersion = 1, bool DetailsByNeed = false)
+    bool TipsSeen = false, int UiVersion = 1, bool DetailsByNeed = false, bool AutoInstall = true, string? AutoInstallFailed = null)
 {
     static string PathOf => System.IO.Path.Combine(AppPaths.Root, "ui.json");
 
@@ -591,7 +591,8 @@ public sealed class MainWindow : Window
                 Menu("Aide", ("Raccourcis clavier  F1", () => ShowOverlay(Overlay.Shortcuts)),
                     ("Comment c'est calculé ?", () => Update(st => { st.Screen = report is null ? Screen.Import : Screen.Home; st.HomeHow = true; })),
                     ("Vérifier les mises à jour", () => _ = CheckUpdateAsync(manual: true)),
-                    ($"{(prefs.AutoUpdate ? "✓ " : "")}Vérifier automatiquement (au lancement, puis toutes les 6 h)", ToggleAutoUpdate)),
+                    ($"{(prefs.AutoUpdate ? "✓ " : "")}Vérifier automatiquement (au lancement, puis toutes les 6 h)", ToggleAutoUpdate),
+                    ($"{(prefs.AutoInstall ? "✓ " : "")}Installer toute seule au lancement", ToggleAutoInstall)),
             },
         };
 
@@ -1892,9 +1893,23 @@ public sealed class MainWindow : Window
         Render();
     }
 
+    /// <summary>Mise à jour sans clic (activée par défaut) : décochée, la pastille « ⬆ disponible » attend ton clic comme avant.</summary>
+    void ToggleAutoInstall()
+    {
+        prefs = prefs with { AutoInstall = !prefs.AutoInstall, AutoInstallFailed = null };
+        prefs.Save();
+        SetStatus(prefs.AutoInstall ? "les mises à jour s'installeront toutes seules au lancement" : "mises à jour à la demande : clique la pastille « ⬆ disponible »");
+        Render();
+    }
+
+    /// <summary>Seule la vérification du lancement installe d'elle-même : jamais en cours d'utilisation (vérifications toutes les 6 h).</summary>
+    bool startupCheckDone;
+
     async Task CheckUpdateAsync(bool manual)
     {
         if (installing || !manual && !prefs.AutoUpdate) return;
+        var atStartup = !manual && !startupCheckDone;  // même si le site ne répond pas : les vérifications suivantes n'installent jamais
+        if (!manual) startupCheckDone = true;
         if (Updater.Current is null)
         {
             if (manual) SetStatus("build locale (publier.cmd) : mets-la à jour avec git pull puis publier.cmd");
@@ -1908,10 +1923,17 @@ public sealed class MainWindow : Window
             return;
         }
         if (manual && update is null) SetStatus($"Aion 2 Builder est à jour ({Updater.CurrentLabel})");
+        // Au lancement, sans clic : une version que Windows a déjà refusée ici n'est pas retentée toute seule (pastille seulement).
+        if (atStartup && update is { } found && prefs.AutoInstall && prefs.AutoInstallFailed != found.Version)
+        {
+            SetStatus($"Nouvelle version {found.Label} : installation automatique (Aide → décocher « Installer toute seule au lancement » pour choisir le moment)");
+            await InstallUpdateAsync(auto: true);
+            return;
+        }
         Render();
     }
 
-    async Task InstallUpdateAsync()
+    async Task InstallUpdateAsync(bool auto = false)
     {
         if (update is not { } release || installing) return;
         installing = true;
@@ -1924,6 +1946,7 @@ public sealed class MainWindow : Window
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
         {
             installing = false;
+            if (auto) { prefs = prefs with { AutoInstallFailed = release.Version }; prefs.Save(); }
             SetStatus($"Mise à jour impossible : {ex.Message}", error: true);
             Render();
         }
