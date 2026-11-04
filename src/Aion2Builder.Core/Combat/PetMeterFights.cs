@@ -15,8 +15,8 @@ public static class PetMeterFights
     /// <summary>Version de la conversion (2 : lancers groupés à 0,6 s, noms des enchaînements du Templier ; 3 : type du combat ;
     /// 4 : dégâts seconde par seconde sur la cible principale et combat entier ; 5 : « Boss (code …) » pour un boss sans nom ;
     /// 6 : nom du boss d'après bosses.json ; 7 : de nouveau « Boss (code …) », les noms relevés sans permission étant retirés ;
-    /// 8 : joueurs du combat, Pet Meter v0.19.0).</summary>
-    public const int Version = 10;
+    /// 8 : joueurs du combat, Pet Meter v0.19.0 ; 11 : dégâts reçus et soins reçus seconde par seconde).</summary>
+    public const int Version = 11;
 
     /// <summary>Types de combats gardés : boss, mannequin, JcJ (« other » : un pack de monstres, un monstre achevé).</summary>
     public static readonly HashSet<string> KeptKinds = ["boss", "dummy", "pvp"];
@@ -88,7 +88,7 @@ public static class PetMeterFights
     public sealed record Fight(int Version, string Meter, string Character, long Entity, string Start, string StartUtc, double Duration,
         double Damage, int Hits, FightTarget Target, List<FightSkill> Skills, List<double[]> Casts, FightTaken Taken, FightHeals Heals, long Map = 0,
         string? Kind = null, List<double>? Timeline = null, FightWhole? Whole = null, List<FightPlayer>? Players = null, FightGroup? Group = null,
-        List<FightBossHit>? Aggro = null);
+        List<FightBossHit>? Aggro = null, List<double>? TakenTimeline = null, List<double>? HealsTimeline = null);
     /// <summary>Un coup du boss (Pet Meter v0.21.2) : secondes depuis ton premier coup, sort, cible (« me », un nom, « Classe n » ;
     /// null pour une créature), joueur ou non, dégâts.</summary>
     public sealed record FightBossHit(double T, long Skill, string? To, bool Player, double Damage);
@@ -190,7 +190,7 @@ public static class PetMeterFights
             SkillCount = skills.Count, Skills = skills.OrderByDescending(s => s.Damage).ToList(), Pages = 0,
             SourceFile = Path.GetFileName(path), DamageTaken = f.Taken.Damage, HitsTaken = f.Taken.Hits, MaxTaken = f.Taken.Max,
             Heals = f.Heals.Amount, Casts = casts, Map = f.Map > 0 ? f.Map : null,
-            Timeline = f.Timeline, WholeDuration = f.Whole?.Duration, WholeDamage = f.Whole?.Damage, FocusOffset = f.Whole?.Offset,
+            Timeline = f.Timeline, TakenTimeline = f.TakenTimeline, HealsTimeline = f.HealsTimeline, WholeDuration = f.Whole?.Duration, WholeDamage = f.Whole?.Damage, FocusOffset = f.Whole?.Offset,
             Players = f.Players is { Count: > 0 } players ? players.Select(p => Player(p, db)).ToList() : null, GroupDuration = f.Group?.Duration,
             BossHits = f.Aggro is { Count: > 0 } aggro ? aggro.Select(h => new CombatBossHit(h.T, h.Skill, h.To, h.Player, h.Damage)).ToList() : null,
         };

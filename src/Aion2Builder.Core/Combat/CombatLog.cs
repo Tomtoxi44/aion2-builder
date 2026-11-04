@@ -34,6 +34,9 @@ public sealed record CombatLog
     /// sur elle seconde par seconde, et le combat entier (adds et monstres d'avant compris) avec le moment où elle a été frappée.
     /// </summary>
     public List<double>? Timeline { get; init; }
+    /// <summary>Dégâts reçus et soins reçus seconde par seconde, alignés sur <see cref="Timeline"/> ; null sans eux (Pet Meter plus ancien).</summary>
+    public List<double>? TakenTimeline { get; init; }
+    public List<double>? HealsTimeline { get; init; }
     public double? WholeDuration { get; init; }
     public double? WholeDamage { get; init; }
     public double? FocusOffset { get; init; }

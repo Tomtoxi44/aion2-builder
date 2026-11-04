@@ -3473,6 +3473,10 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var mid = values.Count / 2;
         var axis = ColumnsSpaced("*,*,*", 0, T("0 s", 11, Tok.Muted, mono: true), T(Duration(mid), 11, Tok.Muted, mono: true).Centered(),
             T(Duration(values.Count), 11, Tok.Muted, mono: true).AlignRight());
+        var charts = new StackPanel { Spacing = 6, Children = { chart } };
+        (Control Strip, Control Text)? survival = log.TakenTimeline is not null || log.HealsTimeline is not null ? Survival(log, values.Count) : null;
+        if (survival is not null) charts.Children.Add(survival.Value.Strip);
+        charts.Children.Add(axis);
         var text = new StackPanel { Spacing = 4 };
         text.Children.Add(T($"De ton premier à ton dernier coup sur {who} : {Duration(log.Duration)}, {Fmt.Big(log.TotalDamage)} dégâts, " +
                             $"{Fmt.Big(log.Dps)} par seconde.", 13, Tok.Text, wrap: true));
@@ -3481,8 +3485,169 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                                 $"tu as commencé à frapper {who} à {Duration(offset)}. Le reste de l'écran ne compte que {who}.", 12, Tok.Text2, wrap: true).WithLineHeight(1.4));
         if (idle > 0)
             text.Children.Add(T($"{idle} s sans coup sur {who} : mécanique, déplacement, adds ou temps mort.", 12, idle * 10 > values.Count ? Tok.Warn : Tok.Muted, wrap: true));
-        return Card(new StackPanel { Spacing = 8, Children = { chart, axis, text } }, $"Tes dégâts sur {who}, seconde par seconde",
+        if (survival is not null) text.Children.Add(survival.Value.Text);
+        return Card(new StackPanel { Spacing = 8, Children = { charts, text } }, $"Tes dégâts sur {who}, seconde par seconde",
             T($"pic {Fmt.Big(values.Max())}/s", 11, Tok.Muted, mono: true));
+    }
+
+    /// <summary>
+    /// Ta survie sous la courbe de tes dégâts (Pet Meter : dégâts reçus et soins reçus seconde par seconde, sur le même axe) :
+    /// la bande, et en mots le total, la part des dégâts reçus que les soins ont rendue, et le pire passage (5 s d'affilée).
+    /// </summary>
+    (Control Strip, Control Text) Survival(CombatLog log, int seconds)
+    {
+        var taken = log.TakenTimeline ?? [];
+        var heals = log.HealsTimeline ?? [];
+        static double At(List<double> v, int i) => i < v.Count ? v[i] : 0;
+        var takenTotal = Enumerable.Range(0, seconds).Sum(i => At(taken, i));
+        var healsTotal = Enumerable.Range(0, seconds).Sum(i => At(heals, i));
+        var lines = new StackPanel { Spacing = 4 };
+        lines.Children.Add(T("Sous la courbe, ta survie : soins reçus vers le haut (vert), dégâts reçus vers le bas (orange), même échelle. Survol : la seconde.",
+            12, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        if (takenTotal <= 0)
+            lines.Children.Add(T($"Aucun dégât reçu pendant ce combat ({Fmt.Big(healsTotal)} soins reçus).", 12, Tok.Good, wrap: true));
+        else
+        {
+            var window = Math.Min(5, seconds);
+            var (worst, start) = Enumerable.Range(0, Math.Max(1, seconds - window + 1))
+                .Select(i => (Sum: Enumerable.Range(i, window).Sum(k => At(taken, k)), Start: i)).MaxBy(x => x.Sum);
+            var healed = Enumerable.Range(start, window).Sum(k => At(heals, k));
+            var cover = healsTotal / takenTotal;
+            lines.Children.Add(T($"{Fmt.Big(takenTotal)} dégâts reçus, {Fmt.Big(healsTotal)} soins reçus : les soins ont rendu {Fmt.Pct(cover)} de ce que tu as pris.",
+                12, Tok.Text2, wrap: true).WithLineHeight(1.4));
+            lines.Children.Add(T($"Pire passage : {Fmt.Big(worst)} dégâts reçus en {window} s à partir de {Duration(start)} (soins pendant ce temps : {Fmt.Big(healed)}).",
+                12, healed < 0.5 * worst ? Tok.Warn : Tok.Text2, wrap: true).WithLineHeight(1.4));
+        }
+        return (new SurvivalStrip(taken, heals, seconds), lines);
+    }
+
+    /// <summary>Instant précis d'un combat, au dixième : « 42,3 s », « 1 min 07,5 ».</summary>
+    static string Clock(double t)
+    {
+        var fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
+        var sign = t < 0 ? "−" : "";
+        t = Math.Abs(t);
+        return t < 60 ? $"{sign}{t.ToString("0.0", fr)} s" : $"{sign}{(int)t / 60} min {(t % 60).ToString("00.0", fr)}";
+    }
+
+    /// <summary>
+    /// Graphique dessiné directement (léger : pas un élément par lancer ni par seconde) dont le survol montre une bulle, dessinée
+    /// elle aussi : <see cref="HitAt"/> dit quel élément est sous la souris, <see cref="TipOf"/> ce qu'en dit la bulle (première
+    /// ligne en clair, les suivantes plus pâles) ; un clic sur un élément appelle <see cref="Clicked"/> s'il est donné.
+    /// </summary>
+    abstract class HoverChart : Control
+    {
+        static readonly Avalonia.Input.Cursor HandCursor = new(Avalonia.Input.StandardCursorType.Hand);
+        static readonly Typeface SansFace = new(Fonts.Sans);
+        static readonly Typeface MonoFace = new(Fonts.Mono);
+        Point? pointer;
+
+        /// <summary>Élément survolé (-1 : aucun).</summary>
+        protected int Hovered { get; private set; } = -1;
+        public Action<int>? Clicked { get; init; }
+
+        protected abstract int HitAt(Point p, Size size);
+        protected abstract string? TipOf(int index);
+        protected abstract void Draw(DrawingContext ctx, Size size);
+
+        /// <summary>Texte à dessiner ; avec <paramref name="maxWidth"/>, sur une ligne coupée de points de suspension.</summary>
+        protected static FormattedText Text(string text, double size, IBrush color, bool mono = false, double maxWidth = 0)
+        {
+            var t = new FormattedText(text, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, mono ? MonoFace : SansFace, size, color);
+            if (maxWidth > 0)
+            {
+                t.MaxTextWidth = maxWidth;
+                t.MaxLineCount = 1;
+                t.Trimming = TextTrimming.CharacterEllipsis;
+            }
+            return t;
+        }
+
+        protected override void OnPointerMoved(Avalonia.Input.PointerEventArgs e)
+        {
+            base.OnPointerMoved(e);
+            pointer = e.GetPosition(this);
+            var hit = HitAt(pointer.Value, Bounds.Size);
+            if (hit != Hovered)
+            {
+                Hovered = hit;
+                if (hit >= 0 && Clicked is not null) Cursor = HandCursor;
+                else ClearValue(CursorProperty);
+            }
+            InvalidateVisual();
+        }
+
+        protected override void OnPointerExited(Avalonia.Input.PointerEventArgs e)
+        {
+            base.OnPointerExited(e);
+            pointer = null;
+            Hovered = -1;
+            ClearValue(CursorProperty);
+            InvalidateVisual();
+        }
+
+        protected override void OnPointerPressed(Avalonia.Input.PointerPressedEventArgs e)
+        {
+            base.OnPointerPressed(e);
+            if (Clicked is null || Hovered < 0 || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+            e.Handled = true;
+            Clicked(Hovered);
+        }
+
+        public sealed override void Render(DrawingContext ctx)
+        {
+            var size = Bounds.Size;
+            ctx.FillRectangle(Brushes.Transparent, new Rect(size));  // toute la surface réagit au survol
+            Draw(ctx, size);
+            if (pointer is not { } p || Hovered < 0 || TipOf(Hovered) is not { Length: > 0 } tip) return;
+            var lines = tip.Split('\n').Select((l, i) => Text(l, 12, i == 0 ? Tok.Text : Tok.Text2)).ToList();
+            var w = lines.Max(l => l.Width) + 18;
+            var h = lines.Sum(l => l.Height) + 10;
+            var x = p.X + 16 + w <= size.Width ? p.X + 16 : Math.Max(0, p.X - 16 - w);
+            var y = Math.Max(0, Math.Min(p.Y - h / 2, size.Height - h));
+            ctx.DrawRectangle(Tok.HoverStrong, new Pen(Tok.Faint), new RoundedRect(new Rect(x, y, w, h), 3));
+            var ty = y + 5;
+            foreach (var l in lines)
+            {
+                ctx.DrawText(l, new Point(x + 9, ty));
+                ty += l.Height;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Ta survie seconde par seconde, sous la courbe de tes dégâts et sur le même axe : soins reçus vers le haut (vert), dégâts
+    /// reçus vers le bas (orange), sur une même échelle ; survol : la seconde.
+    /// </summary>
+    sealed class SurvivalStrip(List<double> taken, List<double> heals, int seconds) : HoverChart
+    {
+        readonly double peak = Math.Max(1e-9, Math.Max(taken.DefaultIfEmpty(0).Max(), heals.DefaultIfEmpty(0).Max()));
+
+        static double At(List<double> v, int i) => i < v.Count ? v[i] : 0;
+
+        protected override Size MeasureOverride(Size available) => new(double.IsInfinity(available.Width) ? 300 : available.Width, 56);
+
+        protected override int HitAt(Point p, Size size) =>
+            seconds <= 0 || p.X < 0 || p.X >= size.Width ? -1 : Math.Min(seconds - 1, (int)(p.X / (size.Width / seconds)));
+
+        protected override string? TipOf(int i) => $"à {Duration(i)}\n{Fmt.Big(At(taken, i))} dégâts reçus · {Fmt.Big(At(heals, i))} soins reçus";
+
+        protected override void Draw(DrawingContext ctx, Size size)
+        {
+            var w = size.Width / Math.Max(1, seconds);
+            var gap = w >= 4 ? 1 : 0;
+            var mid = Math.Round(size.Height / 2);
+            var half = mid - 1;
+            if (Hovered >= 0) ctx.FillRectangle(Tok.HoverStrong, new Rect(Hovered * w, 0, Math.Max(1, w), size.Height));
+            for (var i = 0; i < seconds; i++)
+            {
+                var up = At(heals, i) / peak * half;
+                var down = At(taken, i) / peak * half;
+                if (up > 0) ctx.FillRectangle(Tok.Good, new Rect(i * w, mid - up, Math.Max(1, w - gap), up));
+                if (down > 0) ctx.FillRectangle(Tok.Warn, new Rect(i * w, mid + 1, Math.Max(1, w - gap), down));
+            }
+            ctx.FillRectangle(Tok.Border, new Rect(0, mid, size.Width, 1));  // ligne de base
+        }
     }
 
     /// <summary>
