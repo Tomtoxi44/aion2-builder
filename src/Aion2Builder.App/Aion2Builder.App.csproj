@@ -35,6 +35,17 @@
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
   </ItemGroup>
 
+  <!--
+    Exe publié par GitHub (-p:PublishTrimmed=true, voir .github/workflows/build.yml) : élagage PARTIEL. Seules les bibliothèques
+    marquées élaguables (.NET, Avalonia, projection Windows de l'OCR) perdent le code qui ne sert pas ; celui de l'application
+    reste entier, ce qui garde System.Text.Json par réflexion (données de jeu, fiches, réglages, combats). Mesuré le 05/11 :
+    exe de 85 à 38 Mo, premier affichage un peu plus rapide (moins à décompresser au lancement).
+  -->
+  <PropertyGroup Condition="'$(PublishTrimmed)' == 'true'">
+    <TrimMode>partial</TrimMode>
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+
   <ItemGroup>
     <EmbeddedResource Include="Assets/app.ico" LogicalName="app.ico" />
   </ItemGroup>

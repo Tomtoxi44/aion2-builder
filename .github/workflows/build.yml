@@ -41,12 +41,15 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      # ReadyToRun : code précompilé, premier écran ~1,5 s au lieu de ~2,7 s (mesuré le 04/11) ; exe ~85 Mo au lieu de 56.
+      # ReadyToRun : code précompilé, premier écran ~1,5 s au lieu de ~2,7 s (mesuré le 04/11).
+      # Élagage partiel (PublishTrimmed, réglé dans le .csproj) : seules les bibliothèques .NET, Avalonia et Windows perdent ce
+      # qui ne sert pas, le code de l'appli reste entier. Mesuré le 05/11 : exe 85 → 38 Mo, fiche affichée ~0,2 s plus tôt
+      # (moins à décompresser) ; les 24 écrans, l'OCR, la lecture des données et la mise à jour vérifiés sur l'exe élagué.
       - name: Publication
         run: >
           dotnet publish src/Aion2Builder.App -c Release -r win-x64 --self-contained true
           -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=true
-          -p:DebugType=None -p:Version=${{ env.VERSION }} -o publish
+          -p:PublishTrimmed=true -p:DebugType=None -p:Version=${{ env.VERSION }} -o publish
 
       # L'exe doit démarrer et rester ouvert : pas de version cassée proposée en mise à jour.
       - name: Test de démarrage
