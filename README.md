@@ -76,7 +76,7 @@ Commandes du CLI :
 | `list` | Personnages enregistrés |
 | `data [export] [--force]` | Montre / copie les fichiers de données modifiables |
 | `pets [--key <clé>] [--refresh] [--forget]` | Relie / relit la collection de familiers (Aion 2 Todo) ; « advise » la compte ensuite |
-| `bench --out <benchmark.json> [--count 24] [--class C]` | Refait les joueurs de comparaison (niveau 45, site officiel ; lancé chaque semaine par GitHub) |
+| `bench --out <benchmark.json> [--count 48] [--class C]` | Refait les joueurs de comparaison (niveau 45, site officiel ; lancé chaque semaine par GitHub) |
 
 Interface graphique :
 
@@ -281,7 +281,7 @@ jaune enchanté +8/+10 ; aucun orange ni rouge observé). Les autres valeurs son
 observations) et à affiner selon la saison. Les **8 classes** ont une fiche de compétences
 détaillée (12 actives, 10 passifs, 13 stigmas). Elles croisent des guides et les compétences réellement montées par
 24 joueurs niveau 45 des serveurs EU par classe (`classes.json` → `skills` : rôle, priorité et niveau visé par mode, et
-la raison affichée ; les entrées « à valider » ne sont pas documentées par les guides). Des joueurs niveau 45 de chaque
+la raison affichée ; les entrées « à valider » ne sont pas documentées par les guides). 48 joueurs niveau 45 de chaque
 classe servent aussi de repère (`benchmark.json`, sans nom ni serveur : niveau d'objet, puissance, cases Daevanion
 ouvertes, et leurs totaux par stat calculés par le Builder, comme les tiens, en JcE et en JcJ). Ils sont relevés à nouveau chaque
 jeudi par le workflow « Joueurs de comparaison » (commande `bench` : recherche du site officiel, un import à la fois),

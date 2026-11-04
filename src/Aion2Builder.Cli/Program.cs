@@ -75,7 +75,7 @@ static int Help()
           specs <nom> [--mode pvp]                            Spécialisations à équiper, sort par sort
           list                                                Personnages enregistrés
           data [export]                                       Fichiers de données (poids, paliers…) modifiables
-          bench --out <benchmark.json> [--count 24] [--class <classe>] [--region eu]
+          bench --out <benchmark.json> [--count 48] [--class <classe>] [--region eu]
                                                               Refait les joueurs de comparaison (niveau 45, site officiel)
           pets [--key <clé>] [--refresh] [--forget]            Familiers du Pet Meter, lus sur Aion 2 Todo (clé : onglet
                                                               Familiers → Pet Meter) ; comptés ensuite par « advise »

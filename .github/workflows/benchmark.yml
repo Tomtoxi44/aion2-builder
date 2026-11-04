@@ -23,7 +23,9 @@ concurrency:
 jobs:
   bench:
     runs-on: ubuntu-latest
-    timeout-minutes: 240 # ~19 min par classe : échantillon, puis la puissance de chaque joueur trouvé pour le top
+    # ~24 min par classe : échantillon de 48 joueurs (~10 min, un import à la fois, pauses gardées), puis la puissance de
+    # chaque joueur trouvé pour le top (~13 min) ; ~3 h 15 en tout (2 h 30 avec 24 joueurs). GitHub coupe un job à 6 h.
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4

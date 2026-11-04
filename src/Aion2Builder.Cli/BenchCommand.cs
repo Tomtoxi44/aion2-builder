@@ -23,6 +23,12 @@ static class BenchCommand
     // Un import à la fois et une pause entre deux : on reste raisonnable avec le site officiel.
     static readonly TimeSpan Pause = TimeSpan.FromSeconds(1);
 
+    /// <summary>
+    /// Joueurs relevés par classe : 48 depuis le 05/11/2026 (24 avant), pour qu'il y en ait assez près de chaque niveau d'objet
+    /// (« les mieux bâtis de ton niveau » prennent les 16 plus proches). Le top (8 par classe) ne change pas.
+    /// </summary>
+    const int DefaultCount = 48;
+
     sealed record Measured(BenchPlayer Player, int DaevanionNodes);
     /// <summary>Top de la classe : les plus fortes puissances de combat parmi tous les joueurs trouvés, mesurés en entier.</summary>
     const int TopCount = 8;
@@ -84,8 +90,8 @@ static class BenchCommand
 
     public static async Task<int> Run(Args cli)
     {
-        var output = cli.Get("out") ?? throw new InvalidOperationException("Précise le fichier : bench --out <benchmark.json> [--count 24] [--class <classe>]");
-        var count = int.TryParse(cli.Get("count"), out var n) && n > 0 ? n : 24;
+        var output = cli.Get("out") ?? throw new InvalidOperationException("Précise le fichier : bench --out <benchmark.json> [--count 48] [--class <classe>]");
+        var count = int.TryParse(cli.Get("count"), out var n) && n > 0 ? n : DefaultCount;
         var only = cli.Get("class");
         var db = GameDataStore.Load();
         var advisor = new Advisor(db);
