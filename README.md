@@ -316,7 +316,8 @@ Aion 2 Builder n'envoie rien sans que tu le demandes, sauf la vérification des 
   statistique d'usage, rien n'est envoyé ailleurs.
 - Ce que l'application garde (personnages importés, préférences, clé des familiers) reste sur ton PC, dans
   `%APPDATA%\Aion2Builder` ; supprimer ce dossier efface tout. Elle lit aussi, sans y écrire, les combats et la récolte
-  écrits par le Pet Meter (`%LOCALAPPDATA%\AION2-pet-meter`).
+  écrits par le Pet Meter (`%LOCALAPPDATA%\AION2-pet-meter`), et la clé Aion 2 Todo collée dans le Pet Meter (son fichier
+  d'état, retrouvé grâce à `data_dir.txt` quand il est à côté de son exe) : pas besoin de la recoller ici.
 
 ## Code signing policy
 
