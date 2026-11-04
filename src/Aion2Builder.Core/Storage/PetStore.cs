@@ -52,12 +52,21 @@ public sealed class PetStore(string? path = null)
         var file = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AION2-pet-meter", "aion2_pet_meter_state.json");
         try
         {
-            if (!File.Exists(file)) return null;
+            var info = new FileInfo(file);
+            if (!info.Exists) return null;
+            // L'état du Pet Meter peut être gros et il le réécrit pendant le jeu : relu seulement quand il a changé (l'appli
+            // demande la clé à chaque affichage).
+            var stamp = (info.LastWriteTimeUtc, info.Length);
+            if (meterKeyCache is { } c && c.Stamp == stamp) return c.Key;
             using var doc = JsonDocument.Parse(File.ReadAllText(file));
-            return doc.RootElement.TryGetProperty("sync_key", out var k) && k.ValueKind == JsonValueKind.String && k.GetString() is { Length: > 0 } key ? key : null;
+            var found = doc.RootElement.TryGetProperty("sync_key", out var k) && k.ValueKind == JsonValueKind.String && k.GetString() is { Length: > 0 } key ? key : null;
+            meterKeyCache = (stamp, found);
+            return found;
         }
-        catch (Exception ex) when (ex is JsonException or IOException) { return null; }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException) { return null; }
     }
+
+    static ((DateTime, long) Stamp, string? Key)? meterKeyCache;
 
     /// <summary>Oublie la clé et la collection.</summary>
     public void Forget()

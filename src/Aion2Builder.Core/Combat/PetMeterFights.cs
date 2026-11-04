@@ -106,22 +106,33 @@ public static class PetMeterFights
     public sealed record FightHeals(double Amount, int Hits);
 
     /// <summary>Combats du Pet Meter pour ce personnage (nom), le plus récent d'abord.</summary>
-    public static List<(string Path, Fight Fight)> For(string character)
+    public static List<(string Path, Fight Fight)> For(string character) =>
+        All().Where(x => string.Equals(x.Fight.Character, character, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    /// <summary>Tous les combats du dossier, le plus récent d'abord ; relus seulement quand un fichier a changé (l'appli les
+    /// demande à chaque recalcul).</summary>
+    static List<(string Path, Fight Fight)> All()
     {
         if (!Directory.Exists(Dir)) return [];
+        var files = new DirectoryInfo(Dir).GetFiles("*.json").OrderByDescending(f => f.Name, StringComparer.Ordinal).ToList();
+        var stamp = Storage.CombatStore.Stamp(files);
+        lock (ReadLock)
+            if (Read.Stamp == stamp) return Read.List;
         var list = new List<(string, Fight)>();
-        foreach (var path in Directory.GetFiles(Dir, "*.json").OrderDescending())
+        foreach (var path in files.Select(f => f.FullName))
         {
             try
             {
-                if (JsonSerializer.Deserialize<Fight>(File.ReadAllText(path), GameDataStore.Json) is { } f
-                    && string.Equals(f.Character, character, StringComparison.OrdinalIgnoreCase))
-                    list.Add((path, f));
+                if (JsonSerializer.Deserialize<Fight>(File.ReadAllText(path), GameDataStore.Json) is { } f) list.Add((path, f));
             }
             catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException) { }
         }
+        lock (ReadLock) Read = (stamp, list);
         return list;
     }
+
+    static (string? Stamp, List<(string Path, Fight Fight)> List) Read = (null, []);
+    static readonly object ReadLock = new();
 
     static string Name(GameDatabase db, long code) =>
         code >= 10_000_000 && db.Spell(code) is { } s ? s.Name : $"Sort {code}";

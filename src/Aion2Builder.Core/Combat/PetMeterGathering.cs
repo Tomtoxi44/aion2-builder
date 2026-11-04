@@ -32,12 +32,18 @@ public static class PetMeterGathering
 
     static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
 
-    /// <summary>Les jours enregistrés, du plus récent au plus ancien (un fichier illisible est sauté).</summary>
+    /// <summary>
+    /// Les jours enregistrés, du plus récent au plus ancien (un fichier illisible est sauté). Relus seulement quand un fichier a
+    /// changé (le Pet Meter réécrit celui du jour pendant que tu récoltes) : l'écran Récolte les demande à chaque affichage.
+    /// </summary>
     public static List<GatherDay> Load()
     {
         var days = new List<GatherDay>();
         if (!Directory.Exists(Dir)) return days;
-        foreach (var file in Directory.EnumerateFiles(Dir, "????-??-??.json"))
+        var files = new DirectoryInfo(Dir).GetFiles("????-??-??.json");
+        var stamp = (files.Length, files.Length == 0 ? DateTime.MinValue : files.Max(f => f.LastWriteTimeUtc));
+        if (cache is { } c && c.Stamp == stamp) return [.. c.Days];
+        foreach (var file in files.Select(f => f.FullName))
         {
             try
             {
@@ -45,8 +51,12 @@ public static class PetMeterGathering
             }
             catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or FormatException) { }
         }
-        return days.OrderByDescending(d => d.Day, StringComparer.Ordinal).ToList();
+        days = days.OrderByDescending(d => d.Day, StringComparer.Ordinal).ToList();
+        cache = (stamp, days);
+        return [.. days];
     }
+
+    static ((int, DateTime) Stamp, List<GatherDay> Days)? cache;
 
     /// <summary>
     /// Les jours du compte (tous tes PC, lus sur Aion 2 Todo) d'abord ; ceux de ce PC qu'il n'a pas (avant le Pet Meter v0.18.0,

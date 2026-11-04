@@ -15,16 +15,27 @@ public sealed class PeerStore(string? path = null)
 {
     public string Path { get; } = path ?? System.IO.Path.Combine(AppPaths.Root, "comparison.json");
 
+    /// <summary>Ta liste, relue seulement quand le fichier a changé (l'appli la demande à chaque affichage).</summary>
     public List<SavedPeer> Load()
     {
-        try { return File.Exists(Path) ? JsonSerializer.Deserialize<List<SavedPeer>>(File.ReadAllText(Path), GameDataStore.Json) ?? [] : []; }
+        try
+        {
+            var stamp = File.Exists(Path) ? File.GetLastWriteTimeUtc(Path) : DateTime.MinValue;
+            if (cache is { } c && c.Stamp == stamp) return [.. c.Peers];
+            var peers = stamp == DateTime.MinValue ? [] : JsonSerializer.Deserialize<List<SavedPeer>>(File.ReadAllText(Path), GameDataStore.Json) ?? [];
+            cache = (stamp, peers);
+            return [.. peers];
+        }
         catch (Exception ex) when (ex is JsonException or IOException) { return []; }
     }
+
+    (DateTime Stamp, List<SavedPeer> Peers)? cache;
 
     void Save(List<SavedPeer> peers)
     {
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
         File.WriteAllText(Path, JsonSerializer.Serialize(peers, GameDataStore.Json));
+        cache = null;
     }
 
     /// <summary>Ajoute (ou remplace, s'il y est déjà) un joueur.</summary>

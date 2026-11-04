@@ -53,7 +53,34 @@ public sealed class DaevanionPlanner(GameDatabase db, StatAnalyzer stats)
             : e.IsSkill && ctx.Skills.TryGetValue(GameDatabase.NormalizeLabel(e.SkillName!), out var s) ? ctx.Skill.Priority(s, ctx.Profile) : 0)
         .DefaultIfEmpty(0).Max();
 
+    /// <summary>
+    /// Plans déjà calculés, par perso affiché (l'objet chargé : une simulation « et si » en est une copie, recalculée). Le plan
+    /// coûte ~150 ms (recherches de chemins) et l'appli recalcule tout à chaque réglage : il est repris tel quel tant que rien
+    /// de ce dont il dépend ne change (mode, poids, équilibre des familles, totaux des stats, points non dépensés).
+    /// </summary>
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<CharacterSnapshot, Dictionary<string, DaevanionPlan>> Memo = new();
+
     public DaevanionPlan Plan(CharacterSnapshot c, ResolvedProfile p, StatProfile sp, PlayerInputs inputs)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var key = string.Join("|", p.Mode, p.Class.Code, p.UsesDesigned,
+            string.Join(",", p.Weights.OrderBy(w => w.Key, StringComparer.Ordinal).Select(w => w.Key + "=" + w.Value.ToString("R", inv))),
+            string.Join(",", sp.Categories.Select(x => $"{x.Category}={x.Gap.ToString("R", inv)}/{x.Target.ToString("R", inv)}")),
+            string.Join(",", sp.Stats.Select(x => x.Def.Key + "=" + x.Flat.ToString("R", inv))),
+            string.Join(",", c.Boards.Select(Pool).Distinct().Select(pool => $"{pool}={inputs.UnspentFor(pool)}")));
+        var memo = Memo.GetOrCreateValue(c);
+        lock (memo)
+            if (memo.TryGetValue(key, out var known)) return known;
+        var plan = Compute(c, p, sp, inputs);
+        lock (memo)
+        {
+            if (memo.Count >= 8) memo.Clear();
+            memo[key] = plan;
+        }
+        return plan;
+    }
+
+    DaevanionPlan Compute(CharacterSnapshot c, ResolvedProfile p, StatProfile sp, PlayerInputs inputs)
     {
         var ctx = new Context(p, sp,
             c.Skills.GroupBy(s => GameDatabase.NormalizeLabel(s.Name)).ToDictionary(g => g.Key, g => g.First()),

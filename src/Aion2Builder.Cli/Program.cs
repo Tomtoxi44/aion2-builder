@@ -29,6 +29,7 @@ try
         "rotation" => Rotation(cli),
         "combat" => CombatCommand(cli),
         "stats-jeu" or "ingame" => InGameCommand(cli),
+        "perf" => PerfCommand(cli),
         "route" or "feuille" => RouteCommand(cli),
         "specs" or "specialisations" => SpecsCommand(cli),
         "bench" => await BenchCommand.Run(cli),
@@ -66,6 +67,7 @@ static int Help()
                                                               Rotations simulées : joueurs contre conçue
           combat <nom> [mots-ocr.tsv…]                        Combat NotMeter lu sur des captures (l'appli les lit seule)
           stats-jeu <nom> <mots-ocr.tsv…> [--save]            Fenêtre Stats du jeu lue sur des captures : site, en jeu, part cachée
+          perf <nom>                                          Temps de chaque étape d'un recalcul de l'appli (diagnostic)
           route <nom> [--mode pvp]                            Feuille de route d'équipement : palier de score suivant, pièces, enchantement
           specs <nom> [--mode pvp]                            Spécialisations à équiper, sort par sort
           list                                                Personnages enregistrés
@@ -248,6 +250,61 @@ static List<IReadOnlyList<OcrWord>> OcrPages(Args cli) =>
 
 /// <summary>Fenêtre Stats du jeu (mots reconnus par « Aion2Builder.exe --ocr ») : chaque stat lue, sa valeur sur le site, en jeu,
 /// et la part que le site ne montre pas ; --save la garde dans les réglages du perso (comme l'appli).</summary>
+/// <summary>Diagnostic : le temps de chaque étape d'un recalcul de l'appli (moyenne sur 5), pour repérer ce qui ralentit.</summary>
+static int PerfCommand(Args cli)
+{
+    var (store, snapshot) = Saved(cli, "Précise un personnage : perf <nom>");
+    var db = GameDataStore.Load();
+    var key = Path.GetFileNameWithoutExtension(store.Find(snapshot.Name, snapshot.ServerName)?.Path ?? snapshot.Name);
+    var combats = new CombatStore();
+    var inputs = store.LoadInputs(snapshot);
+    var pets = new PetStore().Load().Collection;
+    double Time(Action a)
+    {
+        a();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        for (var i = 0; i < 5; i++) a();
+        return sw.Elapsed.TotalMilliseconds / 5;
+    }
+    void Line(string label, Action a) => Console.WriteLine($"  {label,-32} {Time(a),8:0.0} ms");
+    var logs = combats.List(key).Select(x => x.Log).ToList();
+    Console.WriteLine($"{snapshot.Name} : {logs.Count} combats gardés, {PetMeterFights.For(snapshot.Name).Count} combats du Pet Meter, familiers {(pets is null ? "non reliés" : "reliés")}");
+    Line("combats gardés (lecture)", () => combats.List(key));
+    Line("combats du Pet Meter (lecture)", () => PetMeterFights.For(snapshot.Name));
+    Line("progression (lecture)", () => store.Progress(snapshot));
+    var advisor = new Advisor(db);
+    Line("analyse complète", () => advisor.Analyze(snapshot, GameMode.PvE, inputs, pets, logs));
+    // Les étapes de l'analyse, comme Advisor.Analyze.
+    var profile = db.Resolve(snapshot.ClassCode, GameMode.PvE, inputs.UsesDesigned) with { PeerBasis = inputs.Comparison, Hidden = inputs.Hidden };
+    var petAdvisor = new PetAdvisor(db);
+    var stats = new StatAnalyzer(db, petAdvisor.Sources(pets));
+    var sp = stats.Profile(snapshot, profile);
+    Line("  stats", () => stats.Profile(snapshot, profile));
+    var gearAdvisor = new GearAdvisor(db, stats);
+    var gear = gearAdvisor.Plan(snapshot, profile, sp);
+    Line("  équipement", () => gearAdvisor.Plan(snapshot, profile, sp));
+    var skillAdvisor = new SkillAdvisor(db);
+    var skills = skillAdvisor.Plan(snapshot, profile, inputs, logs);
+    Line("  compétences", () => skillAdvisor.Plan(snapshot, profile, inputs, logs));
+    var planner = new DaevanionPlanner(db, stats);
+    var dae = planner.Plan(snapshot, profile, sp, inputs);
+    Line("  Daevanion", () => planner.Plan(snapshot, profile, sp, inputs));
+    var engr = new EngravingAdvisor(db);
+    var engravings = engr.Plan(snapshot, profile, gear, sp);
+    Line("  gravures", () => engr.Plan(snapshot, profile, gear, sp));
+    var petPlan = petAdvisor.Plan(pets, profile, sp);
+    Line("  familiers", () => petAdvisor.Plan(pets, profile, sp));
+    Line("  conseils stats", () => stats.Findings(sp, profile, snapshot).ToList());
+    Line("  conseils équipement", () => gearAdvisor.Findings(gear, snapshot, profile).ToList());
+    Line("  conseils compétences", () => skillAdvisor.Findings(skills, snapshot, profile).ToList());
+    Line("  conseils Daevanion", () => planner.Findings(dae, snapshot, profile).ToList());
+    Line("  conseils gravures", () => engr.Findings(engravings, profile).ToList());
+    Line("  conseils familiers", () => petAdvisor.Findings(petPlan, profile).ToList());
+    if (logs.FirstOrDefault(l => l.Kind is null or "boss" or "dummy") is { Skills.Count: > 0 } combat)
+        Line("  dernier combat", () => new CombatAnalyzer(db).Analyze(combat, profile));
+    return 0;
+}
+
 static int InGameCommand(Args cli)
 {
     var (store, snapshot) = Saved(cli, "Précise un personnage : stats-jeu <nom> <mots-ocr.tsv…> [--save]");

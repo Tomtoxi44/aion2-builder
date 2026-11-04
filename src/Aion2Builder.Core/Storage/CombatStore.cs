@@ -20,11 +20,25 @@ public sealed class CombatStore
         return path;
     }
 
+    /// <summary>
+    /// Combats lus, par dossier : relus seulement quand un fichier a été ajouté, retiré ou réécrit (l'appli les demande à
+    /// chaque recalcul, plusieurs fois).
+    /// </summary>
+    static readonly Dictionary<string, (string Stamp, List<(string, CombatLog)> List)> Read = new();
+
+    /// <summary>Empreinte d'un dossier : noms, tailles et dates des fichiers (sans les lire).</summary>
+    public static string Stamp(IEnumerable<FileInfo> files) =>
+        string.Join("|", files.Select(f => $"{f.Name}:{f.Length}:{f.LastWriteTimeUtc.Ticks}"));
+
     public List<(string Path, CombatLog Log)> List(string characterKey)
     {
         if (!Directory.Exists(Dir(characterKey))) return [];
+        var files = new DirectoryInfo(Dir(characterKey)).GetFiles("*.json").OrderByDescending(f => f.Name, StringComparer.Ordinal).ToList();
+        var stamp = Stamp(files);
+        lock (Read)
+            if (Read.TryGetValue(characterKey, out var known) && known.Stamp == stamp) return [.. known.List];
         var list = new List<(string, CombatLog)>();
-        foreach (var path in Directory.GetFiles(Dir(characterKey), "*.json").OrderDescending())
+        foreach (var path in files.Select(f => f.FullName))
         {
             try
             {
@@ -32,7 +46,8 @@ public sealed class CombatStore
             }
             catch (Exception ex) when (ex is JsonException or IOException) { }
         }
-        return list;
+        lock (Read) Read[characterKey] = (stamp, list);
+        return [.. list];
     }
 
     public CombatLog? Latest(string characterKey) => List(characterKey).Select(x => x.Log).FirstOrDefault();
