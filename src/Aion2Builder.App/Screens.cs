@@ -4379,7 +4379,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         // D'où vient la récolte : ton compte (tous tes PC) avec ta clé Aion 2 Todo, sinon ce PC.
         var source = T(accountGather.Status
             ?? (accountGather.Linked ? "Récolte de ton compte : tous tes PC additionnés (Aion 2 Todo, Pet Meter v0.18.0 ou plus), plus les jours gardés sur ce PC."
-                : "Récolte de ce PC seulement. Avec ta clé Aion 2 Todo (onglet Familiers → Pet Meter), celle de tous tes PC."),
+                : "Récolte de ce PC seulement. Pour celle de tous tes PC : colle ta clé Aion 2 Todo dans l'écran Familiers du Builder " +
+                  "(sur le site : onglet Familiers → Pet Meter → « Afficher ma clé »)."),
             12, accountGather.Status is { } st && !st.EndsWith('…') ? Tok.Warn : Tok.Muted, wrap: true);
         if (days.Count == 0)
             return Page("Récolte", null, Card(new StackPanel { Spacing = 10, Children = {
@@ -4501,17 +4502,23 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             var gathered = servers.Sum(s => s.Count);
             var radiant = servers.SelectMany(s => s.Items ?? []).Where(x => x.Rank == 4).Sum(x => x.Qty);
             var selected = pick == key;
+            // Le fond de la colonne = le plafond (1 000) : la barre se lit comme une jauge.
             var bar = new Border
             {
                 Height = gathered > 0 ? Math.Max(2, 80.0 * Math.Min(1, gathered / (double)cap)) : 0, VerticalAlignment = VerticalAlignment.Bottom,
-                Background = gathered >= cap ? Tok.Good : Accent.Main, CornerRadius = new CornerRadius(2, 2, 0, 0), Margin = new Thickness(3, 0),
+                Background = gathered >= cap ? Tok.Good : Accent.Main, CornerRadius = new CornerRadius(2, 2, 0, 0),
             };
-            var track = new Border { Height = 80, Child = bar, Background = selected ? Tok.Hover : Brushes.Transparent, CornerRadius = new CornerRadius(3) };
+            var track = new Border
+            {
+                Height = 80, Width = 22, HorizontalAlignment = HorizontalAlignment.Center, Child = bar, CornerRadius = new CornerRadius(2),
+                Background = Tok.Alpha(selected ? Accent.Main : Tok.Text2, selected ? 0.18 : 0.07),
+            };
             var column = new StackPanel
             {
                 Spacing = 2,
                 Children =
                 {
+                    T(gathered > 0 ? Fmt.Big(gathered) : " ", 10, selected ? Tok.Text : Tok.Text2, mono: true).Centered(),
                     track,
                     T(date.Day.ToString(fr), 10, selected ? Tok.Text : Tok.Muted, mono: true).Centered(),
                     T(radiant > 0 ? $"{radiant}" : " ", 10, unique, FontWeight.SemiBold, mono: true).Centered(),
