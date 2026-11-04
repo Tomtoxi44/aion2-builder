@@ -830,6 +830,23 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         return new SidePanel("Équipement", null, body);
     }
 
+    /// <summary>
+    /// Points à corriger d'un combat (liste de gauche de l'écran Combat) : gardés par combat, qui ne change plus une fois
+    /// enregistré (l'analyse de 20 combats à chaque affichage coûtait ~70 ms par clic).
+    /// </summary>
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<CombatLog, Dictionary<string, int>> TodoCounts = new();
+
+    static int TodoCount(CombatAnalyzer analyzer, CombatLog log, ResolvedProfile profile)
+    {
+        var key = $"{profile.Class.Code}|{profile.UsesDesigned}|{profile.Mode}";
+        var map = TodoCounts.GetOrCreateValue(log);
+        lock (map)
+            if (map.TryGetValue(key, out var known)) return known;
+        var count = analyzer.Analyze(log, profile).Findings.Count(f => f.Severity <= Severity.Advice);
+        lock (map) map[key] = count;
+        return count;
+    }
+
     SidePanel CombatSide()
     {
         var body = new StackPanel();
@@ -857,7 +874,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             {
                 var log = combats[i].Log;
                 var index = i;
-                var todo = analyzer.Analyze(log, profile).Findings.Count(f => f.Severity <= Severity.Advice);
+                var todo = TodoCount(analyzer, log, profile);
                 var dps = ColumnsSpaced("56,*", 8, T(Fmt.Big(log.Dps), 12, Accent.Main, FontWeight.SemiBold, mono: true), RoundBar(log.Dps / Math.Max(1, best), Accent.Main, 4));
                 body.Children.Add(SideItem(null, log.Target, todo == 0 ? "✓" : $"{todo}", todo == 0 ? Tok.Good : Tok.Warn,
                     $"{log.ImportedAtUtc.ToLocalTime():HH:mm:ss} · {Duration(log.Duration)} · {PetMeterFights.KindName(log) ?? (log.Source == "Pet Meter" ? "Pet Meter" : "captures")}",
@@ -3012,7 +3029,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             {
                 var (_, log) = combats[i];
                 var index = i;
-                var todo = analyzer.Analyze(log, profile).Findings.Count(f => f.Severity <= Severity.Advice);
+                var todo = TodoCount(analyzer, log, profile);
                 // DPS en barre (le meilleur combat gardé = pleine barre) : la séance se lit d'un coup d'œil.
                 var dps = ColumnsSpaced("54,*", 6, T(Fmt.Big(log.Dps), 13, Accent.Main, FontWeight.SemiBold, mono: true), RoundBar(log.Dps / Math.Max(1, best), Accent.Main, 4));
                 rows.Add(TableRow(Columns(cols,
