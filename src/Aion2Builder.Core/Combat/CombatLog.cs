@@ -46,6 +46,12 @@ public sealed record CombatLog
     public List<CombatCast>? Casts { get; init; }
     /// <summary>Carte du jeu où le combat a eu lieu (Pet Meter) : un donjon garde la même d'un boss à l'autre.</summary>
     public long? Map { get; init; }
+    /// <summary>
+    /// Joueurs du combat (Pet Meter v0.19.0), toi compris, sur la cible principale, du plus gros DPS au plus petit ; leur DPS
+    /// et leur part portent sur le combat du groupe (<see cref="GroupDuration"/> : du premier au dernier coup de quiconque).
+    /// </summary>
+    public List<CombatPlayer>? Players { get; init; }
+    public double? GroupDuration { get; init; }
     /// <summary>Global de plusieurs combats : durée de chacun (lancers possibles et pauses comptés combat par combat).</summary>
     public List<double>? Segments { get; init; }
 
@@ -120,6 +126,16 @@ public sealed record CombatSkill(string Name, int? Level, double Damage, double 
 
 /// <summary>Un buff du combat : temps actif (0 à 1 ; null si l'OCR ne l'a pas lu), nombre d'applications, niveau.</summary>
 public sealed record CombatBuff(string Name, double? Uptime, int Count, int? Level);
+
+/// <summary>
+/// Un joueur d'un combat du Pet Meter : nom (null s'il n'est pas apparu près de toi : « Templier 2 »), code de classe, numéro
+/// dans sa classe, puissance de combat, dégâts, DPS, part des dégâts du groupe (0 à 1), critique (0 à 1), sorts principaux.
+/// </summary>
+public sealed record CombatPlayer(bool Me, string? Name, string? ClassCode, int? Number, long? Power, double Damage, double Dps, double Share,
+    double? Crit, List<CombatPlayerSkill> Skills);
+
+/// <summary>Un sort principal d'un joueur du combat : part de ses dégâts (0 à 1), utilisations.</summary>
+public sealed record CombatPlayerSkill(string Name, double Share, int Casts);
 
 /// <summary>Un lancer du combat : secondes depuis le début, code et nom du sort.</summary>
 public sealed record CombatCast(double T, long Code, string Name);

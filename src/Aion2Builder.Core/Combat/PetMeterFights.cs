@@ -14,8 +14,9 @@ public static class PetMeterFights
 
     /// <summary>Version de la conversion (2 : lancers groupés à 0,6 s, noms des enchaînements du Templier ; 3 : type du combat ;
     /// 4 : dégâts seconde par seconde sur la cible principale et combat entier ; 5 : « Boss (code …) » pour un boss sans nom ;
-    /// 6 : nom du boss d'après bosses.json ; 7 : de nouveau « Boss (code …) », les noms relevés sans permission étant retirés).</summary>
-    public const int Version = 7;
+    /// 6 : nom du boss d'après bosses.json ; 7 : de nouveau « Boss (code …) », les noms relevés sans permission étant retirés ;
+    /// 8 : joueurs du combat, Pet Meter v0.19.0).</summary>
+    public const int Version = 8;
 
     /// <summary>Types de combats gardés : boss, mannequin, JcJ (« other » : un pack de monstres, un monstre achevé).</summary>
     public static readonly HashSet<string> KeptKinds = ["boss", "dummy", "pvp"];
@@ -75,7 +76,28 @@ public static class PetMeterFights
 
     public sealed record Fight(int Version, string Meter, string Character, long Entity, string Start, string StartUtc, double Duration,
         double Damage, int Hits, FightTarget Target, List<FightSkill> Skills, List<double[]> Casts, FightTaken Taken, FightHeals Heals, long Map = 0,
-        string? Kind = null, List<double>? Timeline = null, FightWhole? Whole = null);
+        string? Kind = null, List<double>? Timeline = null, FightWhole? Whole = null, List<FightPlayer>? Players = null, FightGroup? Group = null);
+    /// <summary>
+    /// Un joueur du combat (Pet Meter v0.19.0), toi compris, vu par son compteur en direct sur la cible principale : nom (null
+    /// s'il n'est pas apparu près de toi), préfixe de classe de ses sorts, numéro dans sa classe, puissance de combat, dégâts,
+    /// DPS et part sur le combat du groupe, sorts principaux (code 0 : ses invocations).
+    /// </summary>
+    public sealed record FightPlayer(bool Me, string? Name, int? Cls, string? Class, int? Number, double? Power, double Damage, double Dps,
+        double Share, double Hits = 0, double Crits = 0, List<FightPlayerSkill>? Skills = null);
+    public sealed record FightPlayerSkill(long Code, double Damage, double Hits, double Casts);
+    /// <summary>Combat du groupe sur la cible principale : du premier au dernier coup de quiconque, dégâts de tous.</summary>
+    public sealed record FightGroup(double Duration, double Damage);
+
+    /// <summary>Classe d'un joueur d'après le préfixe de ses sorts (11 : Gladiateur… ; skills.json du Pet Meter).</summary>
+    static readonly Dictionary<int, string> ClassByPrefix = new()
+    {
+        [11] = "GLADIATOR", [12] = "TEMPLAR", [13] = "ASSASSIN", [14] = "RANGER", [15] = "SORCERER", [16] = "ELEMENTALIST", [17] = "CLERIC", [18] = "CHANTER",
+    };
+
+    static CombatPlayer Player(FightPlayer p, GameDatabase db) => new(p.Me, p.Name,
+        p.Cls is { } c && ClassByPrefix.TryGetValue(c, out var code) ? code : p.Class is { } n ? db.FindClass(n)?.Code : null,
+        p.Number, p.Power is > 0 ? (long)p.Power : null, p.Damage, p.Dps, p.Share, p.Hits > 0 ? p.Crits / p.Hits : null,
+        (p.Skills ?? []).Select(k => new CombatPlayerSkill(k.Code == 0 ? "Invocations" : Name(db, k.Code), p.Damage > 0 ? k.Damage / p.Damage : 0, (int)k.Casts)).ToList());
     /// <summary>Combat entier (Pet Meter v0.7.4) : durée et dégâts adds compris, et à quel moment la cible principale a été frappée.</summary>
     public sealed record FightWhole(double Duration, double Damage, double Offset);
     public sealed record FightTarget(long Entity, long Code, double Damage);
@@ -130,6 +152,7 @@ public static class PetMeterFights
             SourceFile = Path.GetFileName(path), DamageTaken = f.Taken.Damage, HitsTaken = f.Taken.Hits, MaxTaken = f.Taken.Max,
             Heals = f.Heals.Amount, Casts = casts, Map = f.Map > 0 ? f.Map : null,
             Timeline = f.Timeline, WholeDuration = f.Whole?.Duration, WholeDamage = f.Whole?.Damage, FocusOffset = f.Whole?.Offset,
+            Players = f.Players is { Count: > 0 } players ? players.Select(p => Player(p, db)).ToList() : null, GroupDuration = f.Group?.Duration,
         };
     }
 }

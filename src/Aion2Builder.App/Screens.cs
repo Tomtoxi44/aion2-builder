@@ -86,7 +86,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
     IReadOnlyList<ProgressPoint> progress, Func<SimulationOptions, AdviceReport> simulate,
     IReadOnlyList<(string Path, CombatLog Log)> combats, Action importCombat, Action<string> deleteCombat, Action reloadCombats, Action refresh,
     IReadOnlyList<SavedPeer> savedPeers, Action<string, string> addPeer, Action<string> removePeer, Action importInGame,
-    AccountGather accountGather)
+    AccountGather accountGather, Action<string, string?, Control> openPlayer)
 {
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
@@ -3169,6 +3169,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         foreach (var k in kpis) kpiGrid.Children.Add(k.WithMargin(0, 0, 10, 10));
         page.Children.Add(Columns("*,*", hero, kpiGrid));
         if (log.Timeline is { Count: > 1 }) page.Children.Add(TargetTimeline(log));
+        if (log.Players?.Any(p => !p.Me) == true) page.Children.Add(CombatPlayers(log));
 
         // 2. À corriger en priorité : au plus 3 cartes ; le reste replié.
         if (todo.Count > 0)
@@ -3290,6 +3291,57 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             text.Children.Add(T($"{idle} s sans coup sur {who} : mécanique, déplacement, adds ou temps mort.", 12, idle * 10 > values.Count ? Tok.Warn : Tok.Muted, wrap: true));
         return Card(new StackPanel { Spacing = 8, Children = { chart, axis, text } }, $"Tes dégâts sur {who}, seconde par seconde",
             T($"pic {Fmt.Big(values.Max())}/s", 11, Tok.Muted, mono: true));
+    }
+
+    /// <summary>
+    /// Les joueurs du combat (Pet Meter v0.19.0), toi compris : classe, puissance, DPS et part sur le combat du groupe ; le
+    /// survol donne leurs sorts principaux. « ouvrir sa fiche » importe le joueur depuis le site officiel dans un onglet, avec
+    /// toute l'analyse du Builder (stats, équipement, compétences, conseils).
+    /// </summary>
+    Control CombatPlayers(CombatLog log)
+    {
+        var players = log.Players!;
+        const string cols = "*,110,90,80,56,130";
+        var table = new StackPanel();
+        table.Children.Add(TableHeader(cols, "Joueur", "Classe", "Puissance", "DPS", "Part", ""));
+        foreach (var p in players.OrderByDescending(p => p.Damage))
+        {
+            var cls = p.ClassCode is { } code ? db.FindClass(code)?.Name : null;
+            var name = p.Name ?? (cls is not null && p.Number is { } n ? $"{cls} {n}" : "joueur inconnu");
+            Control action;
+            if (p.Me) action = T("toi", 12, Tok.Muted);
+            else if (p.Name is { } known)
+            {
+                var link = T("ouvrir sa fiche ›", 12, Accent.Main, FontWeight.SemiBold);
+                Border? button = null;
+                button = Clickable(link, () => openPlayer(known, p.ClassCode, button!), hover: Tok.HoverStrong, padding: new Thickness(6, 1));
+                action = Tip(button, $"Importer {known} depuis le site officiel (région de ton perso) et l'ouvrir dans un onglet : stats, équipement, compétences, conseils.");
+            }
+            else action = Tip(T("nom inconnu", 12, Tok.Muted), "Ce joueur n'est pas apparu près de toi pendant l'enregistrement : le Pet Meter n'a pas lu son nom.");
+            var skills = p.Skills.Count == 0 ? "" : "Sorts principaux : " + string.Join(" · ", p.Skills.Take(6).Select(k =>
+                $"{k.Name} {Fmt.Pct(k.Share)}" + (k.Casts > 0 ? $" ({k.Casts}×)" : "")));
+            var tip = $"{name}{(cls is null ? "" : $" · {cls}")} : {Fmt.Big(p.Damage)} dégâts" + (p.Crit is { } c ? $", {Fmt.Pct(c)} de critiques" : "") +
+                      (skills.Length > 0 ? $"\n{skills}" : "");
+            action.HorizontalAlignment = HorizontalAlignment.Right;
+            var row = Columns(cols,
+                Tip(T(name, 13, p.Me ? Accent.Main : p.Name is null ? Tok.Text2 : null, p.Me ? FontWeight.SemiBold : FontWeight.Normal), tip),
+                T(cls ?? "—", 12, Tok.Text2), T(p.Power is { } pw ? Fmt.Big(pw) : "—", 12, Tok.Muted, mono: true),
+                T(Fmt.Big(p.Dps), 12, p.Me ? Accent.Main : null, mono: true), T(Fmt.Pct(p.Share), 12, Tok.Text, FontWeight.SemiBold, mono: true),
+                action);
+            table.Children.Add(new Border { Padding = new Thickness(20, 6), Background = p.Me ? Accent.Dim : null, Child = row });
+        }
+        var note = log.GroupDuration is { } group
+            ? $"DPS et part sur le combat du groupe ({Duration(group)}, du premier au dernier coup de quiconque sur {Who(log)}) ; ton DPS en haut ne compte que de ton premier à ton dernier coup."
+            : "DPS et part sur le combat du groupe.";
+        return Card(new StackPanel
+        {
+            Spacing = 8,
+            Children =
+            {
+                new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), ClipToBounds = true, Child = table },
+                T(note + " Survol d'un nom : ses sorts principaux.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4),
+            },
+        }, "Joueurs du combat", T(Fmt.Plural(players.Count, "joueur"), 12, Tok.Muted));
     }
 
     /// <summary>Carte « à corriger » : pastille, gain estimé, titre, cases lancés / possibles, ce qu'il faut faire ; « Pourquoi » déplie la raison.</summary>

@@ -943,7 +943,8 @@ public sealed class MainWindow : Window
             o => Simulator.Run(db, r, inputs, pets.Collection, o),
             combats, () => _ = ImportCombatAsync(), DeleteCombat, ReloadCombats, () => _ = RefreshAsync(),
             peerStore.Load(), (name, server) => _ = AddPeerAsync(name, server), RemovePeer, () => _ = ImportInGameAsync(),
-            new AccountGather(accountGather ?? [], AccountKey() is not null, accountGatherStatus));
+            new AccountGather(accountGather ?? [], AccountKey() is not null, accountGatherStatus),
+            (name, classCode, anchor) => _ = OpenPlayerAsync(name, classCode, anchor));
         var (content, inspector) = views.Build();
         side = views.Side();
         var grid = new Grid { RowDefinitions = new RowDefinitions("36,*") };
@@ -1693,6 +1694,54 @@ public sealed class MainWindow : Window
         if (current is null) { ShowImport(); return; }
         var c = current;
         await ImportAsync(c.Name, (client, progress) => client.Fetch(db, c.Region, c.ServerId, c.CharacterId, progress));
+    }
+
+    /// <summary>
+    /// « ouvrir sa fiche » d'un joueur d'un combat : le Pet Meter ne donne que son nom (et sa classe) ; il est cherché dans la
+    /// région de ton perso, parmi les noms exacts de sa classe. Un seul : importé et ouvert dans un onglet ; plusieurs serveurs :
+    /// un menu sous le lien pour choisir.
+    /// </summary>
+    async Task OpenPlayerAsync(string name, string? classCode, Control anchor)
+    {
+        if (current is null || loading is not null) return;
+        var region = current.Region;
+        SetStatus($"Recherche de {name} en région {region}…");
+        List<SearchHit> found;
+        try
+        {
+            using var client = ArmoryClient.Create();
+            var hits = await client.Search(region, name);
+            found = hits.Where(h => h.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (classCode is not null && found.Count(h => h.ClassCode == classCode) is > 0) found = found.Where(h => h.ClassCode == classCode).ToList();
+        }
+        catch (ArmoryException ex)
+        {
+            SetStatus(ex.Message, error: true);
+            Toast($"Recherche de {name} impossible", ex.Message, error: true);
+            return;
+        }
+        Task Import(SearchHit h) => ImportAsync(h.Name, (client, progress) => client.Fetch(db, region, h.ServerId, h.CharacterId, progress), h.CharacterId);
+        switch (found.Count)
+        {
+            case 0:
+                SetStatus($"Aucun personnage « {name} » en région {region}.", error: true);
+                Toast($"{name} introuvable", $"Aucun personnage de ce nom en région {region} sur le site officiel.", error: true);
+                return;
+            case 1:
+                await Import(found[0]);
+                return;
+        }
+        SetStatus($"{found.Count} personnages « {name} » : choisis le serveur.");
+        new MenuFlyout
+        {
+            Placement = PlacementMode.BottomEdgeAlignedRight,
+            ItemsSource = found.OrderBy(h => h.ServerId != current.ServerId).ThenBy(h => h.ServerName).Select(h =>
+            {
+                var item = new MenuItem { Header = $"{h.Name} · {h.ServerName} · {db.FindClass(h.ClassCode ?? "")?.Name ?? "?"} niv. {h.Level}" };
+                item.Click += (_, _) => _ = Import(h);
+                return item;
+            }).ToList(),
+        }.ShowAt(anchor);
     }
 
     /// <param name="key">Identifiant du résultat cliqué (sa ligne affiche le chargement) ; sinon une ligne au nom tapé.</param>

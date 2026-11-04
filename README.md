@@ -221,7 +221,12 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    l'ouverture du perso (même nom) : en plus de ce qui suit, tes **lancers chronométrés** (combos ratés d'après les
    conditions de `spells.json`, temps morts de plus de 2,5 s) et les **dégâts subis face aux soins**. Le jeu ne donne
    qu'un code de créature : un boss s'affiche « Boss (code 2300371) ». En tête de l'historique, **par boss** : tes essais sur une même cible, ton meilleur DPS, le dernier face à lui et la
-   suite de tes DPS (le plus ancien à gauche), pour voir si tu progresses. Les combats
+   suite de tes DPS (le plus ancien à gauche), pour voir si tu progresses. Avec le Pet Meter v0.19.0 ou plus, le
+   détail d'un combat montre aussi les **joueurs du combat** (toi compris) : classe, puissance de combat, DPS et part
+   des dégâts du groupe, et leurs sorts principaux au survol du nom. **« ouvrir sa fiche »** importe le joueur depuis
+   le site officiel (région de ton perso, recherche par nom parmi sa classe ; un menu si plusieurs serveurs répondent)
+   et l'ouvre dans un onglet, avec toute l'analyse du Builder : pratique pour conseiller un ami. Un joueur qui n'est pas
+   apparu près de toi garde « Templier 2 » au lieu de son nom. Les combats
    enregistrés par NotMeter, eux, sont chiffrés : ils ne se lisent pas. À la place, l'écran lit les captures de sa
    fenêtre « Détails du combat » ([NotMeter](https://notmeter.com), en français) : une capture par écran de la liste
    des compétences, importées ensemble. Le texte est lu sur le PC par la reconnaissance de texte de Windows (rien n'est envoyé). Pour chaque sort :
