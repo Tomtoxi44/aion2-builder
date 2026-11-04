@@ -72,6 +72,8 @@ sealed class UiState
     public int? CombatIndex { get; set; }
     public int? CombatGroup { get; set; }
     public string? CombatSkill { get; set; }
+    /// <summary>Combat : joueur du groupe comparé sur la frise de rotation (null : le meilleur DPS de ta classe, sinon le meilleur DPS).</summary>
+    public string? CombatRival { get; set; }
     public HashSet<Area> Collapsed { get; } = [];
     /// <summary>Sections repliables ouvertes (refonte visuelle), par identifiant.</summary>
     public HashSet<string> Open { get; } = [];
@@ -3406,7 +3408,8 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             Card(damage, "Où vont tes dégâts", T(log.Source == "Pet Meter" || log.Pages > 0 ? "mesuré sur ce combat" : "", 12, Tok.Muted)),
             Card(recharge, "Tes sorts à recharge", T("lancés / possibles", 12, Tok.Muted))));
 
-        // 4. Frise du combat : chaque lancer des sorts à recharge, et les pauses.
+        // 4. Frise de rotation (tes lancers, et ceux d'un joueur du groupe), puis chaque lancer des sorts à recharge et les pauses.
+        if (log.Casts is { Count: > 2 } && log.Duration > 0) page.Children.Add(RotationStrip(log));
         if (log.Casts is { Count: > 2 } casts && log.Duration > 0)
         {
             var frise = new StackPanel { Spacing = 6 };
@@ -3664,7 +3667,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         foreach (var p in players.OrderByDescending(p => p.Damage))
         {
             var cls = p.ClassCode is { } code ? db.FindClass(code)?.Name : null;
-            var name = p.Name ?? (cls is not null && p.Number is { } n ? $"{cls} {n}" : "joueur inconnu");
+            var name = PlayerName(p);
             Control action;
             if (p.Me) action = T("toi", 12, Tok.Muted);
             else if (p.Name is { } known)
@@ -3703,6 +3706,194 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 T(note + " Survol d'un nom : ses sorts principaux.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4),
             },
         }, "Joueurs du combat", T(Fmt.Plural(players.Count, "joueur"), 12, Tok.Muted));
+    }
+
+    /// <summary>Nom d'un joueur du combat : son nom, sinon « Templier 2 » (classe et numéro dans sa classe).</summary>
+    string PlayerName(CombatPlayer p) =>
+        p.Name ?? (p.ClassCode is { } code && db.FindClass(code)?.Name is { } cls && p.Number is { } n ? $"{cls} {n}" : "joueur inconnu");
+
+    /// <summary>Clé d'un joueur du combat (choix gardés d'un affichage à l'autre) : son nom, sinon sa classe et son numéro.</summary>
+    static string PlayerKey(CombatPlayer p) => p.Name ?? $"{p.ClassCode}{p.Number}";
+
+    /// <summary>
+    /// Frise de rotation : tes lancers sur une ligne (un trait par lancer, une couleur par sort), et en dessous ceux d'un joueur
+    /// du groupe sur le même combat (par défaut le meilleur DPS de ta classe, sinon le meilleur DPS) ; survol : le sort et
+    /// l'instant. Un même sort a la même couleur sur les deux lignes ; en mots, le rythme de chacun et, entre joueurs de la
+    /// même classe, les sorts que l'un lance plus souvent que l'autre.
+    /// </summary>
+    Control RotationStrip(CombatLog log)
+    {
+        var others = log.Players?.Where(p => !p.Me && p.Casts is { Count: > 2 }).ToList() ?? [];
+        var rival = others.FirstOrDefault(p => PlayerKey(p) == s.CombatRival)
+                    ?? others.Where(p => p.ClassCode == r.Character.ClassCode).MaxBy(p => p.Dps) ?? others.MaxBy(p => p.Dps);
+        // Face à un autre joueur, tes lancers tels que le Pet Meter les date pour le groupe (même départ : le premier coup de
+        // quiconque sur la cible) ; seul, ceux de ton combat (départ : ton premier coup).
+        var meCasts = rival is not null && log.Players!.FirstOrDefault(p => p.Me)?.Casts is { Count: > 2 } own ? own : log.Casts!;
+        var lines = new List<(string Name, IBrush Color, List<CombatCast> Casts, string? Class)> { ("Toi", Accent.Main, meCasts, r.Character.ClassCode) };
+        if (rival is not null) lines.Add((PlayerName(rival), Tok.Text, rival.Casts!, rival.ClassCode));
+        var start = Math.Min(0, lines.Min(l => l.Casts[0].T));
+        var end = Math.Max(rival is not null ? log.GroupDuration ?? log.Duration : log.Duration, lines.Max(l => l.Casts[^1].T));
+
+        // Une couleur par sort pour les plus lancés (sur les deux lignes), la couleur secondaire d'abord ; les autres en gris.
+        var palette = AccentTheme.All.Select(a => a.Main).Where(b => !ReferenceEquals(b, Accent.Main)).Prepend(Accent.Main).ToList();
+        var colors = lines.SelectMany(l => l.Casts).GroupBy(c => c.Code).OrderByDescending(g => g.Count()).Take(palette.Count)
+            .Select((g, i) => (g.Key, Brush: palette[i])).ToDictionary(x => x.Key, x => x.Brush);
+        var lanes = new TimeLanes(start, end, 130);
+        foreach (var (name, color, casts, _) in lines)
+            lanes.Lane(name, color, casts.Select((c, i) => new TimeLanes.Mark(c.T, colors.GetValueOrDefault(c.Code) ?? Tok.Faint,
+                $"{c.Name}\n{name} · à {Clock(c.T)}" + (i > 0 ? $" · {Clock(c.T - casts[i - 1].T)} après le lancer d'avant" : ""))));
+
+        var body = new StackPanel { Spacing = 10 };
+        if (others.Count > 1)
+        {
+            var pick = new WrapPanel();
+            pick.Children.Add(T("Comparer à", 12, Tok.Muted).WithMargin(0, 0, 8, 4));
+            foreach (var p in others.OrderByDescending(p => p.Dps))
+            {
+                var key = PlayerKey(p);
+                pick.Children.Add(Choice([($"{PlayerName(p)} · {Fmt.Big(p.Dps)}", p == rival, () => update(st => st.CombatRival = key))]).WithMargin(0, 0, 6, 4));
+            }
+            body.Children.Add(pick);
+        }
+        body.Children.Add(lanes);
+
+        // Légende : par ligne, les sorts en couleur et leur nombre de lancers.
+        var legend = new StackPanel { Spacing = 4 };
+        foreach (var (name, color, casts, cls) in lines)
+        {
+            var wrap = new WrapPanel();
+            wrap.Children.Add(T(name, 12, color, FontWeight.SemiBold).WithMargin(0, 0, 10, 2));
+            foreach (var g in casts.GroupBy(c => c.Code).Where(g => colors.ContainsKey(g.Key)).OrderByDescending(g => g.Count()))
+            {
+                var item = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, Margin = new Thickness(0, 0, 12, 2) };
+                item.Children.Add(new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(2), Background = colors[g.Key], VerticalAlignment = VerticalAlignment.Center });
+                if (SpellIcon(g.First().Name, g.Key, cls, 16) is { } icon) item.Children.Add(icon);
+                item.Children.Add(T(g.First().Name, 12, Tok.Text2));
+                item.Children.Add(T($"×{g.Count()}", 11, Tok.Muted, mono: true));
+                wrap.Children.Add(item);
+            }
+            var rest = casts.Count(c => !colors.ContainsKey(c.Code));
+            if (rest > 0) wrap.Children.Add(T($"gris : {Fmt.Plural(rest, "autre lancer")}", 12, Tok.Muted).WithMargin(0, 0, 0, 2));
+            legend.Children.Add(wrap);
+        }
+        body.Children.Add(legend);
+
+        // En mots : le rythme de chacun ; entre joueurs de la même classe, les sorts lancés nettement plus par l'un que par l'autre.
+        static string Pace(List<CombatCast> casts)
+        {
+            var gaps = casts.Zip(casts.Skip(1)).Select(x => x.Second.T - x.First.T).ToList();
+            var pauses = gaps.Count(g => g > 2.5);
+            var minutes = Math.Max(1, casts[^1].T - casts[0].T) / 60;
+            return $"{Fmt.Plural(casts.Count, "lancer")} ({Fmt.Num(Math.Round(casts.Count / minutes, 1))} par minute), " +
+                   (pauses == 0 ? "aucune pause de plus de 2,5 s" : $"{Fmt.Plural(pauses, "pause")} de plus de 2,5 s (la plus longue : {Clock(gaps.Max())})");
+        }
+        var words = new StackPanel { Spacing = 4 };
+        foreach (var (name, _, casts, _) in lines) words.Children.Add(T($"{name} : {Pace(casts)}.", 12, Tok.Text2, wrap: true).WithLineHeight(1.4));
+        if (rival is not null && rival.ClassCode == r.Character.ClassCode)
+        {
+            var mine = meCasts.GroupBy(c => c.Name).ToDictionary(g => g.Key, g => g.Count());
+            var theirs = rival.Casts!.GroupBy(c => c.Name).ToDictionary(g => g.Key, g => g.Count());
+            var both = mine.Keys.Union(theirs.Keys).Select(k => (Name: k, Me: mine.GetValueOrDefault(k), Them: theirs.GetValueOrDefault(k))).ToList();
+            var more = both.Where(x => x.Them - x.Me >= 2).OrderByDescending(x => x.Them - x.Me).Take(3).ToList();
+            var less = both.Where(x => x.Me - x.Them >= 2).OrderByDescending(x => x.Me - x.Them).Take(3).ToList();
+            var them = lines[1].Name;
+            if (more.Count > 0)
+                words.Children.Add(T($"{them} lance plus souvent : " + string.Join(", ", more.Select(x => $"{x.Name} ({x.Them} fois, toi {x.Me})")) + ".",
+                    12, Tok.Warn, wrap: true).WithLineHeight(1.4));
+            if (less.Count > 0)
+                words.Children.Add(T("Tu lances plus souvent : " + string.Join(", ", less.Select(x => $"{x.Name} ({x.Me} fois, {them} {x.Them})")) + ".",
+                    12, Tok.Text2, wrap: true).WithLineHeight(1.4));
+            if (more.Count == 0 && less.Count == 0)
+                words.Children.Add(T($"Mêmes sorts, à peu près autant de fois que {them}.", 12, Tok.Good, wrap: true));
+        }
+        else if (rival is not null)
+            words.Children.Add(T($"{lines[1].Name} n'est pas de ta classe : compare surtout le rythme (lancers par minute, pauses).", 12, Tok.Muted, wrap: true));
+        else
+            words.Children.Add(T("Seul ou sans les lancers des autres joueurs (Pet Meter v0.21.1 et plus, en groupe) : ta ligne seule.", 12, Tok.Muted, wrap: true));
+        body.Children.Add(words);
+        var title = rival is null ? "Frise de rotation" : $"Frise de rotation · toi et {lines[1].Name}";
+        return Card(body, title, T("survol : le sort et l'instant", 11, Tok.Muted, mono: true));
+    }
+
+    /// <summary>
+    /// Icône d'un sort par son nom (et son code s'il est connu) : celle de ta compétence pour ta classe ; rien si l'icône
+    /// manque (pas d'espace réservé).
+    /// </summary>
+    Control? SpellIcon(string name, long? code, string? classCode, double size = 16) =>
+        classCode is null || classCode == r.Character.ClassCode ? SkillIcon(name, size, false) : null;
+
+    /// <summary>
+    /// Frise à plusieurs lignes sur un même axe de temps : nom de la ligne à gauche, un trait par lancer à sa couleur (plus haut
+    /// quand il pèse plus : poids de 0 à 1), les temps en dessous ; survol : la bulle du trait le plus proche (à 6 px près) et
+    /// un trait vertical à son instant sur toutes les lignes.
+    /// </summary>
+    sealed class TimeLanes(double start, double end, double labelWidth = 150) : HoverChart
+    {
+        public sealed record Mark(double T, IBrush Color, string Tip, double Weight = 1);
+
+        readonly List<(string Name, IBrush Color, List<Mark> Marks)> lanes = [];
+        const double Row = 24, Axis = 18;
+        /// <summary>Numéro d'un trait : ligne × Stride + rang dans la ligne.</summary>
+        const int Stride = 1_000_000;
+
+        public TimeLanes Lane(string name, IBrush color, IEnumerable<Mark> marks)
+        {
+            lanes.Add((name, color, marks.OrderBy(m => m.T).ToList()));
+            return this;
+        }
+
+        protected override Size MeasureOverride(Size available) => new(double.IsInfinity(available.Width) ? 400 : available.Width, lanes.Count * Row + Axis);
+
+        double X(double t, double width) => labelWidth + 4 + Math.Clamp((t - start) / Math.Max(1, end - start), 0, 1) * Math.Max(1, width - labelWidth - 8);
+
+        protected override int HitAt(Point p, Size size)
+        {
+            var lane = (int)Math.Floor(p.Y / Row);
+            if (p.X < labelWidth || lane < 0 || lane >= lanes.Count) return -1;
+            var marks = lanes[lane].Marks;
+            var best = -1;
+            var distance = 6.0;
+            for (var j = 0; j < marks.Count; j++)
+            {
+                var d = Math.Abs(X(marks[j].T, size.Width) - p.X);
+                if (d <= distance) (distance, best) = (d, j);
+            }
+            return best < 0 ? -1 : lane * Stride + best;
+        }
+
+        protected override string? TipOf(int index) => lanes[index / Stride].Marks[index % Stride].Tip;
+
+        protected override void Draw(DrawingContext ctx, Size size)
+        {
+            var (hoverLane, hoverMark) = Hovered >= 0 ? (Hovered / Stride, Hovered % Stride) : (-1, -1);
+            for (var i = 0; i < lanes.Count; i++)
+            {
+                var (name, color, marks) = lanes[i];
+                var y = i * Row;
+                var label = Text(name, 12, color, maxWidth: labelWidth - 10);
+                ctx.DrawText(label, new Point(0, y + (Row - label.Height) / 2));
+                ctx.DrawRectangle(Tok.Frame, null, new RoundedRect(new Rect(labelWidth, y + 3, Math.Max(0, size.Width - labelWidth), Row - 6), 3));
+                for (var j = 0; j < marks.Count; j++)
+                {
+                    var m = marks[j];
+                    var h = 6 + 10 * Math.Clamp(m.Weight, 0, 1);
+                    var on = i == hoverLane && j == hoverMark;
+                    ctx.FillRectangle(on ? Tok.Text : m.Color, new Rect(X(m.T, size.Width) - (on ? 1.5 : 1), y + (Row - h) / 2, on ? 3 : 2, h));
+                }
+            }
+            if (hoverLane >= 0)
+                ctx.FillRectangle(Tok.Alpha(Tok.Text, 0.3), new Rect(X(lanes[hoverLane].Marks[hoverMark].T, size.Width) - 0.5, 0, 1, lanes.Count * Row));
+            // Axe : début, milieu, fin.
+            var ay = lanes.Count * Row + 3;
+            var first = Text(Duration(start), 11, Tok.Muted, mono: true);
+            var middle = Text(Duration((start + end) / 2), 11, Tok.Muted, mono: true);
+            var last = Text(Duration(end), 11, Tok.Muted, mono: true);
+            var x0 = labelWidth + 4;
+            var x1 = Math.Max(x0, size.Width - 4);
+            ctx.DrawText(first, new Point(x0, ay));
+            ctx.DrawText(middle, new Point((x0 + x1 - middle.Width) / 2, ay));
+            ctx.DrawText(last, new Point(x1 - last.Width, ay));
+        }
     }
 
     /// <summary>
