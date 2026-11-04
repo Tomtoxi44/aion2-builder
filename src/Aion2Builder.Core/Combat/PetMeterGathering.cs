@@ -59,11 +59,35 @@ public static class PetMeterGathering
     static ((int, DateTime) Stamp, List<GatherDay> Days)? cache;
 
     /// <summary>
-    /// Les jours du compte (tous tes PC, lus sur Aion 2 Todo) d'abord ; ceux de ce PC qu'il n'a pas (avant le Pet Meter v0.18.0,
-    /// ou pas encore envoyés), en plus. Du plus récent au plus ancien.
+    /// Les jours du compte (tous tes PC, lus sur Aion 2 Todo) et ceux de ce PC. Un jour présent des deux côtés garde, chiffre par
+    /// chiffre, le plus grand des deux : ce PC peut déjà y être (alors rien n'est compté deux fois) ou pas encore (un Pet Meter
+    /// d'avant la v0.18.0 n'envoyait pas le détail) : ses récoltes ne sont pas perdues. Du plus récent au plus ancien.
     /// </summary>
-    public static List<GatherDay> Merge(IReadOnlyList<GatherDay> account, IReadOnlyList<GatherDay> local) =>
-        account.Concat(local.Where(l => account.All(a => a.Day != l.Day))).OrderByDescending(d => d.Day, StringComparer.Ordinal).ToList();
+    public static List<GatherDay> Merge(IReadOnlyList<GatherDay> account, IReadOnlyList<GatherDay> local)
+    {
+        var days = account.ToDictionary(d => d.Day);
+        foreach (var l in local)
+            days[l.Day] = days.TryGetValue(l.Day, out var a) ? Larger(a, l) : l;
+        return days.Values.OrderByDescending(d => d.Day, StringComparer.Ordinal).ToList();
+    }
+
+    static GatherDay Larger(GatherDay a, GatherDay b)
+    {
+        var servers = new Dictionary<string, GatherServer>();
+        foreach (var key in (a.Servers?.Keys.AsEnumerable() ?? []).Union(b.Servers?.Keys.AsEnumerable() ?? []))
+        {
+            var x = a.Servers?.GetValueOrDefault(key);
+            var y = b.Servers?.GetValueOrDefault(key);
+            if (x is null || y is null) { servers[key] = (x ?? y)!; continue; }
+            var items = (x.Items ?? []).Concat(y.Items ?? []).GroupBy(i => i.Id?.ToString(CultureInfo.InvariantCulture) ?? i.Name)
+                .Select(g => g.OrderByDescending(i => i.Qty).First()).OrderByDescending(i => i.Qty).ToList();
+            servers[key] = new GatherServer(Math.Max(x.Count, y.Count), Math.Max(x.Failed, y.Failed), Math.Max(x.Better, y.Better),
+                (x.Chars ?? []).Union(y.Chars ?? []).ToList(), items);
+        }
+        var kinah = (a.Kinah ?? new()).Keys.Union((b.Kinah ?? new()).Keys)
+            .ToDictionary(k => k, k => Math.Max(a.Kinah?.GetValueOrDefault(k) ?? 0, b.Kinah?.GetValueOrDefault(k) ?? 0));
+        return a with { Servers = servers, Kinah = kinah, Cap = Math.Max(a.Cap, b.Cap) };
+    }
 
     /// <summary>Plusieurs jours d'un serveur additionnés (ressources regroupées par numéro, ou par nom pour un numéro inconnu).</summary>
     public static GatherServer Sum(IEnumerable<GatherServer> servers)
