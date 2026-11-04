@@ -3364,6 +3364,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         if (log.Players?.Any(p => !p.Me) == true) page.Children.Add(CombatPlayers(log));
         if (AggroAnalyzer.Analyze(log, db.Resolve(r.Character.ClassCode, log.Kind == "pvp" ? GameMode.PvP : GameMode.PvE), db) is { } aggro)
             page.Children.Add(AggroCard(log, aggro));
+        if (log.Kind != "pvp" && AggroAnalyzer.Mechanics(log) is { } mechanics) page.Children.Add(BossMechanicsCard(log, mechanics));
 
         // 2. À corriger en priorité : au plus 3 cartes ; le reste replié.
         if (todo.Count > 0)
@@ -3930,6 +3931,96 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                              "qui, quand il ne frappe qu'une cible, te vise au moins une fois sur deux. D'après les coups du boss lus par le Pet Meter.",
             11, Tok.Muted, wrap: true).WithLineHeight(1.4));
         return Card(panel, "Aggro du boss", T(a.YouAreTank ? Fmt.Pct(a.Share) : Fmt.Plural(a.OnYou, "fois", "fois"), 12, color, FontWeight.SemiBold, mono: true));
+    }
+
+    /// <summary>
+    /// Chronologie des mécaniques du boss (coups du boss lus par le Pet Meter v0.21.2) : ses lancers dans le temps, une ligne par
+    /// type (attaques de tank, sorts de zone, sorts sur une cible au hasard), le trait plus haut quand il fait plus de dégâts ;
+    /// survol : le sort, qui il a touché et combien. En dessous, chaque sort de mécanique : combien de fois, à quel rythme, qui.
+    /// </summary>
+    Control BossMechanicsCard(CombatLog log, BossMechanics m)
+    {
+        var who = Who(log);
+        // Les sorts des boss n'ont pas de nom dans les données : une lettre par sort, dans l'ordre de sa première apparition.
+        var letters = m.Casts.Select(c => c.Skill).Distinct().Select((code, i) => (code, i))
+            .ToDictionary(x => x.code, x => x.i < 26 ? ((char)('A' + x.i)).ToString() : $"{x.i + 1}");
+        static string Person(string to) => to == "me" ? "toi" : to;
+        static string KindWord(BossCastKind k) => k switch
+        {
+            BossCastKind.Tank => "attaque de tank", BossCastKind.Zone => "sort de zone", _ => "sort sur une cible au hasard",
+        };
+        string CastTip(BossCast c) =>
+            $"à {Clock(c.T)} · sort {letters[c.Skill]} · {KindWord(c.Kind)}\n" +
+            string.Join("\n", c.Hits.Take(6).Select(h => $"{Person(h.Who)} : {Fmt.Big(h.Damage)} dégâts")) +
+            (c.Hits.Count > 6 ? $"\n… et {Fmt.Plural(c.Hits.Count - 6, "autre joueur", "autres joueurs")}" : "") +
+            (c.Hits.Count > 1 ? $"\n{Fmt.Plural(c.Hits.Count, "joueur")} touchés, {Fmt.Big(c.Damage)} dégâts en tout" : "") +
+            $"\ncode du sort {c.Skill}";
+        IBrush MarkColor(BossCast c) => c.Kind switch
+        {
+            BossCastKind.Tank => c.Hits[0].Who == m.Tank ? Tok.Text2 : Tok.Warn,
+            BossCastKind.Zone => c.Hits.Any(h => h.Who == "me") ? Tok.Bad : Tok.Alpha(Tok.Bad, 0.5),
+            _ => c.Hits.Any(h => h.Who == "me") ? Accent.Main : Tok.Info,
+        };
+        var start = Math.Min(0, m.Casts[0].T);
+        var end = Math.Max(log.Duration, m.Casts[^1].T);
+        var lanes = new TimeLanes(start, end, 160);
+        (BossCastKind Kind, string Label, IBrush Color)[] kinds =
+            [(BossCastKind.Tank, "Attaques de tank", Tok.Text2), (BossCastKind.Zone, "Sorts de zone", Tok.Bad), (BossCastKind.Random, "Cible au hasard", Tok.Info)];
+        foreach (var (kind, label, color) in kinds)
+        {
+            var list = m.Casts.Where(c => c.Kind == kind).ToList();
+            if (list.Count == 0) continue;
+            var max = list.Max(c => c.Damage);
+            lanes.Lane($"{label} · {list.Count}", color, list.Select(c => new TimeLanes.Mark(c.T, MarkColor(c), CastTip(c), max > 0 ? c.Damage / max : 1)));
+        }
+        var tankName = m.Tank is { } t ? Person(t) : null;
+        var body = new StackPanel { Spacing = 10 };
+        body.Children.Add(lanes);
+        body.Children.Add(T("Trait plus haut = plus de dégâts. " +
+                            (tankName is null ? "" : $"Attaques de tank : grises sur {tankName}, orange sur un autre joueur. ") +
+                            "Zone : rouge vif quand tu as été touché. Cible au hasard : en couleur secondaire quand c'était toi.",
+            11, Tok.Muted, wrap: true).WithLineHeight(1.4));
+
+        // Chaque sort de mécanique (zone, cible au hasard) : combien de fois, toutes les combien de secondes, qui il touche.
+        const string cols = "54,170,46,110,*";
+        var rows = new StackPanel { Spacing = 4 };
+        foreach (var g in m.Casts.GroupBy(c => c.Skill)
+                     .Select(g => (Skill: g.Key, Casts: g.ToList(), Kind: g.GroupBy(c => c.Kind).MaxBy(k => k.Count())!.Key))
+                     .Where(x => x.Kind != BossCastKind.Tank).OrderBy(x => x.Casts[0].T))
+        {
+            var times = g.Casts.Select(c => c.T).ToList();
+            var every = times.Count >= 2 ? (times[^1] - times[0]) / (times.Count - 1) : (double?)null;
+            var touched = g.Casts.SelectMany(c => c.Hits).GroupBy(h => h.Who).OrderByDescending(x => x.Count()).ThenByDescending(x => x.Sum(h => h.Damage)).ToList();
+            var perCast = g.Casts.Average(c => c.Hits.Count);
+            var targets = g.Kind == BossCastKind.Zone
+                ? $"{Fmt.Num(Math.Round(perCast, 1))} joueurs par lancer, {Fmt.Big(g.Casts.Sum(c => c.Damage) / Math.Max(1, g.Casts.Sum(c => c.Hits.Count)))} chacun"
+                : string.Join(", ", touched.Take(3).Select(x => $"{Person(x.Key)} {x.Count()}×"));
+            var onMe = g.Casts.Count(c => c.Hits.Any(h => h.Who == "me"));
+            rows.Children.Add(Columns(cols,
+                T($"sort {letters[g.Skill]}", 12, g.Kind == BossCastKind.Zone ? Tok.Bad : Tok.Info, FontWeight.SemiBold, mono: true),
+                T(KindWord(g.Kind), 12, Tok.Text2),
+                T($"{g.Casts.Count}×", 12, Tok.Text, mono: true),
+                T(every is { } e ? $"toutes les {Duration(e)}" : $"à {Duration(times[0])}", 12, Tok.Text2, mono: true),
+                Tip(T(targets + (onMe > 0 && g.Kind == BossCastKind.Zone ? $" · toi {onMe}×" : ""), 12, onMe > 0 ? Tok.Text : Tok.Muted),
+                    $"Sort {letters[g.Skill]} (code {g.Skill}) : 1er lancer à {Clock(times[0])}" + (times.Count > 1 ? $", dernier à {Clock(times[^1])}" : "") + ".\n" +
+                    "Touchés : " + string.Join(", ", touched.Select(x => $"{Person(x.Key)} {x.Count()}× ({Fmt.Big(x.Sum(h => h.Damage))})")))));
+        }
+        if (rows.Children.Count > 0)
+        {
+            body.Children.Add(Label("Ses mécaniques, sort par sort"));
+            body.Children.Add(rows);
+        }
+        if (m.Tank is not null)
+        {
+            var tankCasts = m.Casts.Where(c => c.Kind == BossCastKind.Tank).ToList();
+            var onTank = tankCasts.Count(c => c.Hits[0].Who == m.Tank);
+            var skills = tankCasts.Select(c => c.Skill).Distinct().Select(code => $"sort {letters[code]}");
+            body.Children.Add(T($"Attaques de tank ({string.Join(", ", skills)}) : {tankCasts.Count} lancers, {Fmt.Pct((double)onTank / Math.Max(1, tankCasts.Count))} sur {tankName}" +
+                                (m.Tank == "me" ? " (toi)." : "."), 12, Tok.Text2, wrap: true).WithLineHeight(1.4));
+        }
+        body.Children.Add(T($"D'après les coups de {who} sur les joueurs lus par le Pet Meter : un sort qui ne touche personne (esquivé, hors de portée) n'apparaît pas. " +
+                            "Les sorts des boss n'ont pas de nom dans les données : une lettre par sort, dans l'ordre où il apparaît.", 11, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        return Card(body, "Mécaniques du boss · chronologie", T(Fmt.Plural(m.Casts.Count, "lancer"), 12, Tok.Muted, mono: true));
     }
 
     /// <summary>
