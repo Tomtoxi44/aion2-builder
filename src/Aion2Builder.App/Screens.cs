@@ -444,7 +444,55 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
         var (advice, important, _) = Fmt.Counts(r.Findings);
         return Page($"Accueil · {r.Character.Name} · {Mode}", Badges(
             Tip(Badge($"score global {r.Scores.Overall}", Tok.Score(r.Scores.Overall)), HowText),
-            Badge(advice == 0 ? "✓ aucun conseil" : Fmt.CountsText(r.Findings), important > 0 ? Tok.Warn : advice > 0 ? Tok.Text2 : Tok.Good)), Doll());
+            Badge(advice == 0 ? "✓ aucun conseil" : Fmt.CountsText(r.Findings), important > 0 ? Tok.Warn : advice > 0 ? Tok.Text2 : Tok.Good)), Doll(), HomeToday());
+    }
+
+    /// <summary>
+    /// Accueil, sous la silhouette : ta récolte du jour et ton dernier combat (Pet Meter), rien sans eux ; un clic ouvre l'écran.
+    /// </summary>
+    Control? HomeToday()
+    {
+        var cards = new List<Control>();
+        Control Card2(string label, string value, IBrush? color, string sub, Action open, string tip) => Tip(Clickable(new Border
+        {
+            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(14, 10),
+            Child = new StackPanel { Spacing = 4, Children = { Label(label), T(value, 20, color ?? Tok.Text, FontWeight.SemiBold, mono: true), T(sub, 11, Tok.Muted, wrap: true) } },
+        }, open, hover: Tok.HoverStrong), tip);
+
+        var gameToday = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-7));  // jour de jeu : reset à 07:00 UTC
+        if (PetMeterGathering.Merge(accountGather.Days, PetMeterGathering.Load()).FirstOrDefault(d => d.Date == gameToday) is { Servers: { Count: > 0 } servers } day)
+        {
+            var mine = servers.Values.Where(g => g.Chars?.Contains(r.Character.Name) == true).ToList();
+            var g = PetMeterGathering.Sum(mine.Count > 0 ? mine : servers.Values);
+            var radiant = (g.Items ?? []).Where(i => i.Rank == 4).Sum(i => i.Qty);
+            cards.Add(Card2("Récolte du jour", $"{Fmt.Big(g.Count)} / {Fmt.Big(day.Cap)}", g.Count >= day.Cap ? Tok.Good : null,
+                $"{Fmt.Plural(radiant, "éclatante")} · {Fmt.Big(g.Better)} au rang supérieur · {Fmt.Plural(g.Failed, "ratée")}",
+                () => update(st => { st.Screen = Screen.Gather; st.GatherDay = day.Day; }), "Clic : la page Récolte, sur aujourd'hui."));
+        }
+
+        var own = Enumerable.Range(0, combats.Count)
+            .Where(i => string.IsNullOrEmpty(combats[i].Log.Character) || string.Equals(combats[i].Log.Character, r.Character.Name, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (own.Count > 0)
+        {
+            var index = own.MaxBy(i => combats[i].Log.ImportedAtUtc);
+            var log = combats[index].Log;
+            var best = own.Where(i => combats[i].Log.Target == log.Target).Max(i => combats[i].Log.Dps);
+            var share = log.Players is { Count: > 1 } players ? players.FirstOrDefault(p => p.Me)?.Share : null;
+            cards.Add(Card2("Dernier combat", $"{Fmt.Big(log.Dps)} DPS", Accent.Main,
+                $"{log.Target} · {Duration(log.Duration)} · {log.ImportedAtUtc.ToLocalTime():dd/MM HH:mm}" + (share is { } sh ? $" · ta part {Fmt.Pct(sh)}" : "") +
+                (best > log.Dps ? $" · ton record ici : {Fmt.Big(best)}" : " · ton record ici"),
+                () => update(st => { st.Screen = Screen.Combat; st.CombatIndex = index; st.CombatGroup = null; st.CombatSkill = null; st.CombatList = false; }),
+                "Clic : le détail de ce combat dans l'écran Combat."));
+        }
+        if (cards.Count == 0) return null;
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), ColumnSpacing = 12 };
+        for (var i = 0; i < cards.Count; i++)
+        {
+            Grid.SetColumn(cards[i], i);
+            grid.Children.Add(cards[i]);
+        }
+        return grid;
     }
 
     /// <summary>Ce que mesure chaque note (survol des tuiles de l'Accueil).</summary>
