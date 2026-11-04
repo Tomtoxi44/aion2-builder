@@ -1206,6 +1206,27 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
                 12, Tok.Muted, wrap: true).WithMargin(14, 10));
         var title = plan.Next is { } goal ? $"Pour passer {Fmt.Num(goal.Score)} : +{goal.Score - plan.Score}" : "Pour progresser encore";
 
+        // 2 bis. Où aller : les pièces à remplacer regroupées par lieu, le plus rentable d'abord (quel donjon faire cette semaine).
+        var places = plan.Slots.Where(x => x.Target is not null && x.Target == plan.Available && x.Gain > 0 && x.Where.Length > 0)
+            .GroupBy(x => x.Where).Select(g => (Where: g.Key, Slots: g.ToList(), Gain: g.Sum(x => x.Gain)))
+            .OrderByDescending(x => x.Gain).ThenByDescending(x => x.Slots.Count).ToList();
+        Control? goTo = null;
+        if (places.Count > 0)
+        {
+            const string cols = "*,90";
+            var placeRows = places.Select(x => (Control)new Border
+            {
+                Padding = new Thickness(20, 6),
+                Child = Columns(cols,
+                    new StackPanel { Spacing = 2, Children = {
+                        T(x.Where, 13, Tok.Text, FontWeight.SemiBold, wrap: true),
+                        T($"{Fmt.Plural(x.Slots.Count, "pièce")} : {string.Join(", ", x.Slots.Select(s => s.SlotName))}", 12, Tok.Text2, wrap: true) } },
+                    T($"+{Fmt.Num(x.Gain)}", 13, Tok.Good, FontWeight.SemiBold, mono: true).AlignRight()),
+            });
+            goTo = TableCard($"Où aller pour tes pièces {plan.Available?.ItemLevel}", T("score gagné en remplaçant", 11, Tok.Muted, mono: true),
+                TableHeader(cols, "Lieu et pièces", "Score"), placeRows);
+        }
+
         // 3. Ce qui compte aussi pour le palier suivant, hors des pièces.
         Control? how = null;
         if (plan.Next is { How.Count: > 0 } nextGate)
@@ -1219,6 +1240,7 @@ sealed class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs inputs, U
             Card(where, "Paliers de score d'équipement", T("score = niveau d'objet du personnage", 11, Tok.Muted, mono: true)),
             levelUp,
             Card(shown, title, T("1 niveau de pièce ou d'enchantement = 1 point", 11, Tok.Muted, mono: true), new Thickness(0)),
+            goTo,
             how,
             Expander("D'où viennent ces seuils et ces sources", IsOpen("route:source"), () => Toggle("route:source"), () =>
                 T("Seuils et sources des serveurs Global relevés dans les guides (raidrelay.com, odealo.com, metabot.gg, expcarry.com, ateliergaming.fr, octobre 2026) ; " +
