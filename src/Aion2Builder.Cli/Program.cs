@@ -29,6 +29,7 @@ try
         "progress" or "progression" => Progress(cli),
         "rotation" => Rotation(cli),
         "combat" => CombatCommand(cli),
+        "hdv" => HdvCommand(cli),
         "stats-jeu" or "ingame" => InGameCommand(cli),
         "perf" => PerfCommand(cli),
         "route" or "feuille" => RouteCommand(cli),
@@ -255,6 +256,23 @@ static List<IReadOnlyList<OcrWord>> OcrPages(Args cli) =>
         .Select(f => (IReadOnlyList<OcrWord>)File.ReadAllLines(f).Select(l => l.Split('\t')).Where(p => p.Length >= 5)
             .Select(p => new OcrWord(p[4], double.Parse(p[0], CultureInfo.InvariantCulture), double.Parse(p[1], CultureInfo.InvariantCulture),
                 double.Parse(p[2], CultureInfo.InvariantCulture), double.Parse(p[3], CultureInfo.InvariantCulture))).ToList()).ToList();
+
+/// <summary>« hdv mots.tsv… » : les lignes lues sur des captures de l'hôtel des ventes (mots de « Aion2Builder.exe --ocr »).</summary>
+static int HdvCommand(Args cli)
+{
+    var pages = Enumerable.Range(0, 20).Select(cli.Positional).OfType<string>()
+        .Select(f => (IReadOnlyList<OcrWord>)File.ReadAllLines(f).Select(l => l.Split('	')).Where(p => p.Length >= 5)
+            .Select(p => new OcrWord(p[4], double.Parse(p[0], CultureInfo.InvariantCulture), double.Parse(p[1], CultureInfo.InvariantCulture),
+                double.Parse(p[2], CultureInfo.InvariantCulture), double.Parse(p[3], CultureInfo.InvariantCulture))).ToList()).ToList();
+    if (pages.Count == 0) { Console.Error.WriteLine("hdv <mots.tsv>… : mots reconnus d'une capture du Marché du jeu"); return 1; }
+    foreach (var words in pages)
+    {
+        var lines = MarketShotReader.Read(words);
+        Console.WriteLine($"{lines.Count} ligne(s)");
+        foreach (var l in lines) Console.WriteLine($"  {l.Name} | annonces {l.Listings?.ToString() ?? "?"} | {l.Price} Kinah");
+    }
+    return 0;
+}
 
 /// <summary>Fenêtre Stats du jeu (mots reconnus par « Aion2Builder.exe --ocr ») : chaque stat lue, sa valeur sur le site, en jeu,
 /// et la part que le site ne montre pas ; --save la garde dans les réglages du perso (comme l'appli).</summary>

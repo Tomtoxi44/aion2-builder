@@ -15,7 +15,7 @@ using static Aion2Builder.App.Ui;
 
 namespace Aion2Builder.App;
 
-enum Screen { Import, Home, Stats, Gear, Skills, Build, Combat, Daeva, Pets, Simulate, Progress, Details, Gather }
+enum Screen { Import, Home, Stats, Gear, Skills, Build, Combat, Daeva, Pets, Simulate, Progress, Details, Gather, Market }
 
 /// <summary>Sous-pages de l'écran Équipement (sous-menu du rail).</summary>
 enum GearPage { Overview, Roadmap, Pieces, Enchant, Stones, Arcana, Optimize }
@@ -61,6 +61,8 @@ sealed class UiState
     public string? MarketError { get; set; }
     /// <summary>Récolte → Prix HdV : filtres des derniers prix (texte cherché, rang du jeu « Rare »…, type « Récolte »…).</summary>
     public string? MarketQuery { get; set; }
+    /// <summary>Prix HdV lus sur une capture : les lignes décochées (non notées).</summary>
+    public HashSet<int> MarketShotSkip { get; } = [];
     public string? MarketGrade { get; set; }
     public string? MarketKind { get; set; }
     public bool HomeHow { get; set; }
@@ -112,7 +114,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
         (Screen.Home, "Accueil", "Accueil"), (Screen.Stats, "Stats", "Stats"), (Screen.Gear, "Équipement", "Équip."),
-        (Screen.Skills, "Compétences", "Compét."), (Screen.Build, "Build et rotation", "Build"), (Screen.Combat, "Combat (Pet Meter, NotMeter)", "Combat"), (Screen.Gather, "Récolte (Pet Meter)", "Récolte"), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Pets, "Familiers", "Famil."),
+        (Screen.Skills, "Compétences", "Compét."), (Screen.Build, "Build et rotation", "Build"), (Screen.Combat, "Combat (Pet Meter, NotMeter)", "Combat"), (Screen.Gather, "Récolte (Pet Meter)", "Récolte"), (Screen.Market, "Hôtel des ventes : prix de la communauté", "HdV"), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Pets, "Familiers", "Famil."),
         (Screen.Simulate, "Simulation « et si »", "Et si"), (Screen.Progress, "Progression", "Prog."),
         (Screen.Details, "Détails", "Détails"),
     ];
@@ -251,6 +253,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         Screen.Simulate => (Simulate(), SimulateInspector()),
         Screen.Progress => (ProgressScreen(), null),
         Screen.Gather => (GatherScreen(), null),
+        Screen.Market => (MarketScreen(PetMeterGathering.Merge(accountGather.Days, PetMeterGathering.Load())), null),
         _ => (Details(), null),
     };
 
@@ -5814,7 +5817,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
     Control GatherScreen()
     {
         var days = PetMeterGathering.Merge(accountGather.Days, PetMeterGathering.Load());
-        if (s.GatherDay == "prix") return MarketScreen(days);
+        if (s.GatherDay == "prix") return MarketScreen(days);  // ancien lien : l'hôtel des ventes a maintenant son écran (rail « HdV »)
         // D'où vient la récolte : ton compte (tous tes PC) avec ta clé Aion 2 Todo, sinon ce PC.
         var source = T(accountGather.Status
             ?? (accountGather.Linked ? "Récolte de ton compte : tous tes PC additionnés (Aion 2 Todo, Pet Meter v0.18.0 ou plus), plus les jours gardés sur ce PC."
@@ -5822,7 +5825,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
                   "(sur le site : onglet Familiers → Pet Meter → « Afficher ma clé »)."),
             12, accountGather.Status is { } st && !st.EndsWith('…') ? Tok.Warn : Tok.Muted, wrap: true);
         if (days.Count == 0)
-            return Page("Récolte", Choice([("Prix HdV", false, () => update(st => st.GatherDay = "prix"))]), Card(new StackPanel { Spacing = 10, Children = {
+            return Page("Récolte", Choice([("Prix HdV", false, () => update(st => st.Screen = Screen.Market))]), Card(new StackPanel { Spacing = 10, Children = {
                 T("Le Pet Meter (v0.17.0 ou plus) garde le résumé de ta récolte de chaque jour : récoltes, ratées, rang supérieur, chaque ressource " +
                   "avec son rang, et les Kinah de monstres. Lance-le et récolte : le résumé apparaît ici, jour par jour.", 13, Tok.Muted, wrap: true).WithLineHeight(1.5),
                 source } }), GatherStock(days));
@@ -5839,7 +5842,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
             options.Add(("7 jours", pick == "7", () => Pick("7")));
             options.Add(("30 jours", pick == "30", () => Pick("30")));
         }
-        options.Add(("Prix HdV", false, () => Pick("prix")));
+        options.Add(("Prix HdV", false, () => update(st => st.Screen = Screen.Market)));
         var period = span > 0 ? $"{span} derniers jours ({Fmt.Plural(chosen.Count, "jour enregistré", "jours enregistrés")})"
             : chosen.Count > 0 ? $"{DayLabel(chosen[0])} ({chosen[0].Date.ToString("dddd d MMMM", fr)})" : pick;
 

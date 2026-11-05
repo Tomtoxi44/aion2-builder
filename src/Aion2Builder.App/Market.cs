@@ -50,7 +50,17 @@ sealed record MarketData(List<MarketItem> Items, List<MarketPrice> Prices, List<
 
 /// <summary>Ce que l'écran Récolte → Prix HdV reçoit de la fenêtre : les prix, l'état de lecture, et les actions.</summary>
 sealed record MarketState(MarketData? Data, bool Linked, string? Status, Func<string?, string, long, string, Task<string?>> Add,
-    Action<MarketPrice> Remove, Action<MarketRemoved> Restore);
+    Action<MarketPrice> Remove, Action<MarketRemoved> Restore)
+{
+    /// <summary>Lignes lues sur des captures de l'hôtel (#65), en attente de ta validation ; ShotStatus : lecture en cours, erreur.</summary>
+    public IReadOnlyList<MarketShotLine>? Shot { get; init; }
+    public string? ShotStatus { get; init; }
+    /// <summary>Lire des captures : null = choisir les fichiers ; « latest » = la dernière capture d'écran de Windows.</summary>
+    public Action<string?> ReadShots { get; init; } = _ => { };
+    /// <summary>Noter les lignes gardées sur ce marché, puis vider la lecture.</summary>
+    public Action<IReadOnlyList<MarketShotLine>, string> SaveShot { get; init; } = (_, _) => { };
+    public Action ClearShot { get; init; } = () => { };
+}
 
 /// <summary>
 /// Prix de l'hôtel des ventes de la communauté Aion 2 Todo (onglet « Prix HdV » du site), lus et notés avec ta clé de synchro :
@@ -172,6 +182,130 @@ sealed partial class ScreenViews
     }
 
     /// <summary>
+    /// « Vendre ou garder ? » (#61) : ton stock de récolte (sac et coffre, lu par le Pet Meter sur ce PC, jamais envoyé) au dernier
+    /// prix de la communauté sur ce marché, ressource par ressource, avec la tendance sur 7 jours : un prix qui a monté d'au moins
+    /// 15 % est un bon moment pour vendre ; qui a baissé d'autant, mieux vaut garder. Une estimation, d'après les prix notés.
+    /// </summary>
+    Control? SellOrKeep(MarketData data, string shown, IReadOnlyList<Combat.GatherDay> days)
+    {
+        if (Aion2Builder.Combat.PetMeterInventory.Load() is not { } inv) return null;
+        var who = inv.For(r.Character.Name) ?? inv.Chars.Values.OrderByDescending(c => c.At).FirstOrDefault();
+        if (who is null) return null;
+        var stock = who.Items.Where(i => Aion2Builder.Combat.GatherCatalog.IsResource(i.Item) && i.Qty > 0 && i.Cont != 11)
+            .GroupBy(i => i.Item).ToDictionary(g => g.Key, g => g.Sum(i => i.Qty));
+        if (stock.Count == 0) return null;
+        var now = DateTime.UtcNow;
+        var here = data.Prices.Where(p => p.Market.Equals(shown, StringComparison.OrdinalIgnoreCase)).ToList();
+        var rows = new List<(long Id, string Name, MarketItem? Item, long Qty, long Price, long Value, double? Trend)>();
+        foreach (var (id, qty) in stock)
+        {
+            var list = here.Where(p => p.ItemKey == id.ToString()).OrderBy(p => p.At).ToList();
+            if (list.Count == 0) continue;
+            var last = list[^1];
+            // Tendance : le dernier prix face à la moyenne de ceux d'il y a 4 à 10 jours (s'il y en a).
+            var before = list.Where(p => p.At.ToUniversalTime() <= now.AddDays(-4) && p.At.ToUniversalTime() >= now.AddDays(-10)).ToList();
+            double? trend = before.Count == 0 ? null : (last.Price - before.Average(p => (double)p.Price)) * 100 / before.Average(p => (double)p.Price);
+            var item = data.Items.FirstOrDefault(i => i.Key == id.ToString());
+            rows.Add((id, item?.Name ?? last.ItemName, item, qty, last.Price, qty * last.Price, trend));
+        }
+        var body = new StackPanel { Spacing = 8 };
+        var unpriced = stock.Count - rows.Count;
+        if (rows.Count == 0)
+        {
+            body.Children.Add(T($"Aucune ressource de ton stock n'a encore de prix sur ce marché ({data.Label(shown)}) : note-les (une capture de l'hôtel suffit).", 12, Tok.Muted, wrap: true));
+            return Card(body, "Vendre ou garder ?", null, new Thickness(16, 10, 16, 12));
+        }
+        var total = rows.Sum(x => x.Value);
+        body.Children.Add(T($"Ton stock de {who.Character} (sac et coffre, relevé {Market.Since(who.At)}) vaut ≈ {Fmt.Big(total)} Kinah aux derniers prix de « {data.Label(shown)} »" +
+                            (unpriced > 0 ? $" ; {Fmt.Plural(unpriced, "ressource")} sans prix, pas comptée{(unpriced > 1 ? "s" : "")}." : "."), 12, Tok.Text2, wrap: true));
+        const string cols = "*,90,110,120,190";
+        var table = new StackPanel { Children = { TableHeader(cols, "Ressource", "En stock", "Prix", "Valeur", "Conseil") } };
+        foreach (var x in rows.OrderByDescending(x => x.Value).Take(12))
+        {
+            var (advice, color) = x.Trend switch
+            {
+                >= 15 => ($"vends : +{x.Trend:0} % en 7 j", Tok.Good),
+                <= -15 => ($"garde : {x.Trend:0} % en 7 j", Tok.Warn),
+                { } t => ($"stable ({(t >= 0 ? "+" : "")}{t:0} %)", Tok.Muted),
+                null => ("pas assez de prix", Tok.Faint),
+            };
+            table.Children.Add(new Border
+            {
+                Padding = new Thickness(20, 3),
+                Child = Columns(cols, MarketItemLine(x.Item, x.Name), T(Fmt.Big(x.Qty), 12, Tok.Text2, mono: true).AlignRight(),
+                    T(Fmt.Big(x.Price), 12, Tok.Text, mono: true).AlignRight(), T(Fmt.Big(x.Value), 13, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(),
+                    Tip(T(advice, 12, color), "Dernier prix face à la moyenne des prix notés il y a 4 à 10 jours sur ce marché. Une estimation : plus il y a de prix notés, plus elle est sûre.")),
+            });
+        }
+        body.Children.Add(table);
+        return Card(body, "Vendre ou garder ?", T("ton stock, aux prix de la communauté", 11, Tok.Muted, mono: true), new Thickness(16, 10, 16, 12));
+    }
+
+    /// <summary>
+    /// Prix lus sur une capture de la fenêtre Marché du jeu (#65) : la dernière capture d'écran de Windows, ou des fichiers
+    /// choisis ; chaque ligne lue (nom, annonces, prix) se décoche si elle est fausse, puis « noter » les envoie toutes.
+    /// </summary>
+    Control ShotCard(MarketData data, string shown)
+    {
+        var body = new StackPanel { Spacing = 8 };
+        Border Act(string text, Action act, bool main = false)
+        {
+            var b = Clickable(T(text, 12, main ? Tok.OnAccent : Accent.Main, FontWeight.SemiBold, mono: true), act, main ? Accent.Main : null, Tok.Hover, new Thickness(12, 5));
+            b.CornerRadius = new CornerRadius(3);
+            if (!main) { b.BorderBrush = Accent.Main; b.BorderThickness = new Thickness(1); }
+            return b;
+        }
+        body.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 10,
+            Children =
+            {
+                Tip(Act("dernière capture d'écran", () => market.ReadShots("latest"), market.Shot is null),
+                    "La plus récente de tes captures Windows (Impr. écran ou Win+Maj+S : dossier Images\\Captures d'écran ; Win+Alt+Impr. écran : Vidéos\\Captures), de moins de 30 min."),
+                Act("choisir des captures…", () => market.ReadShots(null)),
+            },
+        });
+        body.Children.Add(T("Dans le jeu, ouvre le Marché, cherche un objet (ou une catégorie) et fais une capture d'écran : le Builder lit chaque ligne " +
+                            "(nom, annonces, prix) sur ce PC, et tu vérifies avant de noter. La capture n'est envoyée nulle part.", 11, Tok.Muted, wrap: true));
+        if (market.ShotStatus is { } st) body.Children.Add(T(st, 12, st.StartsWith("Lecture") ? Tok.Muted : Tok.Warn, wrap: true));
+        if (market.Shot is { Count: > 0 } lines)
+        {
+            const string cols = "28,*,90,120,90";
+            var table = new StackPanel { Children = { TableHeader(cols, "", "Objet lu", "Annonces", "Prix", "") } };
+            for (var i = 0; i < lines.Count; i++)
+            {
+                var line = lines[i];
+                var index = i;
+                var item = data.Items.FirstOrDefault(x => Market.Fold(x.Name) == Market.Fold(line.Name));
+                var keep = !s.MarketShotSkip.Contains(index);
+                var box = new CheckBox { IsChecked = keep, MinWidth = 0, Padding = new Thickness(0) };
+                box.IsCheckedChanged += (_, _) => { if (box.IsChecked == true) s.MarketShotSkip.Remove(index); else s.MarketShotSkip.Add(index); };
+                table.Children.Add(new Border
+                {
+                    Padding = new Thickness(20, 3), Opacity = keep ? 1 : 0.55,
+                    Child = Columns(cols, box, MarketItemLine(item, item?.Name ?? line.Name),
+                        T(line.Listings?.ToString() ?? "—", 12, Tok.Text2, mono: true).AlignRight(),
+                        T(Fmt.Big(line.Price), 13, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(),
+                        item is null ? Tip(T("nouveau", 10, Tok.Warn, mono: true), "Pas encore dans la liste : il y entre sous ce nom (vérifie l'orthographe).") : T("", 10)),
+                });
+            }
+            body.Children.Add(table);
+            var kept = lines.Where((_, i) => !s.MarketShotSkip.Contains(i)).ToList();
+            body.Children.Add(new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 10,
+                Children =
+                {
+                    Act($"noter {Fmt.Plural(kept.Count, "prix", "prix")}", () => { if (kept.Count > 0) market.SaveShot(kept, shown); }, main: true),
+                    Act("annuler", () => { s.MarketShotSkip.Clear(); market.ClearShot(); }),
+                    T($"sur le marché « {data.Label(shown)} », avec ton pseudo", 11, Tok.Muted).WithMargin(0, 5, 0, 0),
+                },
+            });
+        }
+        return Card(body, "Lire une capture de l'hôtel des ventes", T("rapide : 10 prix d'un coup", 11, Tok.Muted, mono: true), new Thickness(16, 10, 16, 12));
+    }
+
+    /// <summary>
     /// Valeur d'un lot de ressources (numéro → quantité) au dernier prix de la communauté : une ligne cliquable vers Prix HdV,
     /// null sans prix ni clé.
     /// </summary>
@@ -184,7 +318,7 @@ sealed partial class ScreenViews
         var line = T($"≈ {Fmt.Big(value)} Kinah : valeur {what} au dernier prix de la communauté ({data.Label(shown)})" +
                      (missing > 0 ? $" ({Fmt.Plural(missing, "ressource")} sans prix, pas comptée{(missing > 1 ? "s" : "")})" : "") + " · voir les prix",
             12, Tok.Text2, wrap: true);
-        return Tip(Clickable(line, () => update(st => st.GatherDay = "prix"), null, Tok.Hover, new Thickness(0, 2)),
+        return Tip(Clickable(line, () => update(st => st.Screen = Screen.Market), null, Tok.Hover, new Thickness(0, 2)),
             "Prix notés à la main par les joueurs d'Aion 2 Todo (onglet « Prix HdV » du site ou ici) : le dernier relevé de chaque ressource.");
     }
 
@@ -203,15 +337,16 @@ sealed partial class ScreenViews
     /// </summary>
     Control MarketScreen(IReadOnlyList<Combat.GatherDay> days)
     {
-        var back = Choice([("Récolte", false, () => update(st => st.GatherDay = null)), ("Prix HdV", true, () => { })]);
+        // Écran à part (rail « HdV ») depuis la v1.1.104 ; la Récolte reste à un clic.
+        var back = Choice([("Récolte", false, () => update(st => { st.Screen = Screen.Gather; if (st.GatherDay == "prix") st.GatherDay = null; })), ("Prix HdV", true, () => { })]);
         const string hint = "L'hôtel de chaque serveur a ses propres prix ; l'hôtel inter-serveurs réunit tous les serveurs de la région. " +
                             "Choisis celui où tu as vu le prix : la page n'affiche que les prix de ce marché.";
         if (!market.Linked)
-            return Page("Récolte · prix de l'hôtel des ventes", back, Card(T("Les prix de l'hôtel des ventes sont notés par les joueurs d'Aion 2 Todo et partagés entre eux. " +
+            return Page("Hôtel des ventes · prix de la communauté", back, Card(T("Les prix de l'hôtel des ventes sont notés par les joueurs d'Aion 2 Todo et partagés entre eux. " +
                 "Pour les voir et en noter ici, colle ta clé Aion 2 Todo dans l'écran Familiers du Builder (sur le site : onglet Familiers → Pet Meter → " +
                 "« Afficher ma clé »), ou garde le Pet Meter relié : sa clé est reprise toute seule.", 13, Tok.Muted, wrap: true).WithLineHeight(1.5)));
         if (market.Data is not { } data)
-            return Page("Récolte · prix de l'hôtel des ventes", back, T(market.Status ?? "Lecture des prix…", 13, Tok.Muted, wrap: true));
+            return Page("Hôtel des ventes · prix de la communauté", back, T(market.Status ?? "Lecture des prix…", 13, Tok.Muted, wrap: true));
 
         var items = data.Items.GroupBy(i => i.Key).ToDictionary(g => g.Key, g => g.First());
         MarketItem? ItemOf(string key) => items.GetValueOrDefault(key);
@@ -307,6 +442,8 @@ sealed partial class ScreenViews
         form.Children.Add(T($"Noté pour le marché « {data.Label(shown)} », partagé avec tous les joueurs d'Aion 2 Todo avec ton pseudo ; la date est celle où tu le notes. " +
                             "Un objet hors liste est noté sous le nom que tu tapes.", 11, Tok.Muted, wrap: true));
         blocks.Add(Card(form, "Noter un prix vu à l'hôtel des ventes", null, new Thickness(16, 10, 16, 12)));
+        blocks.Add(ShotCard(data, shown));
+        blocks.Add(SellOrKeep(data, shown, days));
 
         // Derniers prix : un objet par ligne, rangés comme l'hôtel du jeu (la récolte par famille, du blanc au jaune, puis
         // l'équipement) ; filtres par rang et par type ; recherche instantanée ; clic : sa courbe plus bas.
@@ -441,6 +578,6 @@ sealed partial class ScreenViews
         blocks.Add(T("Prix unitaires notés à la main par les joueurs d'Aion 2 Todo (aucune source publique n'existe), avec le pseudo de leur auteur : " +
                      "les mêmes que l'onglet « Prix HdV » du site. Couleurs de rareté du jeu : blanc, vert, bleu, jaune. Un prix faux se retire par " +
                      "n'importe qui et se rétablit pendant 30 jours.", 11, Tok.Muted, wrap: true).WithLineHeight(1.4));
-        return Page("Récolte · prix de l'hôtel des ventes", back, blocks.ToArray());
+        return Page("Hôtel des ventes · prix de la communauté", back, blocks.ToArray());
     }
 }

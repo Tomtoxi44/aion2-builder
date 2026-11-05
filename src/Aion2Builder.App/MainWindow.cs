@@ -903,7 +903,7 @@ public sealed class MainWindow : Window
 
     /// <summary>Ordre par défaut du rail : les écrans notés d'abord (leurs notes se suivent), puis les autres.</summary>
     static readonly Screen[] DefaultRail =
-        [Screen.Home, Screen.Stats, Screen.Gear, Screen.Skills, Screen.Daeva, Screen.Pets, Screen.Build, Screen.Combat, Screen.Gather, Screen.Simulate, Screen.Progress, Screen.Details];
+        [Screen.Home, Screen.Stats, Screen.Gear, Screen.Skills, Screen.Daeva, Screen.Pets, Screen.Build, Screen.Combat, Screen.Gather, Screen.Market, Screen.Simulate, Screen.Progress, Screen.Details];
 
     /// <summary>Écrans du rail dans l'ordre choisi (glisser-déposer), les écrans inconnus de cet ordre à leur place par défaut.</summary>
     List<(Screen Screen, string Title, string Short)> RailNav
@@ -1031,6 +1031,8 @@ public sealed class MainWindow : Window
             Screen.Pets => "M5,11 Q9,6 13,11 Q9,15 5,11 Z M3,6 L3,7 M7,3 L7,4 M11,3 L11,4 M15,6 L15,7",
             // Pioche : manche et fer.
             Screen.Gather => "M3,14 L11,6 M6,3 Q13,1 16,9",
+            // Étiquette de prix : l'hôtel des ventes.
+            Screen.Market => "M2,2 H9 L16,9 L9,15 L2,8 Z M5,5 L5.6,5.6",
             _ => "M2,7 H16",
         };
         return new Avalonia.Controls.Shapes.Path
@@ -1051,7 +1053,7 @@ public sealed class MainWindow : Window
             grid.Children.Add(bar);
         }
         side = null;
-        if (state.Screen == Screen.Gather && report is not null) { _ = LoadAccountGatherAsync(); _ = LoadMarketAsync(); }
+        if (state.Screen is Screen.Gather or Screen.Market && report is not null) { _ = LoadAccountGatherAsync(); _ = LoadMarketAsync(); }
         var page = state.Screen == Screen.Import || report is null ? ImportHost() : Page(report);
         Grid.SetRow(page, 1);
         Grid.SetColumn(page, 1);
@@ -1130,7 +1132,13 @@ public sealed class MainWindow : Window
             (name, classCode, anchor) => _ = OpenPlayerAsync(name, classCode, anchor),
             new MarketState(market, AccountKey() is not null, marketStatus, AddPriceAsync,
                 p => _ = MarketActionAsync(key => Market.Remove(key, p.Id), $"prix retiré : {p.ItemName}, {Fmt.Big(p.Price)} Kinah"),
-                p => _ = MarketActionAsync(key => Market.Restore(key, p.Id), $"prix rétabli : {p.ItemName}, {Fmt.Big(p.Price)} Kinah")));
+                p => _ = MarketActionAsync(key => Market.Restore(key, p.Id), $"prix rétabli : {p.ItemName}, {Fmt.Big(p.Price)} Kinah"))
+            {
+                Shot = marketShot, ShotStatus = marketShotStatus,
+                ReadShots = which => _ = ReadMarketShotsAsync(which),
+                SaveShot = (lines, code) => _ = SaveMarketShotAsync(lines, code),
+                ClearShot = () => { marketShot = null; marketShotStatus = null; Render(); },
+            });
     }
 
     /// <summary>
@@ -1976,11 +1984,95 @@ public sealed class MainWindow : Window
             accountGatherStatus = $"Récolte du compte illisible ({ex.Message}) : seuls les jours de ce PC sont montrés.";
         }
         finally { accountGatherLoading = false; }
-        if (state.Screen == Screen.Gather) Render();
+        if (state.Screen is Screen.Gather or Screen.Market) Render();
     }
 
     MarketData? market;
     string? marketStatus;
+    List<MarketShotLine>? marketShot;  // lignes lues sur des captures de l'hôtel, en attente de validation
+    string? marketShotStatus;
+
+    /// <summary>
+    /// Captures de la fenêtre Marché du jeu lues sur ce PC (OCR de Windows) : « latest » = la plus récente des captures d'écran
+    /// de Windows (Images\Captures d'écran, Vidéos\Captures), de moins de 30 min ; null = fichiers choisis. Les lignes lues
+    /// attendent ta validation dans l'écran HdV.
+    /// </summary>
+    async Task ReadMarketShotsAsync(string? which)
+    {
+        List<string> paths;
+        if (which == "latest")
+        {
+            var folders = new[]
+            {
+                System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots"),
+                System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Captures d'écran"),
+                System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Captures"),
+            };
+            var latest = folders.Where(d => Directory.Exists(d))
+                .SelectMany(d => new DirectoryInfo(d).EnumerateFiles().Where(f => f.Extension.ToLowerInvariant() is ".png" or ".jpg" or ".jpeg"))
+                .Where(f => DateTime.Now - f.LastWriteTime < TimeSpan.FromMinutes(30)).OrderByDescending(f => f.LastWriteTime).FirstOrDefault();
+            if (latest is null)
+            {
+                marketShotStatus = "Aucune capture d'écran de moins de 30 min (Images\\Captures d'écran, Vidéos\\Captures) : fais-en une du Marché du jeu, ou « choisir des captures… ».";
+                Render();
+                return;
+            }
+            paths = [latest.FullName];
+        }
+        else
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+            {
+                Title = "Captures de la fenêtre Marché du jeu", AllowMultiple = true,
+                FileTypeFilter = [new Avalonia.Platform.Storage.FilePickerFileType("Images") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.bmp"] }],
+            });
+            paths = files.Where(f => f.Path.IsFile).Select(f => f.Path.LocalPath).ToList();
+            if (paths.Count == 0) return;
+        }
+        marketShotStatus = $"Lecture de {Fmt.Plural(paths.Count, "capture")}…";
+        Render();
+        try
+        {
+            var lines = new List<MarketShotLine>();
+            foreach (var path in paths) lines.AddRange(MarketShotReader.Read(await ScreenshotOcr.Words(path, InGameStatsReader.MinOcrSize)));
+            // Un même objet sur deux captures : la dernière lecture l'emporte.
+            marketShot = lines.GroupBy(l => Market.Fold(l.Name)).Select(g => g.Last()).ToList();
+            state.MarketShotSkip.Clear();
+            marketShotStatus = marketShot.Count == 0
+                ? "Aucune ligne de prix lue : il faut une capture de la fenêtre Marché (onglet Principal), avec les colonnes Objet, Liste de vente et Prix."
+                : null;
+            if (marketShot.Count == 0) marketShot = null;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
+        {
+            marketShotStatus = $"Lecture impossible : {ex.Message}";
+            marketShot = null;
+        }
+        Render();
+    }
+
+    async Task SaveMarketShotAsync(IReadOnlyList<MarketShotLine> lines, string marketCode)
+    {
+        if (AccountKey() is not { } key) { marketShotStatus = "Il faut ta clé Aion 2 Todo (écran Familiers)."; Render(); return; }
+        var items = market?.Items ?? [];
+        var errors = new List<string>();
+        var done = 0;
+        foreach (var line in lines)
+        {
+            var item = items.FirstOrDefault(i => Market.Fold(i.Name) == Market.Fold(line.Name));
+            string? error;
+            try { error = await Market.Add(key, item?.Key, item?.Name ?? line.Name, line.Price, marketCode); }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { error = $"Aion 2 Todo injoignable ({ex.Message})"; }
+            if (error is null) done++;
+            else errors.Add($"{line.Name} : {error}");
+        }
+        marketShot = errors.Count == 0 ? null : marketShot;
+        marketShotStatus = errors.Count == 0 ? null : string.Join("\n", errors.Take(4));
+        state.MarketShotSkip.Clear();
+        SetStatus($"{Fmt.Plural(done, "prix noté", "prix notés")} depuis la capture (partagés avec la communauté)", errors.Count > 0);
+        await LoadMarketAsync(force: true);
+        Render();
+    }
     DateTime marketAt;
     bool marketLoading;
 
@@ -2002,7 +2094,7 @@ public sealed class MainWindow : Window
             Journal.Write("prix HdV : " + ex.Message);
         }
         finally { marketLoading = false; }
-        if (state.Screen == Screen.Gather) Render();
+        if (state.Screen is Screen.Gather or Screen.Market) Render();
     }
 
     async Task<string?> AddPriceAsync(string? itemKey, string itemName, long price, string marketCode)
