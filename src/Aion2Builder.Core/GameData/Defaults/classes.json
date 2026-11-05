@@ -833,22 +833,22 @@
         "PvP": { "Accuracy": 0.9, "StatusResist": 0.85, "HP": 0.85, "StatusHit": 0.7, "MP": 0.2 }
       },
       "coreSkills": { "PvE": [], "PvP": [] },
-      "notes": ["Coup puissant (chance de double dégâts) d'abord : Concentration mentale au maximum, puis Réduction du temps de recharge (≈ 20 %) et Précision (≈ 1 500) selon le guide. Les esprits copient tes stats au moment de l'invocation : lance tes buffs avant d'invoquer.", "Rotation : Bénédiction ardente, Protection d'esprit améliorée, Invocation : Esprit ancien, puis la ligne des esprits (Fusion des éléments en priorité, Esprit de l'eau, de la terre, du feu) et la ligne de dégâts (Corrosion, Malédiction, Domination spatiale, Combustion) ; Choc de givre tenu sur le clic gauche pour garder ses 5 charges. Macro : Protection d'esprit améliorée → Fusion des éléments → Corrosion.", "Daevanion JcE : +4 à Fusion des éléments, Combustion, Esprit du feu, Choc de givre et Esprit de l'eau, +4 aux passifs Concentration mentale et Coup d'esprit. JcJ : +4 à Malédiction, Combustion, Dissipation de choc, Choc de givre et Fusion des éléments."],
+      "notes": ["Coup puissant (chance de double dégâts) d'abord : Concentration mentale au maximum, puis Réduction du temps de recharge (≈ 20 %) et Précision (≈ 1 500) selon le guide. Les esprits copient tes stats au moment de l'invocation : lance tes buffs avant d'invoquer.", "Rotation : Bénédiction ardente, Faveur d'esprit améliorée, Invocation : Esprit ancien, puis la ligne des esprits (Fusion des éléments en priorité, Esprit de l'eau, de la terre, du feu) et la ligne de dégâts (Corrosion, Malédiction, Domination spatiale, Combustion) ; Choc de givre tenu sur le clic gauche pour garder ses 5 charges. Macro : Faveur d'esprit améliorée → Fusion des éléments → Corrosion.", "Daevanion JcE : +4 à Fusion des éléments, Combustion, Esprit du feu, Choc de givre et Esprit de l'eau, +4 aux passifs Concentration mentale et Coup d'esprit. JcJ : +4 à Malédiction, Combustion, Dissipation de choc, Choc de givre et Fusion des éléments."],
       "skillsSource": "Guide Spiritualiste aion2-guides.info (adapté des guides TW/KR, recoupé avec les guides globaux le 23/10/2026), noms et effets de metabot.gg, et compétences réellement montées par 24 Spiritualistes niveau 45 (serveurs EU, niveau d'objet 878 à 2667). Les entrées « à valider » ne sont pas décrites par les guides.",
       "play": {
         "PvE": {
           "rotation": [
-            { "name": "Ouverture", "steps": ["Bénédiction ardente", "Protection d'esprit améliorée", "Invocation : Esprit ancien"], "note": "Les buffs d'abord : un esprit copie tes stats au moment où il est invoqué." },
+            { "name": "Ouverture", "steps": ["Bénédiction ardente", "Faveur d'esprit améliorée", "Invocation : Esprit ancien"], "note": "Les buffs d'abord : un esprit copie tes stats au moment où il est invoqué." },
             { "name": "Ligne des esprits", "steps": ["Invocation : Esprit du feu", "Invocation : Esprit de la terre", "Invocation : Esprit de l'eau", "Fusion des éléments"], "note": "Fusion des éléments en bas de la ligne (priorité la plus haute), puis Eau, Terre, Feu." },
             { "name": "Ligne de dégâts", "steps": ["Combustion", "Domination spatiale", "Attaque conjointe : Malédiction", "Attaque conjointe : Corrosion"], "note": "Corrosion en priorité, puis Malédiction, Domination spatiale, Combustion." },
             { "name": "Remplissage", "steps": ["Choc de givre"], "note": "Tenu sur le clic gauche : garde 5 charges (+2 % d'ATQ chacune à la spécialisation 12) ; une attaque de base de plus vaut mieux qu'une invocation en retard." }
           ],
-          "tips": ["Macro : Protection d'esprit améliorée → Fusion des éléments → Corrosion, 10 ms par étape.", "Le guide demande moins de 60 ms de latence et au moins 65 % de VIT de combat pour entrelacer les attaques de base.", "Esprit du vent : le plus faible, à ignorer selon le guide (les joueurs observés l'équipent pourtant souvent)."]
+          "tips": ["Macro : Faveur d'esprit améliorée → Fusion des éléments → Corrosion, 10 ms par étape.", "Le guide demande moins de 60 ms de latence et au moins 65 % de VIT de combat pour entrelacer les attaques de base.", "Esprit du vent : le plus faible, à ignorer selon le guide (les joueurs observés l'équipent pourtant souvent)."]
         },
         "PvP": {
           "rotation": [
             { "name": "On t'engage", "steps": ["Dissipation de choc"], "note": "Sur le premier contrôle dur." },
-            { "name": "Tu engages", "steps": ["Protection d'esprit améliorée", "Pouvoir de Kaisinel", "Invocation : Esprit de la terre", "Attaque conjointe : Malédiction", "Invocation : Esprit ancien", "Attaque conjointe : Corrosion"], "note": "Corrosion après la potion adverse." },
+            { "name": "Tu engages", "steps": ["Faveur d'esprit améliorée", "Pouvoir de Kaisinel", "Invocation : Esprit de la terre", "Attaque conjointe : Malédiction", "Invocation : Esprit ancien", "Attaque conjointe : Corrosion"], "note": "Corrosion après la potion adverse." },
             { "name": "Macro", "steps": ["Fusion des éléments", "Invocation : Esprit de la terre"], "note": "Cri de l'âme si l'Esprit de la terre ne contrôle pas, ou une fois la Dissipation adverse partie." }
           ],
           "tips": ["Extorsion de magie sur l'invincibilité d'un Gladiateur ou d'un Clerc, et juste après le buff d'un Rôdeur.", "Ordre : Substitut quand un Assassin engage ou quand un Sorcier te gèle."]
@@ -880,7 +880,7 @@
         "play": {
           "PvE": {
             "rotation": [
-              { "name": "Ouverture", "steps": ["Protection d'esprit améliorée", "Invocation : Esprit ancien", "Attaque conjointe : Malédiction", "Attaque conjointe : Corrosion", "Invocation : Esprit de l'eau", "Invocation : Esprit du feu", "Invocation : Esprit de la terre", "Invocation : Esprit du vent", "Fusion des éléments"], "note": "Le buff avant les invocations (les esprits copient tes stats), les deux dégâts sur la durée (Renversement consécutif), puis les 4 esprits : chacun lance Domination spatiale et donne un élément." },
+              { "name": "Ouverture", "steps": ["Faveur d'esprit améliorée", "Invocation : Esprit ancien", "Attaque conjointe : Malédiction", "Attaque conjointe : Corrosion", "Invocation : Esprit de l'eau", "Invocation : Esprit du feu", "Invocation : Esprit de la terre", "Invocation : Esprit du vent", "Fusion des éléments"], "note": "Le buff avant les invocations (les esprits copient tes stats), les deux dégâts sur la durée (Renversement consécutif), puis les 4 esprits : chacun lance Domination spatiale et donne un élément." },
               { "name": "Burst", "steps": ["Invocation : Esprit ancien", "Fusion des éléments", "Drainage", "Fusion des éléments"], "note": "Pendant 30 s, chaque compétence de l'Esprit ancien donne l'état 4 éléments : Fusion des éléments à chaque fois." },
               { "name": "Boucle", "steps": ["Combustion", "Attaque conjointe : Malédiction", "Choc de givre"], "note": "Combustion (67 % × 4) tant que les PM suivent, Choc de givre (+100 PM) quand ils baissent ; chaque invocation dès qu'elle revient, Drainage toutes les 30 s." }
             ],
@@ -931,7 +931,7 @@
         { "name": "Concentration mentale", "kind": "Passive", "role": "Coup puissant", "priority": { "PvE": 1.0, "PvP": 0.75 }, "target": { "PvE": 10, "PvP": 8 },
           "why": "Coup puissant (chance de double dégâts) et chance d'état mental : le premier passif à maximiser selon le guide. +4 niveaux par le Daevanion JcE ; niveau médian 14 chez les joueurs observés." },
         { "name": "Coup d'esprit", "kind": "Passive", "role": "Boost de DGT (toi + esprit)", "priority": { "PvE": 0.95, "PvP": 0.9 }, "target": { "PvE": 10, "PvP": 10 },
-          "why": "+6 % de Boost de DGT JcE (+3 % JcJ) et Coup parfait, pour toi et ton esprit. Effet multiplié par 1,5 avec Protection d'esprit améliorée au niveau 10. +4 niveaux par le Daevanion JcE." },
+          "why": "+6 % de Boost de DGT JcE (+3 % JcJ) et Coup parfait, pour toi et ton esprit. Effet multiplié par 1,5 avec Faveur d'esprit améliorée au niveau 10. +4 niveaux par le Daevanion JcE." },
         { "name": "Unification des éléments", "kind": "Passive", "role": "Boost de DGT CRIT après une compétence d'esprit", "priority": { "PvE": 0.85, "PvP": 0.7 }, "target": { "PvE": 10, "PvP": 8 },
           "why": "Après une compétence d'esprit, +1,1 % de Boost de DGT CRIT pendant 10 s, cumulable (toi et l'esprit). Troisième passif selon le guide, rentable une fois l'équipement CRIT en place." },
         { "name": "Revitalisation d'esprit", "kind": "Passive", "role": "Invocations plus fréquentes", "priority": { "PvE": 0.8, "PvP": 0.75 }, "target": { "PvE": 10, "PvP": 10 },
@@ -943,7 +943,7 @@
         { "name": "Érosion", "kind": "Passive", "role": "CRIT + coup sur critique", "priority": { "PvE": 0.6, "PvP": 0.6 }, "target": { "PvE": 8, "PvP": 8 },
           "why": "+100 CRIT et, sur un critique, 50 % de chance de 50,5 % d'ATQ en plus (une fois par seconde). Rentable seulement avec un équipement CRIT selon le guide." },
         { "name": "Communion d'esprit", "kind": "Passive", "role": "Précision + soins", "priority": { "PvE": 0.5, "PvP": 0.6 }, "target": { "PvE": 6, "PvP": 6 },
-          "why": "+100 Précision et 10 % de chance de soigner toi et l'esprit à chaque attaque. Effet ×1,5 avec Protection d'esprit améliorée au niveau 15." },
+          "why": "+100 Précision et 10 % de chance de soigner toi et l'esprit à chaque attaque. Effet ×1,5 avec Faveur d'esprit améliorée au niveau 15." },
         { "name": "Protection d'esprit", "kind": "Passive", "role": "DÉF (toi + esprit)", "priority": { "PvE": 0.4, "PvP": 0.9 }, "target": { "PvE": 4, "PvP": 10 },
           "why": "+2 % de DÉF pour toi et ton esprit : passif défensif n° 1 en JcJ contre le burst (≈ 20 selon le guide)." },
         { "name": "Pacte de revitalisation", "kind": "Passive", "role": "RÉS aux altérations (JcJ)", "priority": { "PvE": 0.3, "PvP": 0.85 }, "target": { "PvE": 2, "PvP": 10 },
@@ -951,7 +951,7 @@
 
         { "name": "Invocation : Esprit ancien", "kind": "Stigma", "role": "Burst (4 éléments en continu)", "priority": { "PvE": 1.0, "PvP": 1.0 }, "target": { "PvE": 20, "PvP": 20 },
           "why": "Esprit ancien pendant 30 s (recharge 90 s) : chacune de ses compétences donne l'état 4 éléments, donc Fusion des éléments à répétition. Niveaux : 5 +10 % d'ATQ de l'esprit, 10 Avènement d'esprit ×1,5 pendant 30 s, 15 compétence après 5 attaques de base, 20 +20 % de stats. Équipé par 21 joueurs observés sur 24." },
-        { "name": "Protection d'esprit améliorée", "kind": "Stigma", "role": "Buff de dégâts et de tolérance", "priority": { "PvE": 0.95, "PvP": 0.95 }, "target": { "PvE": 20, "PvP": 20 },
+        { "name": "Faveur d'esprit améliorée", "kind": "Stigma", "role": "Buff de dégâts et de tolérance", "priority": { "PvE": 0.95, "PvP": 0.95 }, "target": { "PvE": 20, "PvP": 20 },
           "why": "+20 % de Boost de DGT JcE et de Tolérance aux DGT JcE (+10 % JcJ), avec soin régulier (recharge 1 min). Niveaux : 5 soin de 10 % des PV, 10 Coup d'esprit ×1,5, 15 Communion d'esprit ×1,5, 20 +25 % de Boost et de Tolérance JcE pour toi et l'esprit. Équipé par 22 joueurs observés sur 24." },
         { "name": "Bénédiction ardente", "kind": "Stigma", "role": "Dégâts en plus pendant 10 s", "priority": { "PvE": 0.85, "PvP": 0.3 }, "target": { "PvE": 15, "PvP": 5 },
           "why": "Pendant 10 s (recharge 1 min), 50 % de chance de 41 % d'ATQ en plus par attaque (une fois par seconde). Niveaux : 5 +100 Précision, 10 +100 CRIT, 15 +10 % de Boost de DGT CRIT, 20 −50 % de recharge des dégâts en plus. À lancer avant les invocations." },
