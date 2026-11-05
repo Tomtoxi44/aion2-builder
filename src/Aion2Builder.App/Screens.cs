@@ -53,6 +53,8 @@ sealed class UiState
     public string? GatherStockChar { get; set; }
     /// <summary>Récolte → Prix HdV : l'objet dont la courbe est montrée, le relevé à confirmer avant retrait, la saisie en cours.</summary>
     public string? MarketItem { get; set; }
+    /// <summary>Récolte → Prix HdV : le marché montré (« Bakarma », « *eu » inter-serveurs) ; null : le serveur du perso ouvert.</summary>
+    public string? MarketMarket { get; set; }
     public int? MarketConfirm { get; set; }
     public string? MarketPick { get; set; }
     public string? MarketPriceText { get; set; }

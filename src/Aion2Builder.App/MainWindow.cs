@@ -2005,11 +2005,11 @@ public sealed class MainWindow : Window
         if (state.Screen == Screen.Gather) Render();
     }
 
-    async Task<string?> AddPriceAsync(string? itemKey, string itemName, long price)
+    async Task<string?> AddPriceAsync(string? itemKey, string itemName, long price, string marketCode)
     {
         if (AccountKey() is not { } key) return "Il faut ta clé Aion 2 Todo (écran Familiers).";
         string? error;
-        try { error = await Market.Add(key, itemKey, itemName, price); }
+        try { error = await Market.Add(key, itemKey, itemName, price, marketCode); }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { error = $"Aion 2 Todo injoignable ({ex.Message})."; }
         if (error is null)
         {

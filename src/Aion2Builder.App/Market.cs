@@ -13,18 +13,25 @@ namespace Aion2Builder.App;
 /// <summary>Objet de la liste du site : ressource connue (numéro du jeu, en texte) ou objet libre (« name:… »).</summary>
 sealed record MarketItem(string Key, string Name, int Rank, bool Gathered);
 /// <summary>Un prix de l'hôtel des ventes noté par un joueur d'Aion 2 Todo : By = son pseudo (null : compte supprimé), Mine = toi.</summary>
-sealed record MarketPrice(int Id, string ItemKey, string ItemName, long Price, DateTime At, string? By, bool Mine);
+/// Market : où il a été vu, l'hôtel d'un serveur (« Bakarma ») ou l'hôtel inter-serveurs d'une région (« *eu »).
+sealed record MarketPrice(int Id, string ItemKey, string ItemName, long Price, DateTime At, string? By, bool Mine, string Market = "*eu");
 /// <summary>Un prix retiré ces 30 derniers jours : qui l'avait noté, qui l'a retiré (rétablissable).</summary>
-sealed record MarketRemoved(int Id, string ItemKey, string ItemName, long Price, DateTime At, string? By, DateTime RemovedAt, string? RemovedBy);
+sealed record MarketRemoved(int Id, string ItemKey, string ItemName, long Price, DateTime At, string? By, DateTime RemovedAt, string? RemovedBy, string Market = "*eu");
+/// <summary>Un marché proposé par le site : code, nom affiché, nombre de prix, le tien (tes persos du site y jouent).</summary>
+sealed record MarketChoice(string Code, string Label, int Prices, bool Mine);
 
-sealed record MarketData(List<MarketItem> Items, List<MarketPrice> Prices, List<MarketRemoved> Removed)
+sealed record MarketData(List<MarketItem> Items, List<MarketPrice> Prices, List<MarketRemoved> Removed, List<MarketChoice>? Markets = null, string? DefaultMarket = null)
 {
-    /// <summary>Dernier prix de chaque objet (les prix arrivent du plus ancien au plus récent).</summary>
-    public Dictionary<string, MarketPrice> Latest { get; } = Prices.GroupBy(p => p.ItemKey).ToDictionary(g => g.Key, g => g.MaxBy(p => p.At)!);
+    /// <summary>Dernier prix de chaque objet sur un marché (les prix arrivent du plus ancien au plus récent).</summary>
+    public Dictionary<string, MarketPrice> Latest(string market) =>
+        Prices.Where(p => p.Market.Equals(market, StringComparison.OrdinalIgnoreCase)).GroupBy(p => p.ItemKey).ToDictionary(g => g.Key, g => g.MaxBy(p => p.At)!);
+
+    public string Label(string market) => Markets?.FirstOrDefault(m => m.Code.Equals(market, StringComparison.OrdinalIgnoreCase))?.Label
+                                         ?? (market.StartsWith('*') ? "inter-serveurs" : market);
 }
 
 /// <summary>Ce que l'écran Récolte → Prix HdV reçoit de la fenêtre : les prix, l'état de lecture, et les actions.</summary>
-sealed record MarketState(MarketData? Data, bool Linked, string? Status, Func<string?, string, long, Task<string?>> Add,
+sealed record MarketState(MarketData? Data, bool Linked, string? Status, Func<string?, string, long, string, Task<string?>> Add,
     Action<MarketPrice> Remove, Action<MarketRemoved> Restore);
 
 /// <summary>
@@ -41,10 +48,10 @@ static class Market
     }
 
     /// <summary>Null si c'est noté, sinon le message d'erreur (celui du site s'il en donne un).</summary>
-    public static async Task<string?> Add(string key, string? itemKey, string itemName, long price)
+    public static async Task<string?> Add(string key, string? itemKey, string itemName, long price, string market)
     {
         using var http = BugReports.Client(key);
-        return await Error(await http.PostAsJsonAsync("/api/sync/market/prices", new { itemKey, itemName, price }));
+        return await Error(await http.PostAsJsonAsync("/api/sync/market/prices", new { itemKey, itemName, price, market }));
     }
 
     public static async Task<string?> Remove(string key, int id)
@@ -79,6 +86,17 @@ sealed partial class ScreenViews
 {
     static string By(MarketPrice p) => p.Mine ? "toi" : p.By ?? "un compte supprimé";
 
+    /// <summary>
+    /// Marché montré : celui choisi, sinon le serveur du perso ouvert (son hôtel), sinon le marché par défaut de ton compte, sinon
+    /// l'inter-serveurs d'Europe.
+    /// </summary>
+    string MarketShown(MarketData data)
+    {
+        var known = data.Markets?.Select(m => m.Code).ToList() ?? [];
+        string? Find(string? code) => code is null ? null : known.FirstOrDefault(k => k.Equals(code, StringComparison.OrdinalIgnoreCase));
+        return Find(s.MarketMarket) ?? Find(r.Character.ServerName) ?? data.DefaultMarket ?? "*eu";
+    }
+
     static T Right<T>(T control) where T : Control
     {
         control.HorizontalAlignment = HorizontalAlignment.Right;
@@ -92,12 +110,14 @@ sealed partial class ScreenViews
     Control? MarketValue(IEnumerable<(long Id, long Qty)> lot, string what)
     {
         if (market.Data is not { } data) return null;
+        var shown = MarketShown(data);
+        var latest = data.Latest(shown);
         var list = lot.Where(x => x.Qty > 0).ToList();
-        var priced = list.Where(x => data.Latest.ContainsKey(x.Id.ToString())).ToList();
+        var priced = list.Where(x => latest.ContainsKey(x.Id.ToString())).ToList();
         if (priced.Count == 0) return null;
-        var value = priced.Sum(x => x.Qty * data.Latest[x.Id.ToString()].Price);
+        var value = priced.Sum(x => x.Qty * latest[x.Id.ToString()].Price);
         var missing = list.Count - priced.Count;
-        var line = T($"≈ {Fmt.Big(value)} Kinah : valeur {what} au dernier prix de la communauté" +
+        var line = T($"≈ {Fmt.Big(value)} Kinah : valeur {what} au dernier prix de la communauté ({data.Label(shown)})" +
                      (missing > 0 ? $" ({Fmt.Plural(missing, "ressource")} sans prix, pas comptée{(missing > 1 ? "s" : "")})" : "") + " · voir les prix",
             12, Tok.Text2, wrap: true);
         return Tip(Clickable(line, () => update(st => st.GatherDay = "prix"), null, Tok.Hover, new Thickness(0, 2)),
@@ -111,6 +131,8 @@ sealed partial class ScreenViews
     Control MarketScreen(IReadOnlyList<Combat.GatherDay> days)
     {
         var back = Choice([("Récolte", false, () => update(st => st.GatherDay = null)), ("Prix HdV", true, () => { })]);
+        const string hint = "L'hôtel de chaque serveur a ses propres prix ; l'hôtel inter-serveurs réunit tous les serveurs de la région. " +
+                            "Choisis celui où tu as vu le prix : la page n'affiche que les prix de ce marché.";
         if (!market.Linked)
             return Page("Récolte · prix de l'hôtel des ventes", back, Card(T("Les prix de l'hôtel des ventes sont notés par les joueurs d'Aion 2 Todo et partagés entre eux. " +
                 "Pour les voir et en noter ici, colle ta clé Aion 2 Todo dans l'écran Familiers du Builder (sur le site : onglet Familiers → Pet Meter → " +
@@ -124,6 +146,41 @@ sealed partial class ScreenViews
               "les mêmes que l'onglet « Prix HdV » du site. Un prix faux se retire par n'importe qui et se rétablit pendant 30 jours.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4),
         };
         if (market.Status is { } status) blocks.Add(T(status, 12, Tok.Warn, wrap: true));
+
+        // Le marché : tes serveurs d'abord, puis ceux qui ont des prix, puis une liste de tous les autres.
+        var shown = MarketShown(data);
+        var choices = data.Markets ?? [new MarketChoice(shown, data.Label(shown), 0, true)];
+        var quick = choices.Where(m => m.Mine || m.Prices > 0 || m.Code.Equals(shown, StringComparison.OrdinalIgnoreCase)).Take(8).ToList();
+        var others = new ComboBox
+        {
+            ItemsSource = choices.Where(m => !quick.Contains(m)).Select(m => m.Label).ToList(), PlaceholderText = "autre serveur…", MinWidth = 170,
+        };
+        others.SelectionChanged += (_, _) =>
+        {
+            if (others.SelectedItem is string label && choices.FirstOrDefault(m => m.Label == label) is { } m)
+                update(st => { st.MarketMarket = m.Code; st.MarketItem = null; st.MarketConfirm = null; });
+        };
+        blocks.Add(new StackPanel
+        {
+            Spacing = 6,
+            Children =
+            {
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal, Spacing = 10,
+                    Children =
+                    {
+                        T("Marché", 13, weight: FontWeight.Medium).WithMargin(0, 4, 0, 0),
+                        Choice(quick.Select(m => ($"{m.Label}{(m.Prices > 0 ? $" · {m.Prices}" : "")}", m.Code.Equals(shown, StringComparison.OrdinalIgnoreCase),
+                            (Action)(() => update(st => { st.MarketMarket = m.Code; st.MarketItem = null; st.MarketConfirm = null; }))))),
+                        others,
+                    },
+                },
+                T(hint, 11, Tok.Muted, wrap: true),
+            },
+        });
+        var here = data.Prices.Where(p => p.Market.Equals(shown, StringComparison.OrdinalIgnoreCase)).ToList();
+        var removedHere = data.Removed.Where(p => p.Market.Equals(shown, StringComparison.OrdinalIgnoreCase)).ToList();
 
         // Noter un prix : l'objet (liste avec recherche, ressources récoltées d'abord), le prix unitaire, puis « noter ».
         var names = data.Items.OrderByDescending(i => i.Gathered).ThenBy(i => i.Name, StringComparer.Create(System.Globalization.CultureInfo.GetCultureInfo("fr-FR"), true))
@@ -142,7 +199,7 @@ sealed partial class ScreenViews
             var digits = new string((price.Text ?? "").Where(char.IsDigit).ToArray());
             if (name.Length == 0 || !long.TryParse(digits, out var value) || value < 1) { update(st => st.MarketError = "Choisis un objet et tape son prix unitaire."); return; }
             var item = data.Items.FirstOrDefault(i => string.Equals(i.Name, name, StringComparison.OrdinalIgnoreCase));
-            var error = await market.Add(item?.Key, item?.Name ?? name, value);
+            var error = await market.Add(item?.Key, item?.Name ?? name, value, shown);
             update(st =>
             {
                 st.MarketError = error;
@@ -156,16 +213,16 @@ sealed partial class ScreenViews
         save.CornerRadius = new CornerRadius(3);
         var form = new StackPanel { Spacing = 8, Children = { new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { pick, price, save } } } };
         if (s.MarketError is { } err) form.Children.Add(T(err, 12, Tok.Bad, wrap: true));
-        form.Children.Add(T("Le prix est partagé avec tous les joueurs d'Aion 2 Todo, avec ton pseudo ; la date est celle où tu le notes.", 11, Tok.Muted, wrap: true));
+        form.Children.Add(T($"Noté pour le marché « {data.Label(shown)} », partagé avec tous les joueurs d'Aion 2 Todo avec ton pseudo ; la date est celle où tu le notes.", 11, Tok.Muted, wrap: true));
         blocks.Add(Card(form, "Noter un prix vu à l'hôtel des ventes", null, new Thickness(16, 10, 16, 12)));
 
         // Derniers prix : un objet par ligne ; clic : sa courbe plus bas.
-        var byItem = data.Prices.GroupBy(p => p.ItemKey).Select(g => (Key: g.Key, List: g.OrderBy(p => p.At).ToList()))
+        var byItem = here.GroupBy(p => p.ItemKey).Select(g => (Key: g.Key, List: g.OrderBy(p => p.At).ToList()))
             .OrderBy(x => x.List[^1].ItemName, StringComparer.Create(System.Globalization.CultureInfo.GetCultureInfo("fr-FR"), true)).ToList();
         var selected = byItem.FirstOrDefault(x => x.Key == s.MarketItem);
         if (selected.Key is null && byItem.Count > 0) selected = byItem.MaxBy(x => x.List[^1].At);
         if (byItem.Count == 0)
-            blocks.Add(Card(T("Aucun prix noté pour l'instant : note le premier au-dessus.", 13, Tok.Muted), "Derniers prix de la communauté"));
+            blocks.Add(Card(T($"Aucun prix noté pour l'instant sur ce marché ({data.Label(shown)}) : note le premier au-dessus.", 13, Tok.Muted), "Derniers prix de la communauté"));
         else
         {
             const string cols = "*,110,100,220,100";
@@ -234,12 +291,12 @@ sealed partial class ScreenViews
         }
 
         // Retirés ces 30 derniers jours : rétablir un prix retiré par erreur.
-        if (data.Removed.Count > 0)
+        if (removedHere.Count > 0)
         {
             const string remCols = "*,110,260,90";
             blocks.Add(TableCard("Retirés récemment", T("30 derniers jours", 11, Tok.Muted),
                 TableHeader(remCols, "Objet", "Prix", "Noté · retiré", ""),
-                data.Removed.Select(p => (Control)new Border
+                removedHere.Select(p => (Control)new Border
                 {
                     Padding = new Thickness(20, 4),
                     Child = Columns(remCols, T(p.ItemName, 13), T(Fmt.Big(p.Price), 12, Tok.Text2, mono: true).AlignRight(),
