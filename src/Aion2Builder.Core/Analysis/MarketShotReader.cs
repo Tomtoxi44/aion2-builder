@@ -20,19 +20,25 @@ public sealed record MarketShotLine(string Name, int? Listings, long Price, bool
 /// ligne par annonce : on garde le prix unitaire le plus bas et le nombre d'annonces lues.</item>
 /// </list>
 /// Chaque nombre va à la colonne dont le titre est le plus proche ; les groupes de chiffres (« 1 490 000 ») sont recollés et
-/// l'icône des Kinah lue comme un « 0 » devant le prix est écartée. Proposition #65 : la capture reste sur le PC, seuls les
+/// l'icône des Kinah lue comme un « 0 » devant le prix est écartée. Sans la ligne des titres (« Objet », « Prix… »), la capture
+/// est refusée : deviner où s'arrête un nombre donne des prix faux. Proposition #65 : la capture reste sur le PC, seuls les
 /// prix que tu valides partent vers Aion 2 Todo.
 /// </summary>
 public static class MarketShotReader
 {
     static readonly string[] Titles = ["objet", "grade", "liste", "prix", "temps"];
 
-    public static List<MarketShotLine> Read(IReadOnlyList<OcrWord> words)
+    /// <summary>Pourquoi une capture est refusée : la ligne des titres des colonnes n'y est pas (ou illisible).</summary>
+    public const string NoTitles = "je ne vois pas les titres des colonnes (Objet, Prix de vente…). Refais la capture en gardant la ligne des titres au-dessus des objets.";
+
+    /// <param name="problem">Non nul quand la capture est refusée (titres des colonnes absents) : aucune ligne n'est lue.</param>
+    public static List<MarketShotLine> Read(IReadOnlyList<OcrWord> words, out string? problem)
     {
+        problem = NoTitles;
         if (words.Count == 0) return [];
         var height = Median(words.Select(w => w.Height));
         var objet = words.FirstOrDefault(w => Fold(w.Text) == "objet");
-        if (objet is null) return Fallback(words, height);
+        if (objet is null) return [];
         // Titres des colonnes : les mots de la ligne de « Objet », regroupés derrière chaque mot-clé (« Prix de vente p… »).
         var header = words.Where(w => Math.Abs(Center(w) - Center(objet)) < height * 0.6).OrderBy(w => w.X).ToList();
         var titles = new List<(string Key, double Left, double Right)>();
@@ -44,7 +50,8 @@ public static class MarketShotReader
         }
         var numeric = titles.Where(t => t.Key is "liste" or "prix" or "temps").ToList();
         var price = numeric.FirstOrDefault(t => t.Key == "prix");  // le premier « Prix » : par unité (annonces) ou du serveur
-        if (price.Key is null) return Fallback(words, height);
+        if (price.Key is null) return [];
+        problem = null;
         var count = numeric.FirstOrDefault(t => t.Key == "liste");
         // Les nombres commencent un peu avant leur titre (icône des Kinah) ; le nom est bien plus à gauche.
         var nameEnd = numeric.Min(t => t.Left) - height * 3;
@@ -69,24 +76,6 @@ public static class MarketShotReader
             return read.Select(r => new MarketShotLine(r.Name, r.Count, r.Price)).ToList();
         // Annonces d'un objet : une ligne par annonce ; le prix unitaire le plus bas, et combien d'annonces sont lues.
         return read.GroupBy(r => Fold(r.Name)).Select(g => new MarketShotLine(g.First().Name, g.Count(), g.Min(r => r.Price), Lowest: true)).ToList();
-    }
-
-    /// <summary>Sans titres lisibles : le prix est le dernier nombre de la ligne, les annonces celui d'avant, le nom ce qui précède.</summary>
-    static List<MarketShotLine> Fallback(IReadOnlyList<OcrWord> words, double height)
-    {
-        var result = new List<MarketShotLine>();
-        foreach (var row in Lines(words.ToList(), height))
-        {
-            var sorted = row.OrderBy(w => w.X).ToList();
-            var numbers = sorted.Select((w, i) => (w, i)).Where(x => Digits(x.w.Text).Length > 0 && Letters(x.w.Text) == 0).ToList();
-            if (numbers.Count == 0) continue;
-            var last = numbers[^1].i;
-            var before = numbers.Count > 1 && numbers[^2].i == last - 1 ? numbers[^2].i : last;
-            var name = Name(sorted.Take(Math.Min(before, last)));
-            if (name.Length < 2 || Number([sorted[last]]) is not { } value || value < 1) continue;
-            result.Add(new MarketShotLine(name, before < last && Number([sorted[before]]) is { } n and < 100_000 ? (int)n : null, value));
-        }
-        return result;
     }
 
     /// <summary>Le nom : les mots avec des lettres (le « 1 » de la pile sur l'icône et les signes seuls sont écartés).</summary>

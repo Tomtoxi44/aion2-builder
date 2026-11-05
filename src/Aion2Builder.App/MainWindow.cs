@@ -2056,13 +2056,20 @@ public sealed class MainWindow : Window
         try
         {
             var lines = new List<MarketShotLine>();
-            // Image doublée : sur un écran 1080p ou plus petit, le texte du Marché est trop fin pour l'OCR (annonces perdues, accents).
-            foreach (var path in paths) lines.AddRange(MarketShotReader.Read(await ScreenshotOcr.Words(path, InGameStatsReader.MinOcrSize, minScale: 2)));
+            var refused = 0;
+            foreach (var path in paths)
+            {
+                // Image doublée : sur un écran 1080p ou plus petit, le texte du Marché est trop fin pour l'OCR (annonces perdues, accents).
+                lines.AddRange(MarketShotReader.Read(await ScreenshotOcr.Words(path, InGameStatsReader.MinOcrSize, minScale: 2), out var problem));
+                if (problem is not null) refused++;
+            }
             // Un même objet sur deux captures : la dernière lecture l'emporte.
             marketShot = lines.GroupBy(l => Market.Fold(l.Name)).Select(g => g.Last()).ToList();
-            marketShotStatus = marketShot.Count == 0
-                ? "Aucune ligne de prix lue : il faut une capture de la fenêtre Marché (onglet Principal), avec les colonnes Objet, Liste de vente et Prix."
-                : null;
+            marketShotStatus = refused > 0
+                ? (paths.Count == 1 ? "Capture refusée : " : $"{Fmt.Plural(refused, "capture refusée", "captures refusées")} sur {paths.Count} : ") + MarketShotReader.NoTitles
+                : marketShot.Count == 0
+                    ? "Aucune ligne de prix lue sous les titres des colonnes : il faut la liste des objets ou les annonces d'un objet, avec leurs prix."
+                    : null;
             if (marketShot.Count == 0) marketShot = null;
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)

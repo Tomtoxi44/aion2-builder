@@ -267,7 +267,8 @@ static int HdvCommand(Args cli)
     if (pages.Count == 0) { Console.Error.WriteLine("hdv <mots.tsv>… : mots reconnus d'une capture du Marché du jeu"); return 1; }
     foreach (var words in pages)
     {
-        var lines = MarketShotReader.Read(words);
+        var lines = MarketShotReader.Read(words, out var problem);
+        if (problem is not null) Console.WriteLine("capture refusée : " + problem);
         Console.WriteLine($"{lines.Count} ligne(s)");
         foreach (var l in lines) Console.WriteLine($"  {l.Name} | annonces {l.Listings?.ToString() ?? "?"} | {l.Price} Kinah");
     }

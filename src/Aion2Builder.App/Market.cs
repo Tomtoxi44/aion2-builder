@@ -272,7 +272,8 @@ sealed partial class ScreenViews
             },
         });
         body.Children.Add(T("Dans le jeu, ouvre le Marché : la liste des objets (onglet Principal) ou les annonces d'un objet, puis fais une capture " +
-                            "d'écran. Le Builder lit chaque ligne (nom, prix unitaire) sur ce PC ; corrige ou retire ce qui est faux avant de noter. " +
+                            "d'écran en gardant la ligne des titres des colonnes (Objet, Prix de vente…) : c'est elle qui dit où s'arrête chaque nombre, " +
+                            "et sans elle la capture est refusée. Le Builder lit chaque ligne (nom, prix unitaire) sur ce PC ; corrige ou retire ce qui est faux avant de noter. " +
                             "Sur les annonces d'un objet, c'est le prix unitaire le plus bas qui est gardé. La capture n'est envoyée nulle part.", 11, Tok.Muted, wrap: true));
         if (market.ShotStatus is { } st) body.Children.Add(T(st, 12, st.StartsWith("Lecture") ? Tok.Muted : Tok.Warn, wrap: true));
         if (market.Shot is { Count: > 0 } lines)
