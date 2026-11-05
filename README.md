@@ -57,7 +57,7 @@ retire les programmes et les raccourcis, jamais tes données.
 **Signaler un bug** : **Aide → Signaler un bug…**. Ta description part avec la version, Windows, tes réglages
 d'affichage et la fin du journal d'erreurs du Builder (`%APPDATA%\Aion2Builder\journal.log`, les erreurs seulement),
 sans les noms des persos ni ton nom Windows ; avec une clé Aion 2 Todo, vers le site (gardé 90 jours, lu seulement par
-le mainteneur), sinon une copie est gardée dans `%APPDATA%\Aion2Builderapports`.
+le mainteneur), sinon une copie est gardée dans `%APPDATA%\Aion2Builder\rapports`.
 
 Une compilation locale (`publier.cmd`) porte la version « build locale » et ne propose pas de mise à jour. Les exe
 publiés ne sont pas signés : Windows peut afficher « éditeur inconnu » au premier lancement (clic droit → Propriétés →
