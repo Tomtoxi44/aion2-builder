@@ -46,6 +46,7 @@ sealed record UiPrefs(string Region = "eu", string Server = "", string Name = ""
         {
             Directory.CreateDirectory(AppPaths.Root);
             File.WriteAllText(PathOf, JsonSerializer.Serialize(this, GameDataStore.Json));
+            SettingsSync.OnSaved();
         }
         catch (IOException) { /* préférence non vitale */ }
     }
@@ -106,7 +107,7 @@ public sealed class MainWindow : Window
     readonly Dictionary<string, CharacterSnapshot> opened = [];
     string? currentPath;
     // Fenêtre par-dessus l'interface : raccourcis clavier (F1) ou paramètres (Ctrl+,).
-    enum Overlay { None, Shortcuts, Settings }
+    enum Overlay { None, Shortcuts, Settings, Bug }
     Overlay overlay;
     // Actualisation automatique : une seule tentative par personnage et par session.
     readonly HashSet<string> autoRefreshed = [];
@@ -120,6 +121,7 @@ public sealed class MainWindow : Window
 
     public MainWindow()
     {
+        Journal.Install();
         Title = "Aion 2 Builder";
         if (typeof(MainWindow).Assembly.GetManifestResourceStream("app.ico") is { } icon) Icon = new WindowIcon(icon);
         Width = 1280;
@@ -211,6 +213,9 @@ public sealed class MainWindow : Window
         Updater.CleanOld();
         Opened += async (_, _) => await CheckUpdateAsync(manual: false);
         Opened += (_, _) => Updater.ConfirmStarted(); // après une mise à jour : l'ancienne version attend ce signal pour se fermer
+        // Réglages suivis entre tes PC (Aion 2 Todo) : ceux de l'autre PC s'ils sont plus récents, puis chaque changement d'ici.
+        SettingsSync.Saved += () => Dispatcher.UIThread.Post(SettingsSaved);
+        Opened += async (_, _) => await PullSettingsAsync();
         var updateTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(6) };
         updateTimer.Tick += async (_, _) => await CheckUpdateAsync(manual: false);
         updateTimer.Start();
@@ -536,7 +541,7 @@ public sealed class MainWindow : Window
         {
             Width = 560, Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
             BoxShadow = BoxShadows.Parse("0 12 40 0 #80000000"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
-            Child = overlay == Overlay.Shortcuts ? ShortcutsCard() : SettingsCard(),
+            Child = overlay switch { Overlay.Shortcuts => ShortcutsCard(), Overlay.Bug => BugCard(), _ => SettingsCard() },
         };
         card.PointerPressed += (_, e) => e.Handled = true; // un clic dans la carte ne la ferme pas
         var veil = new Border { Background = new SolidColorBrush(Color.FromArgb(0x99, 0, 0, 0)), Child = card };
@@ -560,6 +565,103 @@ public sealed class MainWindow : Window
         foreach (var (keys, what) in Shortcuts)
             list.Children.Add(ColumnsSpaced("190,*", 12, T(keys, 12, Accent.Main, FontWeight.SemiBold, mono: true), T(what, 13, Tok.Text2)));
         return new StackPanel { Children = { SectionHeader("Raccourcis clavier"), list } };
+    }
+
+    /// <summary>Description du bug : gardée d'un rendu à l'autre (la fenêtre se redessine en entier).</summary>
+    readonly TextBox bugBox = new()
+    {
+        AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 150, FontSize = 13, Padding = new Thickness(8, 6),
+        PlaceholderText = "Ce que tu faisais, ce que tu attendais, ce que tu as vu…",
+    };
+    string? bugStatus;
+    bool bugSending;
+
+    /// <summary>« Aide → Signaler un bug… » : ta description et le journal anonymisé vers Aion 2 Todo (page Besoins du mainteneur).</summary>
+    Control BugCard()
+    {
+        Detach(bugBox);
+        var send = Clickable(T(bugSending ? "envoi…" : "envoyer", 12, Tok.OnAccent, FontWeight.SemiBold, mono: true),
+            () => { if (!bugSending) _ = SendBugAsync(); }, Accent.Main, null, new Thickness(14, 4));
+        send.CornerRadius = new CornerRadius(3);
+        var body = new StackPanel
+        {
+            Spacing = 10, Margin = new Thickness(18, 14, 18, 18),
+            Children =
+            {
+                T("Que s'est-il passé ? Ce que tu faisais, ce que tu attendais, ce que tu as vu.", 13, weight: FontWeight.Medium, wrap: true),
+                new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Background = Tok.Window, Child = bugBox },
+                T("Partent avec ta description : la version, Windows, tes réglages d'affichage et la fin du journal d'erreurs du Builder, "
+                  + "sans les noms des persos ni ton nom Windows. Avec ta clé Aion 2 Todo, vers le site ; sinon, une copie dans le dossier « rapports » des données.",
+                    12, Tok.Muted, wrap: true).WithLineHeight(1.4),
+            },
+        };
+        if (bugStatus is { } st) body.Children.Add(T(st, 12, Accent.Main, FontWeight.SemiBold, wrap: true));
+        body.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Children = { send } });
+        var close = Clickable(T("fermer · Échap", 11, Tok.Muted, mono: true), () => ShowOverlay(Overlay.None));
+        Dispatcher.UIThread.Post(() => bugBox.Focus());
+        return new StackPanel { Children = { SectionHeader("Signaler un bug", close), body } };
+    }
+
+    async Task SendBugAsync()
+    {
+        var text = bugBox.Text?.Trim() ?? "";
+        if (text.Length == 0) { bugStatus = "Écris d'abord ce qui s'est passé."; Render(); return; }
+        bugSending = true; bugStatus = null; Render();
+        // Noms à retirer : tes persos enregistrés (fichiers « région-serveur-nom ») et ta saisie.
+        var names = Directory.Exists(AppPaths.CharactersDir)
+            ? Directory.EnumerateFiles(AppPaths.CharactersDir, "*.json").Select(f => System.IO.Path.GetFileNameWithoutExtension(f).Split('-', 3)).Where(p => p.Length == 3).Select(p => (string?)p[2]).ToList()
+            : [];
+        var (sent, what) = await BugReports.Send(BugReports.Build(text, prefs, names), AccountKey());
+        bugSending = false;
+        if (sent)
+        {
+            bugBox.Text = "";
+            bugStatus = null;
+            ShowOverlay(Overlay.None);
+            SetStatus($"Bug envoyé, merci ! (n° {what})");
+        }
+        else
+        {
+            bugStatus = $"Pas envoyé (pas de clé Aion 2 Todo ou pas de réseau) : copie gardée dans {what}";
+            Render();
+        }
+    }
+
+    DispatcherTimer? settingsTimer;
+
+    /// <summary>Réglages enregistrés : envoyés à Aion 2 Todo 3 s après le dernier changement (un glissé enregistre souvent).</summary>
+    void SettingsSaved()
+    {
+        if (AccountKey() is null) return;
+        if (settingsTimer is null)
+        {
+            settingsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            settingsTimer.Tick += async (_, _) => { settingsTimer.Stop(); await PushSettingsAsync(); };
+        }
+        settingsTimer.Stop();
+        settingsTimer.Start();
+    }
+
+    async Task PushSettingsAsync()
+    {
+        if (AccountKey() is not { } key || SettingsSync.Changed(prefs) is not { } change) return;
+        if (await SettingsSync.Push(key, change) is { } remote) ApplyRemoteSettings(remote);
+    }
+
+    async Task PullSettingsAsync()
+    {
+        if (AccountKey() is not { } key) return;
+        if (await SettingsSync.Pull(key) is { } remote) ApplyRemoteSettings(remote);
+        else SettingsSaved();  // rien de plus récent sur le site : on y met les tiens s'ils n'y sont pas encore
+    }
+
+    void ApplyRemoteSettings(System.Text.Json.Nodes.JsonObject remote)
+    {
+        var mode = prefs.Mode;
+        prefs = SettingsSync.Apply(prefs, remote);
+        prefs.Save();
+        SetStatus("réglages repris de ton autre PC (Aion 2 Todo)");
+        if (prefs.Mode != mode) Recompute(); else Render();
     }
 
     Control SettingsCard()
@@ -620,7 +722,8 @@ public sealed class MainWindow : Window
                     ("Comment c'est calculé ?", () => Update(st => { st.Screen = report is null ? Screen.Import : Screen.Home; st.HomeHow = true; })),
                     ("Vérifier les mises à jour", () => _ = CheckUpdateAsync(manual: true)),
                     ($"{(prefs.AutoUpdate ? "✓ " : "")}Vérifier automatiquement (au lancement, puis toutes les 6 h)", ToggleAutoUpdate),
-                    ($"{(prefs.AutoInstall ? "✓ " : "")}Installer toute seule au lancement", ToggleAutoInstall)),
+                    ($"{(prefs.AutoInstall ? "✓ " : "")}Installer toute seule au lancement", ToggleAutoInstall),
+                    ("Signaler un bug…", () => ShowOverlay(Overlay.Bug))),
             },
         };
 

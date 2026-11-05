@@ -148,6 +148,10 @@ static class SettingsSync
 
     sealed record State(string Changed, string? Hash);
 
+    /// <summary>Réglages enregistrés dans ui.json (n'importe quel fil) : la fenêtre décide s'il faut les envoyer.</summary>
+    public static event Action? Saved;
+    public static void OnSaved() => Saved?.Invoke();
+
     public static JsonObject Pick(UiPrefs prefs)
     {
         var all = JsonSerializer.SerializeToNode(prefs, GameDataStore.Json)!.AsObject();
@@ -172,29 +176,31 @@ static class SettingsSync
     }
 
     /// <summary>
-    /// À chaque enregistrement des réglages : s'ils ont changé, la date de ce changement (la première fois : 1970, pour que
-    /// les réglages déjà sur le site gardent la main) ; renvoie ce qu'il faut envoyer, sinon null.
+    /// Réglages pas encore envoyés tels quels : leur date (la première fois : 1970, pour que les réglages déjà sur le site
+    /// gardent la main) et leur empreinte ; null s'ils sont déjà sur le site. Noté seulement une fois l'envoi réussi.
     /// </summary>
-    public static (string Updated, JsonObject Settings)? Changed(UiPrefs prefs)
+    public static (string Updated, JsonObject Settings, string Digest)? Changed(UiPrefs prefs)
     {
         var state = Load();
         var digest = Digest(prefs);
         if (digest == state.Hash) return null;
-        var changed = state.Hash is null ? Epoch : DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
-        Save(new(changed, digest));
-        return (changed, Pick(prefs));
+        return (state.Hash is null ? Epoch : DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"), Pick(prefs), digest);
     }
 
     /// <summary>Envoie ; renvoie les réglages du site s'ils sont plus récents (ton autre PC a changé quelque chose depuis).</summary>
-    public static async Task<JsonObject?> Push(string key, string updated, JsonObject settings)
+    public static async Task<JsonObject?> Push(string key, (string Updated, JsonObject Settings, string Digest) change)
     {
         try
         {
             using var http = BugReports.Client(key);
-            using var response = await http.PutAsJsonAsync("/api/sync/settings/builder", new { updated, settings });
+            using var response = await http.PutAsJsonAsync("/api/sync/settings/builder", new { updated = change.Updated, settings = change.Settings });
             if (!response.IsSuccessStatusCode) return null;
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            return doc.RootElement.TryGetProperty("kept", out var kept) && kept.GetBoolean() ? await Pull(key) : null;
+            // Le site a gardé les siens (pas plus vieux) : repris s'ils sont plus récents que les tiens ; sinon chacun garde les siens
+            // jusqu'au prochain changement, sans renvoi à chaque enregistrement.
+            var remote = doc.RootElement.TryGetProperty("kept", out var kept) && kept.GetBoolean() ? await Pull(key) : null;
+            if (remote is null) Save(new(change.Updated, change.Digest));
+            return remote;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
         {
