@@ -59,6 +59,10 @@ sealed class UiState
     public string? MarketPick { get; set; }
     public string? MarketPriceText { get; set; }
     public string? MarketError { get; set; }
+    /// <summary>Récolte → Prix HdV : filtres des derniers prix (texte cherché, rang du jeu « Rare »…, type « Récolte »…).</summary>
+    public string? MarketQuery { get; set; }
+    public string? MarketGrade { get; set; }
+    public string? MarketKind { get; set; }
     public bool HomeHow { get; set; }
     public bool StatsHow { get; set; }
     /// <summary>Listes longues (prochains points, prochaines cases) affichées en entier.</summary>
