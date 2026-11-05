@@ -414,7 +414,8 @@ sealed partial class ScreenViews
             ItemsSource = catalog, FilterMode = AutoCompleteFilterMode.Custom, Text = s.MarketPick ?? "", MinimumPrefixLength = 0, MaxDropDownHeight = 340,
             PlaceholderText = "objet : Od, orichalque, un anneau…", MinWidth = 320,
             ItemFilter = (search, o) => o is MarketItem i && Market.Matches(search, $"{i.Name} {i.Category}"),
-            ItemTemplate = new FuncDataTemplate<MarketItem>((i, _) => MarketItemLine(i, i.Name, 13, withKind: true)),
+            // Avalonia rappelle le modèle avec un objet vide quand il recycle une ligne de la liste (en tapant) : ligne vide, pas de plantage.
+            ItemTemplate = new FuncDataTemplate<MarketItem?>((i, _) => i is null ? new Panel() : MarketItemLine(i, i.Name, 13, withKind: true)),
         };
         pick.TextChanged += (_, _) => s.MarketPick = pick.Text;
         var price = new TextBox { Text = s.MarketPriceText ?? "", Width = 150, PlaceholderText = "prix unitaire (Kinah)" };
