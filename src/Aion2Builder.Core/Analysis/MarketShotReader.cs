@@ -91,7 +91,10 @@ public static class MarketShotReader
 
     /// <summary>Le nom : les mots avec des lettres (le « 1 » de la pile sur l'icône et les signes seuls sont écartés).</summary>
     static string Name(IEnumerable<OcrWord> words) =>
-        string.Join(' ', words.Select(w => w.Text.Trim()).Where(t => t.Length > 0 && Letters(t) > 0 || t.Any(char.IsDigit) && t.Length > 1));
+        // L'OCR coupe « d'Yggdrasil » en « d' » + « Yggdrasil » : l'espace après l'apostrophe est retiré.
+        System.Text.RegularExpressions.Regex.Replace(
+            string.Join(' ', words.Select(w => w.Text.Trim()).Where(t => t.Length > 0 && Letters(t) > 0 || t.Any(char.IsDigit) && t.Length > 1)).Replace('’', '\''),
+            @"'\s+", "'");
 
     /// <summary>
     /// Un nombre écrit en groupes (« 1 490 000 ») : les chiffres des mots recollés. L'icône des Kinah devant est parfois lue

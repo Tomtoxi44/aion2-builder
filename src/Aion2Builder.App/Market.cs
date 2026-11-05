@@ -116,7 +116,9 @@ static class Market
     /// <summary>Texte comparable : minuscules, sans accents, espaces simples (« Aria Fraîche » = « aria fraiche »).</summary>
     public static string Fold(string? s)
     {
-        var d = (s ?? "").Normalize(NormalizationForm.FormD);
+        // Apostrophes : ’ ‘ ` valent ', et l'espace qui suit est ignoré (« d' Yggdrasil » lu sur une capture = « d'Yggdrasil »).
+        s = System.Text.RegularExpressions.Regex.Replace((s ?? "").Replace('’', '\'').Replace('‘', '\'').Replace('`', '\''), @"'\s+", "'");
+        var d = s.Normalize(NormalizationForm.FormD);
         var sb = new StringBuilder(d.Length);
         foreach (var c in d) if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark) sb.Append(char.ToLowerInvariant(c));
         return string.Join(' ', sb.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
