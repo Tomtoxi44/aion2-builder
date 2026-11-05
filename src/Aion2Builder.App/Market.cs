@@ -420,13 +420,15 @@ sealed partial class ScreenViews
         var lastPrice = here.MaxBy(p => p.At);
         var kpis = new Avalonia.Controls.Primitives.UniformGrid { Columns = 4 };
         kpis.Children.Add(Kpi("Objets avec un prix", here.Select(p => p.ItemKey).Distinct().Count().ToString(), size: 20).WithMargin(0, 0, 10, 0));
-        kpis.Children.Add(Kpi("Relevés · 7 jours", here.Count(p => p.At.ToUniversalTime() >= DateTime.UtcNow.AddDays(-7)).ToString(), size: 20).WithMargin(0, 0, 10, 0));
+        kpis.Children.Add(Kpi("Prix notés · 7 jours", here.Count(p => p.At.ToUniversalTime() >= DateTime.UtcNow.AddDays(-7)).ToString(), size: 20).WithMargin(0, 0, 10, 0));
         kpis.Children.Add(Tip(Kpi("Dernier relevé", lastPrice is null ? "—" : Market.Since(lastPrice.At), size: 20),
             lastPrice is null ? "Aucun prix sur ce marché." : $"{lastPrice.ItemName} : {Fmt.Big(lastPrice.Price)} Kinah, par {By(lastPrice)} le {lastPrice.At.ToLocalTime():dd/MM HH:mm}")
             .WithMargin(0, 0, 10, 0));
-        kpis.Children.Add(Tip(Kpi("Ta récolte du jour", harvest is { } h ? $"≈ {Fmt.Big(h.Value)}" : "—", harvest is null ? null : Tok.Good, 20),
-            harvest is { } hv ? $"Kinah, au dernier prix de chaque ressource sur ce marché" + (hv.Missing > 0 ? $" ({Fmt.Plural(hv.Missing, "ressource")} sans prix, pas comptée{(hv.Missing > 1 ? "s" : "")})" : "") + "."
-                : "Aucune ressource récoltée aujourd'hui n'a encore de prix sur ce marché."));
+        kpis.Children.Add(Tip(Kpi(harvest is { Missing: > 0 } hm ? $"Ta récolte du jour vaut (Kinah, {hm.Missing} sans prix)" : "Ta récolte du jour vaut (Kinah)",
+                harvest is { } h ? $"≈ {Fmt.Big(h.Value)}" : "—", harvest is null ? null : Tok.Good, 20),
+            harvest is { } hv ? "Ce que rapporterait ce que tu as récolté aujourd'hui (jour de jeu en cours) si tu le vendais au dernier prix noté de chaque ressource sur ce marché" +
+                                (hv.Missing > 0 ? $" ; {Fmt.Plural(hv.Missing, "ressource")} sans prix ici, pas comptée{(hv.Missing > 1 ? "s" : "")} : note leur prix pour l'avoir en entier." : ".")
+                : "Ce que rapporterait ta récolte du jour au prix de la communauté : aucune ressource récoltée aujourd'hui n'a encore de prix sur ce marché."));
         blocks.Add(kpis);
 
         // Noter un prix : l'objet (liste avec recherche, sans accents ni majuscules, aussi par type : « anneau », « épées »), le prix, « noter ».
