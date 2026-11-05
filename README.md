@@ -42,10 +42,22 @@ dans les [versions GitHub](https://github.com/Tomtoxi44/aion2-builder/releases) 
 
 1. Télécharge-le une fois (dernière version GitHub, ou <https://aion2-todo-7275.azurewebsites.net/api/downloads/builder/file>)
    et range-le dans un dossier à toi (pas dans `Program Files` : l'application doit pouvoir remplacer son exe).
-2. Au lancement puis toutes les 6 h, l'application regarde s'il existe une version plus récente : un bouton
-   « ⬆ v1.1.n disponible » apparaît en haut à droite. Un clic la télécharge, vérifie son empreinte, remplace l'exe et
-   relance l'application (l'ancienne version est effacée au lancement suivant). « Aide → Vérifier les mises à jour »
-   le fait à la demande. La version en cours est affichée en bas à droite.
+2. Au lancement puis toutes les 6 h, l'application regarde s'il existe une version plus récente. Par défaut, une
+   version trouvée au lancement s'installe toute seule (téléchargée, empreinte vérifiée, exe remplacé, application
+   relancée) ; décoche **Aide → Installer toute seule au lancement** pour garder le bouton « ⬆ v1.1.n disponible » en
+   haut à droite et choisir le moment. « Aide → Vérifier les mises à jour » le fait à la demande. La version en cours
+   est affichée en bas à droite.
+
+**Installeur Builder + Pet Meter** : <https://github.com/Tomtoxi44/aion2-builder/releases/latest/download/Aion2-Setup.exe>
+installe les deux applis d'un coup pour toi seul (sans droits administrateur, dans `%LOCALAPPDATA%\Programs\Aion2`),
+avec leurs raccourcis du menu Démarrer, et prévient si Npcap manque (le Pet Meter en a besoin). Il est reconstruit après
+chaque version ; les deux applis se mettent ensuite à jour seules. La désinstallation (Paramètres Windows → Applications)
+retire les programmes et les raccourcis, jamais tes données.
+
+**Signaler un bug** : **Aide → Signaler un bug…**. Ta description part avec la version, Windows, tes réglages
+d'affichage et la fin du journal d'erreurs du Builder (`%APPDATA%\Aion2Builder\journal.log`, les erreurs seulement),
+sans les noms des persos ni ton nom Windows ; avec une clé Aion 2 Todo, vers le site (gardé 90 jours, lu seulement par
+le mainteneur), sinon une copie est gardée dans `%APPDATA%\Aion2Builderapports`.
 
 Une compilation locale (`publier.cmd`) porte la version « build locale » et ne propose pas de mise à jour. Les exe
 publiés ne sont pas signés : Windows peut afficher « éditeur inconnu » au premier lancement (clic droit → Propriétés →
@@ -314,9 +326,13 @@ Aion 2 Builder n'envoie rien sans que tu le demandes, sauf la vérification des 
   actualises un personnage (nom cherché, région, serveur).
 - **Aion 2 Todo** (`aion2-todo-7275.azurewebsites.net`) :
   - vérification des mises à jour au lancement puis toutes les 6 h : une simple demande du numéro de la dernière
-    version. C'est le seul envoi automatique ; il se coupe dans **Aide → Vérifier automatiquement**. Le téléchargement
+    version. Il se coupe dans **Aide → Vérifier automatiquement**. Le téléchargement
     n'a lieu que si tu cliques sur le bouton de mise à jour ;
-  - familiers : seulement si tu relies ta clé de synchro, envoyée à Aion 2 Todo pour lire ta collection.
+  - familiers : seulement si tu relies ta clé de synchro, envoyée à Aion 2 Todo pour lire ta collection ;
+  - réglages d'affichage (couleur, JcE/JcJ, panneaux, pages ouvertes par défaut, persos marqués « à moi », mises à
+    jour) : avec une clé Aion 2 Todo, envoyés à ton compte quand tu les changes et relus à l'ouverture, pour retrouver
+    les mêmes sur tes autres PC (pas les chemins de fichiers ni l'écran ouvert) ;
+  - signalement de bug : seulement quand tu cliques « envoyer » dans **Aide → Signaler un bug…** (voir plus haut).
 - Les requêtes portent le numéro de version de l'application (en-tête `User-Agent`). Aucune télémétrie, aucune
   statistique d'usage, rien n'est envoyé ailleurs.
 - Ce que l'application garde (personnages importés, préférences, clé des familiers) reste sur ton PC, dans
