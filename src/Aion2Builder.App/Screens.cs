@@ -408,6 +408,15 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
             ColumnDefinitions = new ColumnDefinitions("200,*,*,200"), ColumnSpacing = 12, RowSpacing = 5, VerticalAlignment = VerticalAlignment.Top,
         };
         for (var i = 0; i < 8; i++) grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+        // Place étroite (Équipement avec sa barre et l'inspecteur ouverts) : quatre colonnes égales, sinon les cases du centre
+        // (arme, main secondaire, rune, amulette) tombent à 80 px et leur texte se chevauche.
+        grid.SizeChanged += (_, e) =>
+        {
+            var side = e.NewSize.Width < 760 ? new GridLength(1, GridUnitType.Star) : new GridLength(200);
+            if (grid.ColumnDefinitions[0].Width == side) return;
+            grid.ColumnDefinitions[0].Width = side;
+            grid.ColumnDefinitions[3].Width = side;
+        };
 
         // Au centre de la silhouette : le tableau de bord sur l'accueil, l'état de l'équipement sur l'écran Équipement.
         var center = s.Screen == Screen.Home ? HomeCenter() : GearCenter();
@@ -779,7 +788,8 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         var power = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
         power.Children.Add(T(p.Item is null ? "—" : p.Power.ToString(), 13, mono: true));
         if (p.Item is not null) power.Children.Add(T($"+{p.Item.EnchantLevel}", 13, Tok.Muted, mono: true));
-        var dock = new DockPanel { Children = { bar, codeText, new StackPanel { Children = { T(p.SlotName, 11, Tok.Muted), power } } } };
+        // Coupé à sa place : une case étroite ne laisse pas le niveau déborder sur la lettre d'état.
+        var dock = new DockPanel { Children = { bar, codeText, new StackPanel { ClipToBounds = true, Children = { T(p.SlotName, 11, Tok.Muted), power } } } };
 
         var tile = Clickable(dock, () => update(st => { if (st.Screen != Screen.Gear) st.GearPage = GearPage.Overview; st.Screen = Screen.Gear; st.Slot = p.Slot; }),
             selected ? Accent.Dim : Tok.Panel, selected ? null : Tok.TileHover, new Thickness(9, 6));
