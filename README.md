@@ -260,6 +260,11 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    ouvre le jour.
    Avec ta clé Aion 2 Todo (la même que celle du Pet Meter), c'est la récolte de tout ton compte : le Pet Meter v0.18.0
    envoie le détail du jour avec sa synchro, le site additionne tes PC, et l'écran le lit, quel que soit le PC.
+   **Prix HdV** (bouton en haut de l'écran Récolte, avec ta clé) : les prix de l'hôtel des ventes notés à la main par les
+   joueurs d'Aion 2 Todo (aucune source publique n'existe), les mêmes que l'onglet « Prix HdV » du site : dernier prix de
+   chaque objet avec son auteur et sa date, évolution, petite courbe, et la courbe d'un objet avec chaque relevé. Tu peux
+   noter un prix (partagé avec ton pseudo) et retirer un prix faux, pour tout le monde, rétablissable pendant 30 jours. La
+   récolte du jour et ton stock affichent leur valeur au dernier prix de la communauté.
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par
@@ -332,7 +337,9 @@ Aion 2 Builder n'envoie rien sans que tu le demandes, sauf la vérification des 
   - réglages d'affichage (couleur, JcE/JcJ, panneaux, pages ouvertes par défaut, persos marqués « à moi », mises à
     jour) : avec une clé Aion 2 Todo, envoyés à ton compte quand tu les changes et relus à l'ouverture, pour retrouver
     les mêmes sur tes autres PC (pas les chemins de fichiers ni l'écran ouvert) ;
-  - signalement de bug : seulement quand tu cliques « envoyer » dans **Aide → Signaler un bug…** (voir plus haut).
+  - signalement de bug : seulement quand tu cliques « envoyer » dans **Aide → Signaler un bug…** (voir plus haut) ;
+  - prix de l'hôtel des ventes : lus quand tu ouvres l'écran Récolte ; un prix que tu notes est partagé avec les joueurs
+    d'Aion 2 Todo, avec ton pseudo du site.
 - Les requêtes portent le numéro de version de l'application (en-tête `User-Agent`). Aucune télémétrie, aucune
   statistique d'usage, rien n'est envoyé ailleurs.
 - Ce que l'application garde (personnages importés, préférences, clé des familiers) reste sur ton PC, dans
