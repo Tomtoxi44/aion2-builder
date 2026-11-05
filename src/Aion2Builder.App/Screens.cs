@@ -3168,13 +3168,26 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         var panel = new StackPanel { Spacing = 8 };
         if (db.Settings.Macros.Classes.TryGetValue(r.Character.ClassCode, out var g))
         {
+            // Nom du jeu en français (repris par identifiant sur le site officiel, settings.json → macros.names), l'anglais du guide au survol.
+            WrapPanel Skills(string head, List<string> skills, string separator, double size, IBrush? color)
+            {
+                var line = new WrapPanel { LineSpacing = 4 };
+                line.Children.Add(T(head + " ", size, color));
+                for (var k = 0; k < skills.Count; k++)
+                {
+                    var fr = db.Settings.Macros.Names.GetValueOrDefault(skills[k]);
+                    line.Children.Add(fr is null ? T(skills[k], size, color) : Tip(T(fr, size, color), $"Dans le guide (anglais) : {skills[k]}"));
+                    if (k < skills.Count - 1) line.Children.Add(T(separator, size, color));
+                }
+                return line;
+            }
             for (var i = 0; i < g.Stacks.Count; i++)
-                panel.Children.Add(T($"{i + 1}. {g.Stacks[i].Name} (du bas vers le haut) : {string.Join(" › ", g.Stacks[i].Skills)}", 13, wrap: true).WithLineHeight(1.4));
+                panel.Children.Add(Skills($"{i + 1}. {g.Stacks[i].Name} (du bas vers le haut) :", g.Stacks[i].Skills, " › ", 13, null));
             if (g.Manual.Count > 0)
-                panel.Children.Add(T($"À la main : {string.Join(", ", g.Manual)}", 12, Tok.Text2, wrap: true).WithLineHeight(1.4));
+                panel.Children.Add(Skills("À la main :", g.Manual, ", ", 12, Tok.Text2));
             if (g.Note is { } note) panel.Children.Add(T(note, 12, Tok.Text2, wrap: true));
-            panel.Children.Add(T($"Macro : {string.Join(" puis ", g.Stacks.Select(s => s.Name))}, délai 10 ms. Guide {g.Source} du {g.Date}, noms des compétences en anglais.",
-                11, Tok.Muted, wrap: true).WithLineHeight(1.4));
+            panel.Children.Add(T($"Macro : {string.Join(" puis ", g.Stacks.Select(s => s.Name))}, délai 10 ms. Guide {g.Source} du {g.Date} ; noms du jeu en français, " +
+                                 "l'anglais du guide au survol.", 11, Tok.Muted, wrap: true).WithLineHeight(1.4));
         }
         panel.Children.Add(T("Les macros des meilleurs joueurs ne se lisent nulle part : elles restent dans leur jeu. Les guides et les tutos sont le plus proche :",
             12, Tok.Text2, wrap: true).WithLineHeight(1.4));

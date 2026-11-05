@@ -62,7 +62,7 @@
     "hours": { "Free": 0.25, "Combat": 0.5, "Rolls": 1, "Engraving": 1, "Stones": 0.5, "Enchant": 1, "Points": 2, "Farm": 3, "Pets": 1 }
   },
   "macros": {
-    "_note": "Vue macro : tutos et macros de guides publics (relevés le 04/11/2026). Dans une pile, la compétence du bas part en premier (allthings.how, mein-mmo, KeenGamer). Noms des compétences en anglais, comme dans le guide.",
+    "_note": "Vue macro : tutos et macros de guides publics (relevés le 04/11/2026). Dans une pile, la compétence du bas part en premier (allthings.how, mein-mmo, KeenGamer). Noms des compétences en anglais, comme dans le guide ; names = leur nom du jeu en français, retrouvé par identifiant de compétence (site officiel lu en en-US puis en fr-FR, 05/11/2026 : les 82 noms des guides reconnus ; 80 identiques à spells.json, « Prière de boost » et « Faveur d'esprit améliorée » y ont un autre nom). Un nom absent de names reste en anglais.",
     "tutorials": [
       { "title": "Macros Aion 2 : les configurer et optimiser", "url": "https://www.playnews.gg/guides/macros-aion-2-comment-les-configurer-et-optimiser-leur-utilisation", "lang": "FR", "what": "Touche de macro (clic droit ou souris 4), délai, ce qu'il faut garder hors macro." },
       { "title": "Skill priority : une touche, quatre compétences", "url": "https://www.allthings.how/aion-2-skill-priority-how-one-hotbar-key-runs-four-skills/", "lang": "EN", "what": "Ordre des piles : la compétence du bas part en premier, la sans-recharge en haut." },
@@ -85,11 +85,11 @@
         "stacks": [ { "name": "Pile Griffon", "skills": ["Griffon Arrow", "Snare Shot", "Burst Arrow"] },
                     { "name": "Pile Gale", "skills": ["Gale Arrow", "Drill Dart", "Tempest Shot"] } ],
         "manual": ["Deadshot", "Marking Shot", "Explosion Trap", "Bow of Blessing", "Vaizel's Authority"],
-        "note": "Griffon Arrow s'ajoute une fois son stigma débloqué." },
+        "note": "Flèche du Griffon (Griffon Arrow) s'ajoute une fois son stigma débloqué." },
       "SORCERER": { "source": "KeenGamer", "url": "https://www.keengamer.com/articles/guides/aion-2-macro-guide-best-setups-for-all-classes/", "date": "12/10/2026",
         "stacks": [ { "name": "Pile sorts", "skills": ["Bittercold Wind", "Blaze", "Firestorm", "Wish of Concentration"] } ],
         "manual": ["Hellfire", "Element Enhancement", "Delayed Explosion", "Winter's Shackles", "Fire Wall", "Cold Storm"],
-        "note": "Le guide dit de ne jamais mettre Hellfire dans la macro." },
+        "note": "Le guide dit de ne jamais mettre Feu de l'enfer (Hellfire) dans la macro." },
       "ELEMENTALIST": { "source": "KeenGamer", "url": "https://www.keengamer.com/articles/guides/aion-2-macro-guide-best-setups-for-all-classes/", "date": "12/10/2026",
         "stacks": [ { "name": "Pile dégâts", "skills": ["Jointstrike: Corrode", "Jointstrike: Curse", "Dimensional Control", "Combustion"] },
                     { "name": "Pile esprits", "skills": ["Elemental Fusion", "Summon: Water Spirit", "Summon: Earth Spirit", "Summon: Fire Spirit"] } ],
@@ -98,11 +98,21 @@
         "stacks": [ { "name": "Pile dégâts", "skills": ["Prayer of Amplification", "Earth Punishment", "Chain of Torment", "Condemnation"] },
                     { "name": "Dégâts en plus", "skills": ["Divine Aura", "Judgment Thunder"] } ],
         "manual": ["Healing Light", "Light of Regeneration", "Radiant Recovery", "Bolt", "Light of Protection", "Debilitating Mark"],
-        "note": "Prayer of Amplification peut passer à la main pour le burst de groupe." },
+        "note": "Prière de boost (Prayer of Amplification) peut passer à la main pour le burst de groupe." },
       "CHANTER": { "source": "KeenGamer", "url": "https://www.keengamer.com/articles/guides/aion-2-macro-guide-best-setups-for-all-classes/", "date": "12/10/2026",
         "stacks": [ { "name": "Pile dégâts", "skills": ["Dark Crush", "Spinning Strike", "Incandescent Blow"] } ],
         "manual": ["Rushing Smash", "Impactful Crush", "Marchutan's Wrath", "Power of the Storm", "Undefeated Mantra", "Recuperation"],
         "note": "Ne jamais mettre un mantra à bascule dans une macro qui se répète." }
+    },
+    "names": {
+      "Rage Burst": "Explosion de fureur", "Overhead Slam": "Fracas", "Sword Aura Rampage": "Lame déferlante", "Rending Blow": "Coup féroce lacérant", "Ruinous Blow": "Coup féroce anéantissant", "Leaping Slam": "Frappe bondissante", "Focused Block": "Blocage ciblé", "Lunge Stance": "Position de charge", "Zikel's Blessing": "Bénédiction de Zikel",
+      "Judgment": "Jugement", "Shield Smite": "Coup puissant au bouclier", "Warding Strike": "Frappe d'égide", "Annihilate": "Annihilation", "Debilitating Smash": "Coup féroce fragilisant", "Pummel": "Frappes successives", "Punishment": "Châtiment", "Doom Shield": "Bouclier de l'anéantissement", "Shield Rush": "Charge au bouclier", "Taunt": "Provocation",
+      "Insignia Explosion": "Explosion de glyphe", "Heart Gore": "Coup au cœur", "Ambush": "Attaque surprise", "Savage Roar": "Rugissement bestial", "Quick Slice": "Entaille rapide", "Illusive Clone": "Clone illusoire", "Swift Contract": "Pacte de célérité", "Savage Fang": "Croc sauvage", "Infiltrate": "Infiltration", "Shadowstrike": "Embuscade", "Flash Slice": "Entaille éclair",
+      "Griffon Arrow": "Flèche du Griffon", "Snare Shot": "Flèche à traquenard", "Burst Arrow": "Flèche déchirante", "Gale Arrow": "Flèche de tempête", "Drill Dart": "Flèche perçante", "Tempest Shot": "Tir rapide", "Deadshot": "Visée de flèche", "Marking Shot": "Flèche à marque", "Explosion Trap": "Piège à explosion", "Bow of Blessing": "Arc de bénédiction", "Vaizel's Authority": "Pouvoir de Vaizel",
+      "Bittercold Wind": "Vent glacial", "Blaze": "Flamme explosive", "Firestorm": "Harpon de feu", "Wish of Concentration": "Vœu de concentration", "Hellfire": "Feu de l'enfer", "Element Enhancement": "Amélioration des éléments", "Delayed Explosion": "Explosion à retardement", "Winter's Shackles": "Entrave d'hiver", "Fire Wall": "Rideau de feu", "Cold Storm": "Tempête de givre",
+      "Jointstrike: Corrode": "Attaque conjointe : Corrosion", "Jointstrike: Curse": "Attaque conjointe : Malédiction", "Dimensional Control": "Domination spatiale", "Combustion": "Combustion", "Elemental Fusion": "Fusion des éléments", "Summon: Water Spirit": "Invocation : Esprit de l'eau", "Summon: Earth Spirit": "Invocation : Esprit de la terre", "Summon: Fire Spirit": "Invocation : Esprit du feu", "Flame Blessing": "Bénédiction ardente", "Enhance: Spirit's Benediction": "Faveur d'esprit améliorée", "Summon: Ancient Spirit": "Invocation : Esprit ancien", "Soul's Cry": "Cri de l'âme",
+      "Prayer of Amplification": "Prière de boost", "Earth Punishment": "Châtiment de la Terre", "Chain of Torment": "Enchaînement de douleur", "Condemnation": "Condamnation", "Divine Aura": "Aura sacrée", "Judgment Thunder": "Éclair de jugement", "Healing Light": "Lumière de soin", "Light of Regeneration": "Lumière de restauration", "Radiant Recovery": "Halo de récupération", "Bolt": "Fulguration", "Light of Protection": "Lumière de protection", "Debilitating Mark": "Sceau d'affaiblissement",
+      "Dark Crush": "Coup ombreux", "Spinning Strike": "Frappe tournoyante", "Incandescent Blow": "Frappe incandescente", "Rushing Smash": "Frappe de ruée", "Impactful Crush": "Coup percutant", "Marchutan's Wrath": "Rage de Marchutan", "Power of the Storm": "Pouvoir de la tempête", "Undefeated Mantra": "Mantra de l'invincibilité", "Recuperation": "Sort de récupération"
     }
   }
 }

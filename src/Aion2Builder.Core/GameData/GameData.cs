@@ -466,12 +466,17 @@ public sealed record SettingsFile
 /// <summary>
 /// Vue macro : les tutos (titre, lien, langue, ce qu'on y trouve) et, par classe, la macro d'un guide public (piles dans
 /// l'ordre de la macro, la première compétence de chaque pile en bas, celles gardées à la main), avec sa source et sa date.
-/// Noms des compétences tels que le guide les donne (anglais).
+/// Noms des compétences tels que le guide les donne (anglais), affichés en français grâce à <see cref="Names"/>.
 /// </summary>
 public sealed record MacroSettings
 {
     public List<MacroTutorial> Tutorials { get; init; } = [];
     public Dictionary<string, MacroGuide> Classes { get; init; } = [];
+    /// <summary>
+    /// Nom anglais du guide → nom du jeu en français, par identifiant de compétence (site officiel lu en en-US puis en fr-FR) ;
+    /// un nom absent reste en anglais.
+    /// </summary>
+    public Dictionary<string, string> Names { get; init; } = [];
 }
 
 public sealed record MacroTutorial(string Title, string Url, string Lang, string What);
