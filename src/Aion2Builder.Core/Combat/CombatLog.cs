@@ -153,4 +153,5 @@ public sealed record CombatPlayerSkill(string Name, double Share, int Casts, dou
 public sealed record CombatCast(double T, long Code, string Name);
 
 /// <summary>Mot reconnu sur une capture, avec sa position en pixels.</summary>
-public sealed record OcrWord(string Text, double X, double Y, double Width, double Height);
+/// <summary>Un mot lu par l'OCR ; Rgb : couleur de son texte (0xRRGGBB), -1 si elle n'a pas été lue.</summary>
+public sealed record OcrWord(string Text, double X, double Y, double Width, double Height, int Rgb = -1);

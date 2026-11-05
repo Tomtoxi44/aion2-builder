@@ -16,9 +16,11 @@ sealed class Program
         // capture (fenêtre Stats du jeu, lue par « stats-jeu <nom> mots.tsv »).
         if (args is ["--ocr", var image, var output, ..] && args.Length <= 4)
         {
-            var words = ScreenshotOcr.Words(image, args.Length == 4 && int.TryParse(args[3], out var min) ? min : 0).GetAwaiter().GetResult();
+            var words = ScreenshotOcr.Words(image, args.Length == 4 && int.TryParse(args[3], out var min) ? min : 0, colors: true).GetAwaiter().GetResult();
             static string N(double v) => v.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            File.WriteAllLines(output, words.Select(w => $"{N(w.X)}\t{N(w.Y)}\t{N(w.Width)}\t{N(w.Height)}\t{w.Text}"));
+            // 6e colonne : couleur du texte (#RRGGBB) et le rang du Marché qu'elle donne.
+            File.WriteAllLines(output, words.Select(w => $"{N(w.X)}\t{N(w.Y)}\t{N(w.Width)}\t{N(w.Height)}\t{w.Text}\t" +
+                (w.Rgb < 0 ? "" : $"#{w.Rgb:X6} {Aion2Builder.Analysis.MarketShotReader.GradeOf(w.Rgb)}")));
             return;
         }
         // Essai sans fenêtre, lancé par la mise à jour avant de remplacer l'exe : 0 si cette version démarre sur ce PC.

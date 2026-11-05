@@ -82,10 +82,11 @@ static class Market
     }
 
     /// <summary>Null si c'est noté, sinon le message d'erreur (celui du site s'il en donne un).</summary>
-    public static async Task<string?> Add(string key, string? itemKey, string itemName, long price, string market)
+    /// <param name="grade">Rang lu sur une capture (couleur du nom), pour un objet qui entre dans la liste.</param>
+    public static async Task<string?> Add(string key, string? itemKey, string itemName, long price, string market, string? grade = null)
     {
         using var http = BugReports.Client(key);
-        return await Error(await http.PostAsJsonAsync("/api/sync/market/prices", new { itemKey, itemName, price, market }));
+        return await Error(await http.PostAsJsonAsync("/api/sync/market/prices", new { itemKey, itemName, price, market, grade }));
     }
 
     /// <summary>Nommer un objet de ton sac (vu par ton Pet Meter) : le nom vaut pour tous les joueurs.</summary>
@@ -295,8 +296,9 @@ sealed partial class ScreenViews
                 var line = lines[i];
                 var index = i;
                 var item = Known(line.Name);
+                // Objet déjà dans la liste : son rang ; sinon celui lu à la couleur du nom sur la capture.
                 var bar = new Border { Width = 3, CornerRadius = new CornerRadius(1.5), Margin = new Thickness(0, 4, 8, 4),
-                    Background = item?.GameGrade is { } g ? MarketBrush(g) : Tok.Border };
+                    Background = (item?.GameGrade ?? line.Grade) is { } g ? MarketBrush(g) : Tok.Border };
                 var name = new TextBox { Text = item?.Name ?? line.Name, MinWidth = 0, FontSize = 13 };
                 var price = new TextBox { Text = Fmt.Big(line.Price), MinWidth = 0, FontSize = 13, HorizontalContentAlignment = HorizontalAlignment.Right };
                 var hint = T(item is null ? "nouveau" : "", 10, Tok.Warn, mono: true);
@@ -307,7 +309,7 @@ sealed partial class ScreenViews
                     market.EditShot(index, line with { Name = text, Price = value });
                     var known = Known(text);
                     hint.Text = known is null ? "nouveau" : "";
-                    bar.Background = known?.GameGrade is { } kg ? MarketBrush(kg) : Tok.Border;
+                    bar.Background = (known?.GameGrade ?? line.Grade) is { } kg ? MarketBrush(kg) : Tok.Border;
                 }
                 name.TextChanged += (_, _) => Changed();
                 price.TextChanged += (_, _) => Changed();

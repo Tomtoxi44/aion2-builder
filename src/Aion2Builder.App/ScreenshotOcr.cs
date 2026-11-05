@@ -12,7 +12,8 @@ static class ScreenshotOcr
 {
     /// <param name="minSize">Agrandit une petite capture jusqu'à ce côté (pixels) : l'OCR de Windows saute des chiffres sur un petit texte.</param>
     /// <param name="minScale">Agrandissement minimal (2 = image doublée) : le petit texte d'une fenêtre du jeu se lit mieux agrandi.</param>
-    public static async Task<List<Word>> Words(string path, int minSize = 0, double minScale = 1.0)
+    /// <param name="colors">Lit aussi la couleur du texte de chaque mot (le rang d'un objet du Marché se voit à la couleur de son nom).</param>
+    public static async Task<List<Word>> Words(string path, int minSize = 0, double minScale = 1.0, bool colors = false)
     {
         var engine = OcrEngine.TryCreateFromLanguage(new Windows.Globalization.Language("fr-FR")) ?? OcrEngine.TryCreateFromUserProfileLanguages()
                      ?? throw new InvalidOperationException("Aucun moteur de reconnaissance de texte dans Windows : Paramètres → Heure et langue → Langue → ajoute le français.");
@@ -30,7 +31,41 @@ static class ScreenshotOcr
         using var bitmap = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied, transform,
             ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.DoNotColorManage);
         var result = await engine.RecognizeAsync(bitmap);
-        return result.Lines.SelectMany(l => l.Words)
+        var words = result.Lines.SelectMany(l => l.Words)
             .Select(w => new Word(w.Text, w.BoundingRect.X, w.BoundingRect.Y, w.BoundingRect.Width, w.BoundingRect.Height)).ToList();
+        if (!colors) return words;
+        int width = bitmap.PixelWidth, height = bitmap.PixelHeight;
+        var buffer = new Windows.Storage.Streams.Buffer((uint)(width * height * 4));
+        bitmap.CopyToBuffer(buffer);
+        var pixels = new byte[buffer.Length];
+        using (var reader = Windows.Storage.Streams.DataReader.FromBuffer(buffer)) reader.ReadBytes(pixels);
+        return words.Select(w => w with { Rgb = TextColor(pixels, width, height, w) }).ToList();
+    }
+
+    /// <summary>
+    /// Couleur du texte d'un mot : la moyenne de ses pixels les plus clairs (le fond du jeu est sombre ; les bords adoucis des
+    /// lettres gardent la teinte). -1 si rien de clair.
+    /// </summary>
+    static int TextColor(byte[] bgra, int width, int height, Word w)
+    {
+        int x0 = Math.Max(0, (int)w.X), y0 = Math.Max(0, (int)w.Y);
+        int x1 = Math.Min(width, (int)Math.Ceiling(w.X + w.Width)), y1 = Math.Min(height, (int)Math.Ceiling(w.Y + w.Height));
+        var top = 0;
+        for (var y = y0; y < y1; y++)
+            for (var x = x0; x < x1; x++)
+            {
+                var i = (y * width + x) * 4;
+                top = Math.Max(top, Math.Max(bgra[i], Math.Max(bgra[i + 1], bgra[i + 2])));
+            }
+        if (top < 90) return -1;
+        long r = 0, g = 0, b = 0, n = 0;
+        for (var y = y0; y < y1; y++)
+            for (var x = x0; x < x1; x++)
+            {
+                var i = (y * width + x) * 4;
+                if (Math.Max(bgra[i], Math.Max(bgra[i + 1], bgra[i + 2])) < top * 0.65) continue;
+                b += bgra[i]; g += bgra[i + 1]; r += bgra[i + 2]; n++;
+            }
+        return n == 0 ? -1 : (int)(r / n) << 16 | (int)(g / n) << 8 | (int)(b / n);
     }
 }

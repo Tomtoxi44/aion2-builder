@@ -2063,7 +2063,7 @@ public sealed class MainWindow : Window
             foreach (var path in paths)
             {
                 // Image doublée : sur un écran 1080p ou plus petit, le texte du Marché est trop fin pour l'OCR (annonces perdues, accents).
-                lines.AddRange(MarketShotReader.Read(await ScreenshotOcr.Words(path, InGameStatsReader.MinOcrSize, minScale: 2), out var problem));
+                lines.AddRange(MarketShotReader.Read(await ScreenshotOcr.Words(path, InGameStatsReader.MinOcrSize, minScale: 2, colors: true), out var problem));
                 if (problem is not null) refused++;
             }
             // Un même objet sur deux captures : la dernière lecture l'emporte.
@@ -2094,7 +2094,8 @@ public sealed class MainWindow : Window
         {
             var item = items.FirstOrDefault(i => Market.Fold(i.Name) == Market.Fold(line.Name));
             string? error;
-            try { error = await Market.Add(key, item?.Key, item?.Name ?? line.Name, line.Price, marketCode); }
+            // Un objet pas encore dans la liste entre avec le rang lu à la couleur de son nom (sinon il resterait sans couleur).
+            try { error = await Market.Add(key, item?.Key, item?.Name ?? line.Name, line.Price, marketCode, item is null ? line.Grade : null); }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { error = $"Aion 2 Todo injoignable ({ex.Message})"; }
             if (error is null) done++;
             else { errors.Add($"{(line.Name.Length > 0 ? line.Name : "(sans nom)")} : {error}"); failed.Add(line); }

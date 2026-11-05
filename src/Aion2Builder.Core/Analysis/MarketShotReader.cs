@@ -7,9 +7,9 @@ namespace Aion2Builder.Analysis;
 /// <summary>
 /// Une ligne lue sur une capture de l'hôtel des ventes du jeu : nom de l'objet, nombre d'annonces, prix unitaire (Kinah).
 /// Lowest : lu sur la liste des annonces d'un objet (une ligne par annonce) : Price est le prix unitaire le plus bas des
-/// Listings annonces lues.
+/// Listings annonces lues. Grade : rang du jeu lu à la couleur du nom (« Rare » pour un nom vert), null si la couleur manque.
 /// </summary>
-public sealed record MarketShotLine(string Name, int? Listings, long Price, bool Lowest = false);
+public sealed record MarketShotLine(string Name, int? Listings, long Price, bool Lowest = false, string? Grade = null);
 
 /// <summary>
 /// Lit une capture de la fenêtre Marché du jeu, reconnue par l'OCR de Windows. Deux vues :
@@ -59,23 +59,54 @@ public static class MarketShotReader
         var grade = titles.FirstOrDefault(t => t.Key == "grade");
         var left = grade.Key is null ? double.MinValue : grade.Left - height * 2;
         var top = objet.Y + objet.Height + height * 0.3;
-        var read = new List<(string Name, int? Count, long Price)>();
+        var read = new List<(string Name, int? Count, long Price, string? Grade)>();
         foreach (var row in Lines(words.Where(w => w.Y > top && w.X >= left).ToList(), height))
         {
             var sorted = row.OrderBy(w => w.X).ToList();
-            var name = Name(sorted.Where(w => w.X + w.Width / 2 < nameEnd));
+            var nameWords = sorted.Where(w => w.X + w.Width / 2 < nameEnd).ToList();
+            var name = Name(nameWords);
             var cells = sorted.Where(w => w.X + w.Width / 2 >= nameEnd)
                 .GroupBy(w => numeric.MinBy(t => Math.Abs((t.Left + t.Right) / 2 - (w.X + w.Width / 2))))
                 .ToDictionary(g => g.Key, g => g.ToList());
             var value = cells.TryGetValue(price, out var p) ? Number(p) : null;
             if (name.Length < 2 || value is not > 0) continue;
             int? listings = count.Key is not null && cells.TryGetValue(count, out var c) && Number(c) is { } n and < 100_000 ? (int)n : null;
-            read.Add((name, listings, value.Value));
+            read.Add((name, listings, value.Value, NameGrade(nameWords)));
         }
         if (count.Key is not null || numeric.All(t => t.Key != "temps"))
-            return read.Select(r => new MarketShotLine(r.Name, r.Count, r.Price)).ToList();
+            return read.Select(r => new MarketShotLine(r.Name, r.Count, r.Price, Grade: r.Grade)).ToList();
         // Annonces d'un objet : une ligne par annonce ; le prix unitaire le plus bas, et combien d'annonces sont lues.
-        return read.GroupBy(r => Fold(r.Name)).Select(g => new MarketShotLine(g.First().Name, g.Count(), g.Min(r => r.Price), Lowest: true)).ToList();
+        return read.GroupBy(r => Fold(r.Name)).Select(g => new MarketShotLine(g.First().Name, g.Count(), g.Min(r => r.Price), Lowest: true,
+            Grade: g.Select(r => r.Grade).OfType<string>().GroupBy(x => x).MaxBy(x => x.Count())?.Key)).ToList();
+    }
+
+    /// <summary>Le rang le plus vu parmi les mots du nom (un mot coupé ou mal lu ne l'emporte pas).</summary>
+    static string? NameGrade(IEnumerable<OcrWord> words) =>
+        words.Where(w => Letters(w.Text) >= 2).Select(w => GradeOf(w.Rgb)).OfType<string>().GroupBy(g => g).MaxBy(g => g.Count())?.Key;
+
+    /// <summary>
+    /// Rang du jeu d'après la couleur d'un nom au Marché : blanc Common, vert Rare, bleu Legend, jaune Unique, orange Epic,
+    /// rouge Mythic, turquoise Special. Null pour une couleur inconnue (ou -1, couleur non lue).
+    /// </summary>
+    public static string? GradeOf(int rgb)
+    {
+        if (rgb < 0) return null;
+        double r = (rgb >> 16 & 255) / 255.0, g = (rgb >> 8 & 255) / 255.0, b = (rgb & 255) / 255.0;
+        double max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b)), delta = max - min;
+        if (max < 0.35) return null;
+        if (delta / max < 0.3) return "Common";
+        var hue = max == r ? 60 * ((g - b) / delta % 6) : max == g ? 60 * ((b - r) / delta + 2) : 60 * ((r - g) / delta + 4);
+        if (hue < 0) hue += 360;
+        return hue switch
+        {
+            < 15 or >= 330 => "Mythic",
+            < 38 => "Epic",
+            < 70 => "Unique",
+            < 165 => "Rare",
+            < 190 => "Special",
+            < 270 => "Legend",
+            _ => null,
+        };
     }
 
     /// <summary>Le nom : les mots avec des lettres (le « 1 » de la pile sur l'icône et les signes seuls sont écartés).</summary>
