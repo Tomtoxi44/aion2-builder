@@ -38,7 +38,8 @@ sealed record MarketRemoved(int Id, string ItemKey, string ItemName, long Price,
 /// <summary>Un marché proposé par le site : code, nom affiché, nombre de prix, le tien (tes persos du site y jouent).</summary>
 sealed record MarketChoice(string Code, string Label, int Prices, bool Mine);
 
-sealed record MarketData(List<MarketItem> Items, List<MarketPrice> Prices, List<MarketRemoved> Removed, List<MarketChoice>? Markets = null, string? DefaultMarket = null)
+sealed record MarketData(List<MarketItem> Items, List<MarketPrice> Prices, List<MarketRemoved> Removed, List<MarketChoice>? Markets = null, string? DefaultMarket = null,
+    List<CraftRecipe>? Recipes = null)
 {
     /// <summary>Dernier prix de chaque objet sur un marché (les prix arrivent du plus ancien au plus récent).</summary>
     public Dictionary<string, MarketPrice> Latest(string market) =>
@@ -66,6 +67,10 @@ sealed record MarketState(MarketData? Data, bool Linked, string? Status, Func<st
     public Action<int> RemoveShot { get; init; } = _ => { };
     /// <summary>Écran Inventaire : donner son nom du jeu à un objet de ton sac (pour tous) ; null si c'est fait, sinon l'erreur.</summary>
     public Func<long, string, Task<string?>> NameItem { get; init; } = (_, _) => Task.FromResult<string?>(null);
+    /// <summary>Écran Craft : noter une recette (null si c'est fait, sinon l'erreur), la retirer, la rétablir.</summary>
+    public Func<RecipeSend, Task<string?>> AddRecipe { get; init; } = _ => Task.FromResult<string?>(null);
+    public Action<CraftRecipe> RemoveRecipe { get; init; } = _ => { };
+    public Action<int> RestoreRecipe { get; init; } = _ => { };
 }
 
 /// <summary>
@@ -94,6 +99,25 @@ static class Market
     {
         using var http = BugReports.Client(key);
         return await Error(await http.PostAsJsonAsync("/api/sync/market/names", new { id, name }));
+    }
+
+    /// <summary>Recettes d'artisanat communes (écran Craft) : noter, retirer, rétablir.</summary>
+    public static async Task<string?> AddRecipe(string key, RecipeSend recipe)
+    {
+        using var http = BugReports.Client(key);
+        return await Error(await http.PostAsJsonAsync("/api/sync/market/recipes", recipe));
+    }
+
+    public static async Task<string?> RemoveRecipe(string key, int id)
+    {
+        using var http = BugReports.Client(key);
+        return await Error(await http.DeleteAsync($"/api/sync/market/recipes/{id}"));
+    }
+
+    public static async Task<string?> RestoreRecipe(string key, int id)
+    {
+        using var http = BugReports.Client(key);
+        return await Error(await http.PostAsync($"/api/sync/market/recipes/{id}/restore", null));
     }
 
     public static async Task<string?> Remove(string key, int id)

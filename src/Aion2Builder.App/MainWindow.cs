@@ -903,7 +903,7 @@ public sealed class MainWindow : Window
 
     /// <summary>Ordre par défaut du rail : les écrans notés d'abord (leurs notes se suivent), puis les autres.</summary>
     static readonly Screen[] DefaultRail =
-        [Screen.Home, Screen.Stats, Screen.Gear, Screen.Skills, Screen.Daeva, Screen.Pets, Screen.Build, Screen.Combat, Screen.Gather, Screen.Inventory, Screen.Market, Screen.Simulate, Screen.Progress, Screen.Details];
+        [Screen.Home, Screen.Stats, Screen.Gear, Screen.Skills, Screen.Daeva, Screen.Pets, Screen.Build, Screen.Combat, Screen.Gather, Screen.Inventory, Screen.Craft, Screen.Market, Screen.Simulate, Screen.Progress, Screen.Details];
 
     /// <summary>Écrans du rail dans l'ordre choisi (glisser-déposer), les écrans inconnus de cet ordre à leur place par défaut.</summary>
     List<(Screen Screen, string Title, string Short)> RailNav
@@ -1035,6 +1035,8 @@ public sealed class MainWindow : Window
             Screen.Market => "M2,2 H9 L16,9 L9,15 L2,8 Z M5,5 L5.6,5.6",
             // Sac : corps et anse.
             Screen.Inventory => "M3,6 H15 L14,15 H4 Z M6,6 Q6,2 9,2 Q12,2 12,6",
+            // Marteau : manche et tête.
+            Screen.Craft => "M3,15 L10,8 M8,3 L12,1 L17,6 L13,10 Z",
             _ => "M2,7 H16",
         };
         return new Avalonia.Controls.Shapes.Path
@@ -1055,7 +1057,7 @@ public sealed class MainWindow : Window
             grid.Children.Add(bar);
         }
         side = null;
-        if (state.Screen is Screen.Gather or Screen.Market or Screen.Inventory && report is not null) { _ = LoadAccountGatherAsync(); _ = LoadMarketAsync(); }
+        if (state.Screen is Screen.Gather or Screen.Market or Screen.Inventory or Screen.Craft && report is not null) { _ = LoadAccountGatherAsync(); _ = LoadMarketAsync(); }
         var page = state.Screen == Screen.Import || report is null ? ImportHost() : Page(report);
         Grid.SetRow(page, 1);
         Grid.SetColumn(page, 1);
@@ -1142,6 +1144,9 @@ public sealed class MainWindow : Window
                 ClearShot = () => { marketShot = null; marketShotStatus = null; Render(); },
                 EditShot = (i, line) => { if (marketShot is { } l && i < l.Count) l[i] = line; },
                 NameItem = NameItemAsync,
+                AddRecipe = AddRecipeAsync,
+                RemoveRecipe = rc => _ = MarketActionAsync(key => Market.RemoveRecipe(key, rc.Id), $"recette retirée : {rc.Output.Name} (rétablissable)"),
+                RestoreRecipe = id => _ = MarketActionAsync(key => Market.RestoreRecipe(key, id), "recette rétablie"),
                 RemoveShot = i =>
                 {
                     if (marketShot is { } l && i < l.Count) l.RemoveAt(i);
@@ -2009,7 +2014,7 @@ public sealed class MainWindow : Window
             accountGatherStatus = $"Récolte du compte illisible ({ex.Message}) : seuls les jours de ce PC sont montrés.";
         }
         finally { accountGatherLoading = false; }
-        if (state.Screen is Screen.Gather or Screen.Market or Screen.Inventory) Render();
+        if (state.Screen is Screen.Gather or Screen.Market or Screen.Inventory or Screen.Craft) Render();
     }
 
     MarketData? market;
@@ -2136,7 +2141,7 @@ public sealed class MainWindow : Window
             Journal.Write("prix HdV : " + ex.Message);
         }
         finally { marketLoading = false; }
-        if (state.Screen is Screen.Gather or Screen.Market or Screen.Inventory) Render();
+        if (state.Screen is Screen.Gather or Screen.Market or Screen.Inventory or Screen.Craft) Render();
     }
 
     /// <summary>Écran Inventaire : nommer un objet de ton sac pour tous ; la liste des noms est relue aussitôt.</summary>
@@ -2147,6 +2152,21 @@ public sealed class MainWindow : Window
         try { error = await Market.Name(key, id, name); }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { error = $"Aion 2 Todo injoignable ({ex.Message})"; }
         if (error is null) await LoadMarketAsync(force: true);
+        return error;
+    }
+
+    /// <summary>Écran Craft : noter une recette pour tous ; les recettes sont relues aussitôt.</summary>
+    async Task<string?> AddRecipeAsync(RecipeSend recipe)
+    {
+        if (AccountKey() is not { } key) return "Il faut ta clé Aion 2 Todo (écran Familiers).";
+        string? error;
+        try { error = await Market.AddRecipe(key, recipe); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { error = $"Aion 2 Todo injoignable ({ex.Message})."; }
+        if (error is null)
+        {
+            SetStatus($"recette notée : {recipe.Output.Name} (partagée avec la communauté)");
+            await LoadMarketAsync(force: true);
+        }
         return error;
     }
 

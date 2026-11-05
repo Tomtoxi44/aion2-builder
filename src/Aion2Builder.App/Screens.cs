@@ -15,7 +15,7 @@ using static Aion2Builder.App.Ui;
 
 namespace Aion2Builder.App;
 
-enum Screen { Import, Home, Stats, Gear, Skills, Build, Combat, Daeva, Pets, Simulate, Progress, Details, Gather, Market, Inventory }
+enum Screen { Import, Home, Stats, Gear, Skills, Build, Combat, Daeva, Pets, Simulate, Progress, Details, Gather, Market, Inventory, Craft }
 
 /// <summary>Sous-pages de l'écran Équipement (sous-menu du rail).</summary>
 enum GearPage { Overview, Roadmap, Pieces, Enchant, Stones, Arcana, Optimize }
@@ -70,6 +70,13 @@ sealed class UiState
     /// <summary>Écran Inventaire : noms tapés pour les objets sans nom (gardés d'un affichage à l'autre), et le dernier message.</summary>
     public Dictionary<long, string> InventoryNames { get; } = [];
     public string? InventoryNameStatus { get; set; }
+    /// <summary>Écran Craft : texte cherché, filtre (null toutes, « make » faisables, « gain » rentables), formulaire de recette,
+    /// dernière erreur, et la recette qu'on vient de retirer (rétablissable).</summary>
+    public string? CraftQuery { get; set; }
+    public string? CraftFilter { get; set; }
+    public CraftDraft CraftDraft { get; set; } = new();
+    public string? CraftError { get; set; }
+    public (int Id, string Name)? CraftUndo { get; set; }
     public bool HomeHow { get; set; }
     public bool StatsHow { get; set; }
     /// <summary>Listes longues (prochains points, prochaines cases) affichées en entier.</summary>
@@ -119,7 +126,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
         (Screen.Home, "Accueil", "Accueil"), (Screen.Stats, "Stats", "Stats"), (Screen.Gear, "Équipement", "Équip."),
-        (Screen.Skills, "Compétences", "Compét."), (Screen.Build, "Build et rotation", "Build"), (Screen.Combat, "Combat (Pet Meter, NotMeter)", "Combat"), (Screen.Gather, "Récolte (Pet Meter)", "Récolte"), (Screen.Inventory, "Inventaire : ton sac et ton coffre (Pet Meter)", "Invent."), (Screen.Market, "Hôtel des ventes : prix de la communauté", "HdV"), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Pets, "Familiers", "Famil."),
+        (Screen.Skills, "Compétences", "Compét."), (Screen.Build, "Build et rotation", "Build"), (Screen.Combat, "Combat (Pet Meter, NotMeter)", "Combat"), (Screen.Gather, "Récolte (Pet Meter)", "Récolte"), (Screen.Inventory, "Inventaire : ton sac et ton coffre (Pet Meter)", "Invent."), (Screen.Craft, "Craft : fabriquer ou vendre les ingrédients", "Craft"), (Screen.Market, "Hôtel des ventes : prix de la communauté", "HdV"), (Screen.Daeva, "Daevanion", "Daeva."), (Screen.Pets, "Familiers", "Famil."),
         (Screen.Simulate, "Simulation « et si »", "Et si"), (Screen.Progress, "Progression", "Prog."),
         (Screen.Details, "Détails", "Détails"),
     ];
@@ -260,6 +267,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         Screen.Gather => (GatherScreen(), null),
         Screen.Market => (MarketScreen(PetMeterGathering.Merge(accountGather.Days, PetMeterGathering.Load())), null),
         Screen.Inventory => (InventoryScreen(PetMeterGathering.Merge(accountGather.Days, PetMeterGathering.Load())), null),
+        Screen.Craft => (CraftScreen(PetMeterGathering.Merge(accountGather.Days, PetMeterGathering.Load())), null),
         _ => (Details(), null),
     };
 

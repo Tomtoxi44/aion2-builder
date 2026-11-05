@@ -22,6 +22,31 @@ sealed partial class ScreenViews
     static readonly string[] InventoryFamilies = ["Récolte", "Équipement", "Autres objets", "Sans nom"];
 
     /// <summary>
+    /// Les objets d'un perso (sac, coffre, autres rangements ; sans les pièces portées ni les Kinah, comptés à part), toutes piles
+    /// réunies, nommés (ressources de récolte, liste d'Aion 2 Todo) et au dernier prix connu. Partagé par les écrans Inventaire et Craft.
+    /// </summary>
+    List<InventoryEntry> InventoryEntries(InventoryFile inv, CharacterInventory who, IReadOnlyList<GatherDay> days, Dictionary<string, MarketPrice> latest, out long kinah)
+    {
+        var named = market.Data?.Items.Where(i => long.TryParse(i.Key, out _)).GroupBy(i => i.Key).ToDictionary(g => g.Key, g => g.First()) ?? [];
+        var stacks = who.Items.Where(i => i.Qty > 0 && inv.ContainerName(i.Cont) != "porté").ToList();
+        kinah = stacks.Where(i => i.Item == KinahItem).Sum(i => i.Qty);
+        return stacks.Where(i => i.Item != KinahItem).GroupBy(i => i.Item).Select(g =>
+        {
+            var qty = g.Sum(i => i.Qty);
+            var where = g.Select(i => (inv.ContainerName(i.Cont), i.Slot, i.Qty)).OrderBy(x => x.Item1 == "sac" ? 0 : x.Item1 == "coffre" ? 1 : 2).ThenBy(x => x.Slot).ToList();
+            var price = latest.TryGetValue(g.Key.ToString(), out var p) ? p.Price : (long?)null;
+            if (GatherCatalog.IsResource(g.Key))
+            {
+                var res = GatherCatalog.Item(g.Key, qty, days);
+                return new InventoryEntry(g.Key, res.Name, new MarketItem(g.Key.ToString(), res.Name, res.Rank, false, "Récolte"), "Récolte", qty, where, price);
+            }
+            if (named.TryGetValue(g.Key.ToString(), out var item))
+                return new InventoryEntry(g.Key, item.Name, item, item.IsGathering ? "Récolte" : item.Category.Contains(" · ") ? "Équipement" : "Autres objets", qty, where, price);
+            return new InventoryEntry(g.Key, $"n° {g.Key}", null, "Sans nom", qty, where, price);
+        }).ToList();
+    }
+
+    /// <summary>
     /// Écran Inventaire : tout ton sac et ton coffre tels que le Pet Meter les a lus à ton entrée en jeu (inventory.json, sur ce PC),
     /// rangés par familles (récolte, équipement, autres objets, objets encore sans nom), avec la couleur de rareté du jeu, le
     /// rangement et la case, la quantité et la valeur au dernier prix de la communauté. Les noms viennent de la liste des
@@ -37,27 +62,9 @@ sealed partial class ScreenViews
         var owners = inv.Chars.Values.OrderByDescending(c => c.At).ToList();
         var who = owners.FirstOrDefault(c => c.Character == s.InventoryChar) ?? inv.For(r.Character.Name) ?? owners[0];
         var data = market.Data;
-        var named = data?.Items.Where(i => long.TryParse(i.Key, out _)).GroupBy(i => i.Key).ToDictionary(g => g.Key, g => g.First()) ?? [];
         var shown = data is null ? null : MarketShown(data);
         var latest = data is null || shown is null ? [] : data.Latest(shown);
-
-        // Les piles du perso, sans les pièces portées ni les Kinah, réunies par objet.
-        var stacks = who.Items.Where(i => i.Qty > 0 && inv.ContainerName(i.Cont) != "porté").ToList();
-        var kinah = stacks.Where(i => i.Item == KinahItem).Sum(i => i.Qty);
-        var entries = stacks.Where(i => i.Item != KinahItem).GroupBy(i => i.Item).Select(g =>
-        {
-            var qty = g.Sum(i => i.Qty);
-            var where = g.Select(i => (inv.ContainerName(i.Cont), i.Slot, i.Qty)).OrderBy(x => x.Item1 == "sac" ? 0 : x.Item1 == "coffre" ? 1 : 2).ThenBy(x => x.Slot).ToList();
-            var price = latest.TryGetValue(g.Key.ToString(), out var p) ? p.Price : (long?)null;
-            if (GatherCatalog.IsResource(g.Key))
-            {
-                var res = GatherCatalog.Item(g.Key, qty, days);
-                return new InventoryEntry(g.Key, res.Name, new MarketItem(g.Key.ToString(), res.Name, res.Rank, false, "Récolte"), "Récolte", qty, where, price);
-            }
-            if (named.TryGetValue(g.Key.ToString(), out var item))
-                return new InventoryEntry(g.Key, item.Name, item, item.IsGathering ? "Récolte" : item.Category.Contains(" · ") ? "Équipement" : "Autres objets", qty, where, price);
-            return new InventoryEntry(g.Key, $"n° {g.Key}", null, "Sans nom", qty, where, price);
-        }).ToList();
+        var entries = InventoryEntries(inv, who, days, latest, out var kinah);
         // Filtre de rangement : sac, coffre, ou « autres » (arcanes rangées, rangements).
         var place = s.InventoryPlace;
         static string PlaceOf((string Place, int Slot, long Qty) w) => w.Place is "sac" or "coffre" ? w.Place : "autres";
