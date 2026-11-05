@@ -64,6 +64,8 @@ sealed record MarketState(MarketData? Data, bool Linked, string? Status, Func<st
     public Action<int, MarketShotLine> EditShot { get; init; } = (_, _) => { };
     /// <summary>Retirer une ligne lue (fausse ou en trop).</summary>
     public Action<int> RemoveShot { get; init; } = _ => { };
+    /// <summary>Écran Inventaire : donner son nom du jeu à un objet de ton sac (pour tous) ; null si c'est fait, sinon l'erreur.</summary>
+    public Func<long, string, Task<string?>> NameItem { get; init; } = (_, _) => Task.FromResult<string?>(null);
 }
 
 /// <summary>
@@ -84,6 +86,13 @@ static class Market
     {
         using var http = BugReports.Client(key);
         return await Error(await http.PostAsJsonAsync("/api/sync/market/prices", new { itemKey, itemName, price, market }));
+    }
+
+    /// <summary>Nommer un objet de ton sac (vu par ton Pet Meter) : le nom vaut pour tous les joueurs.</summary>
+    public static async Task<string?> Name(string key, long id, string name)
+    {
+        using var http = BugReports.Client(key);
+        return await Error(await http.PostAsJsonAsync("/api/sync/market/names", new { id, name }));
     }
 
     public static async Task<string?> Remove(string key, int id)
