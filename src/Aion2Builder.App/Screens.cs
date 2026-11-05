@@ -3798,6 +3798,17 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         if (log.Players?.Any(p => !p.Me) == true) page.Children.Add(CombatPlayers(log));
         if (AggroAnalyzer.Analyze(log, db.Resolve(r.Character.ClassCode, log.Kind == "pvp" ? GameMode.PvP : GameMode.PvE), db) is { } aggro)
             page.Children.Add(AggroCard(log, aggro));
+        else if (log.Kind == "boss")
+        {
+            // Sans carte, dire pourquoi : sinon on la cherche sans la trouver.
+            var onMe = log.BossHits?.Count(h => h.To == "me") ?? 0;
+            page.Children.Add(Card(T(log.BossHits is not { Count: > 0 } bh
+                ? "Ce combat ne contient pas les coups du boss : il a été enregistré par un Pet Meter plus ancien que la v0.21.2 (ou le boss n'a frappé " +
+                  "personne). Les combats de boss enregistrés avec le Pet Meter à jour montrent ici qui il frappe et chaque perte d'aggro."
+                : $"Le boss ne visait personne de façon régulière avec ses attaques sur une seule cible ({Fmt.Plural(onMe, "coup")} sur toi sur {bh.Count}) : " +
+                  "pas de tank à suivre sur ce combat. Si tu tankais, il visait surtout d'autres joueurs : regarde « Mécaniques du boss ».",
+                12, Tok.Muted, wrap: true).WithLineHeight(1.5), "Aggro du boss", T("rien à montrer", 11, Tok.Muted, mono: true)));
+        }
         if (log.Kind != "pvp" && AggroAnalyzer.Mechanics(log) is { } mechanics) page.Children.Add(BossMechanicsCard(log, mechanics));
 
         // 2. À corriger en priorité : au plus 3 cartes ; le reste replié.
