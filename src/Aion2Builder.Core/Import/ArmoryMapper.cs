@@ -110,7 +110,7 @@ public static partial class ArmoryMapper
         ExtraGear? Extra(string kind, string prop) =>
             petwing.ValueKind == JsonValueKind.Object && petwing.TryGetProperty(prop, out var x) && x.ValueKind == JsonValueKind.Object
             && Str(x, "name") is { Length: > 0 } n
-                ? new ExtraGear(kind, n, Str(x, "grade") ?? "None", Int(x, "level"), Int(x, "enchantLevel"), Str(x, "icon"))
+                ? new ExtraGear(kind, n, Str(x, "grade") ?? "None", Int(x, "level"), Int(x, "enchantLevel"), Str(x, "icon"), Long(x, "id"))
                 : null;
 
         return new CharacterSnapshot
@@ -130,6 +130,7 @@ public static partial class ArmoryMapper
             PrimaryStats = primary,
             Equipment = equipment,
             Wing = Extra("Ailes", "wing"),
+            WingSkin = Extra("Ailes", "wingSkin"),
             Pet = Extra("Familier", "pet"),
             Skills = skills,
             Boards = boards,

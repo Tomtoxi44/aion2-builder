@@ -108,6 +108,10 @@ static class BenchCommand
                 var had = seen.GetValueOrDefault(i.Id);
                 seen[i.Id] = new Piece(i.Id, name, i.Grade, i.Slot, i.Category ?? had?.Category, i.ItemLevel > 0 ? i.ItemLevel : had?.Level ?? 0);
             }
+            // Ailes portées et ailes d'apparence : des objets eux aussi (vendus à l'hôtel des ventes).
+            foreach (var w in new[] { s.Wing, s.WingSkin })
+                if (w is { Id: > 0 } && string.Join(' ', w.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries)) is { Length: > 0 } wingName)
+                    seen[w.Id] = new Piece(w.Id, wingName, w.Grade, "Wing", "Ailes", 0);
         }
 
         /// <summary>Ajoute les pièces vues au fichier (celles d'avant restent) ; renvoie le total et le nombre de nouvelles.</summary>

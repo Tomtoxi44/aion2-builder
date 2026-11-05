@@ -60,7 +60,8 @@ public sealed record EquippedItem
 /// <summary>Pierre gravée dans une pièce, avec son grade (Common, Rare, Legend, Unique).</summary>
 public sealed record ItemStone(Effect Effect, string Grade, bool IsSoulStone);
 
-public sealed record ExtraGear(string Kind, string Name, string Grade, int Level, int EnchantLevel, string? Icon);
+/// <summary>Ailes ou familier ; Id : numéro du jeu (celui d'un objet pour les ailes, 0 dans les fiches d'avant).</summary>
+public sealed record ExtraGear(string Kind, string Name, string Grade, int Level, int EnchantLevel, string? Icon, long Id = 0);
 
 public sealed record SkillInfo(long Id, string Name, string Category, int Level, bool Acquired, bool Equipped, int NeedLevel, string? Icon)
 {
@@ -101,6 +102,8 @@ public sealed record CharacterSnapshot
     public List<PrimaryStat> PrimaryStats { get; init; } = [];
     public List<EquippedItem> Equipment { get; init; } = [];
     public ExtraGear? Wing { get; init; }
+    /// <summary>Ailes portées en apparence (un objet d'ailes, lui aussi).</summary>
+    public ExtraGear? WingSkin { get; init; }
     public ExtraGear? Pet { get; init; }
     public List<SkillInfo> Skills { get; init; } = [];
     public List<DaevanionBoard> Boards { get; init; } = [];
