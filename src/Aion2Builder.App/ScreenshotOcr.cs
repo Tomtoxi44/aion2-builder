@@ -11,7 +11,8 @@ namespace Aion2Builder.App;
 static class ScreenshotOcr
 {
     /// <param name="minSize">Agrandit une petite capture jusqu'à ce côté (pixels) : l'OCR de Windows saute des chiffres sur un petit texte.</param>
-    public static async Task<List<Word>> Words(string path, int minSize = 0)
+    /// <param name="minScale">Agrandissement minimal (2 = image doublée) : le petit texte d'une fenêtre du jeu se lit mieux agrandi.</param>
+    public static async Task<List<Word>> Words(string path, int minSize = 0, double minScale = 1.0)
     {
         var engine = OcrEngine.TryCreateFromLanguage(new Windows.Globalization.Language("fr-FR")) ?? OcrEngine.TryCreateFromUserProfileLanguages()
                      ?? throw new InvalidOperationException("Aucun moteur de reconnaissance de texte dans Windows : Paramètres → Heure et langue → Langue → ajoute le français.");
@@ -20,7 +21,7 @@ static class ScreenshotOcr
         var decoder = await BitmapDecoder.CreateAsync(stream);
         // Le moteur refuse les images trop grandes (écran 4K) : réduites, les positions restent proportionnelles.
         var size = (double)Math.Max(decoder.PixelWidth, decoder.PixelHeight);
-        var scale = Math.Min(OcrEngine.MaxImageDimension / size, Math.Max(1.0, minSize / size));
+        var scale = Math.Min(OcrEngine.MaxImageDimension / size, Math.Max(Math.Max(1.0, minScale), minSize / size));
         var transform = new BitmapTransform
         {
             ScaledWidth = (uint)Math.Max(1, decoder.PixelWidth * scale), ScaledHeight = (uint)Math.Max(1, decoder.PixelHeight * scale),

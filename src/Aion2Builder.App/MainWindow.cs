@@ -2049,7 +2049,8 @@ public sealed class MainWindow : Window
         try
         {
             var lines = new List<MarketShotLine>();
-            foreach (var path in paths) lines.AddRange(MarketShotReader.Read(await ScreenshotOcr.Words(path, InGameStatsReader.MinOcrSize)));
+            // Image doublée : sur un écran 1080p ou plus petit, le texte du Marché est trop fin pour l'OCR (annonces perdues, accents).
+            foreach (var path in paths) lines.AddRange(MarketShotReader.Read(await ScreenshotOcr.Words(path, InGameStatsReader.MinOcrSize, minScale: 2)));
             // Un même objet sur deux captures : la dernière lecture l'emporte.
             marketShot = lines.GroupBy(l => Market.Fold(l.Name)).Select(g => g.Last()).ToList();
             state.MarketShotSkip.Clear();
