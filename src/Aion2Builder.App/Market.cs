@@ -419,13 +419,18 @@ sealed partial class ScreenViews
         var harvest = LotValue(data.Latest(shown), todayLot);
         var lastPrice = here.MaxBy(p => p.At);
         var kpis = new Avalonia.Controls.Primitives.UniformGrid { Columns = 4 };
-        kpis.Children.Add(Kpi("Objets avec un prix", here.Select(p => p.ItemKey).Distinct().Count().ToString(), size: 20).WithMargin(0, 0, 10, 0));
-        kpis.Children.Add(Kpi("Prix notés · 7 jours", here.Count(p => p.At.ToUniversalTime() >= DateTime.UtcNow.AddDays(-7)).ToString(), size: 20).WithMargin(0, 0, 10, 0));
-        kpis.Children.Add(Tip(Kpi("Dernier relevé", lastPrice is null ? "—" : Market.Since(lastPrice.At), size: 20),
+        kpis.Children.Add(Kpi("Objets avec un prix", here.Select(p => p.ItemKey).Distinct().Count().ToString(), size: 20,
+            note: $"au moins un prix noté sur {data.Label(shown)}").WithMargin(0, 0, 10, 0));
+        kpis.Children.Add(Kpi("Prix notés · 7 jours", here.Count(p => p.At.ToUniversalTime() >= DateTime.UtcNow.AddDays(-7)).ToString(), size: 20,
+            note: "par tous les joueurs d'Aion 2 Todo, sur ce marché").WithMargin(0, 0, 10, 0));
+        kpis.Children.Add(Tip(Kpi("Dernier relevé", lastPrice is null ? "—" : Market.Since(lastPrice.At), size: 20,
+                note: lastPrice is null ? "aucun prix ici pour l'instant" : $"{lastPrice.ItemName}, par {By(lastPrice)}"),
             lastPrice is null ? "Aucun prix sur ce marché." : $"{lastPrice.ItemName} : {Fmt.Big(lastPrice.Price)} Kinah, par {By(lastPrice)} le {lastPrice.At.ToLocalTime():dd/MM HH:mm}")
             .WithMargin(0, 0, 10, 0));
-        kpis.Children.Add(Tip(Kpi(harvest is { Missing: > 0 } hm ? $"Ta récolte du jour vaut (Kinah, {hm.Missing} sans prix)" : "Ta récolte du jour vaut (Kinah)",
-                harvest is { } h ? $"≈ {Fmt.Big(h.Value)}" : "—", harvest is null ? null : Tok.Good, 20),
+        kpis.Children.Add(Tip(Kpi("Ta récolte du jour vaut", harvest is { } h ? $"≈ {Fmt.Big(h.Value)} Kinah" : "—", harvest is null ? null : Tok.Good, 20,
+                harvest is { } hn ? "si tu vendais ce que tu as récolté aujourd'hui au dernier prix noté ici" +
+                                    (hn.Missing > 0 ? $" ({Fmt.Plural(hn.Missing, "ressource")} sans prix, pas comptée{(hn.Missing > 1 ? "s" : "")})" : "")
+                    : "aucune ressource récoltée aujourd'hui n'a encore de prix ici"),
             harvest is { } hv ? "Ce que rapporterait ce que tu as récolté aujourd'hui (jour de jeu en cours) si tu le vendais au dernier prix noté de chaque ressource sur ce marché" +
                                 (hv.Missing > 0 ? $" ; {Fmt.Plural(hv.Missing, "ressource")} sans prix ici, pas comptée{(hv.Missing > 1 ? "s" : "")} : note leur prix pour l'avoir en entier." : ".")
                 : "Ce que rapporterait ta récolte du jour au prix de la communauté : aucune ressource récoltée aujourd'hui n'a encore de prix sur ce marché."));

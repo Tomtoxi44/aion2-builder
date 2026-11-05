@@ -295,12 +295,17 @@ static class Ui
     }
 
     /// <summary>Chiffre clé : libellé en petites capitales au-dessus d'une grande valeur à chasse fixe.</summary>
-    public static Border Kpi(string label, string value, IBrush? color = null, double size = 22) => new()
+    /// <param name="note">Une phrase sous le nombre, pour dire ce qu'il compte (facultatif).</param>
+    public static Border Kpi(string label, string value, IBrush? color = null, double size = 22, string? note = null)
     {
-        Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
-        Padding = new Thickness(14, 10),
-        Child = new StackPanel { Spacing = 4, Children = { Label(label), T(value, size, color ?? Tok.Text, FontWeight.SemiBold, mono: true) } },
-    };
+        var body = new StackPanel { Spacing = 4, Children = { Label(label), T(value, size, color ?? Tok.Text, FontWeight.SemiBold, mono: true) } };
+        if (note is not null) body.Children.Add(T(note, 11, Tok.Muted, wrap: true));
+        return new Border
+        {
+            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(14, 10), Child = body,
+        };
+    }
 
     /// <summary>Badge : texte à chasse fixe coloré, sur fond et bordure de la même couleur.</summary>
     public static Border Badge(string text, IBrush color) => new()
