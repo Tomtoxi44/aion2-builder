@@ -88,10 +88,67 @@ static class BenchCommand
         };
     }
 
+    /// <summary>
+    /// Pièces vues sur les joueurs relevés (data/gear-items.json, à la racine du dépôt, hors de l'appli) : numéro du jeu, nom
+    /// français, rang, emplacement, catégorie et niveau d'objet, sans nom ni serveur de joueur. Le fichier s'enrichit d'un relevé
+    /// à l'autre (une pièce n'en sort pas) ; Aion 2 Todo le relit pour la liste des prix de l'hôtel des ventes.
+    /// </summary>
+    sealed class ItemCollector
+    {
+        public sealed record Piece(long Id, string Name, string Grade, string Slot, string? Category, int Level);
+        readonly Dictionary<long, Piece> seen = [];
+        public int Count => seen.Count;
+
+        public void Add(CharacterSnapshot s)
+        {
+            foreach (var i in s.Equipment)
+            {
+                var name = string.Join(' ', (i.Name ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries));
+                if (i.Id <= 0 || name.Length == 0) continue;
+                var had = seen.GetValueOrDefault(i.Id);
+                seen[i.Id] = new Piece(i.Id, name, i.Grade, i.Slot, i.Category ?? had?.Category, i.ItemLevel > 0 ? i.ItemLevel : had?.Level ?? 0);
+            }
+        }
+
+        /// <summary>Ajoute les pièces vues au fichier (celles d'avant restent) ; renvoie le total et le nombre de nouvelles.</summary>
+        public (int Total, int Added) Save(string path, string region, DateTime date, JsonSerializerOptions compact)
+        {
+            var all = new Dictionary<long, Piece>();
+            if (File.Exists(path))
+                try
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                    foreach (var e in doc.RootElement.GetProperty("items").EnumerateArray())
+                        if (e.Deserialize<Piece>(GameDataStore.Json) is { Id: > 0 } p) all[p.Id] = p;
+                }
+                catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+                {
+                    Console.Error.WriteLine($"{path} illisible, refait à partir de ce relevé : {ex.Message}");
+                }
+            var before = all.Count;
+            foreach (var p in seen.Values)
+                all[p.Id] = all.TryGetValue(p.Id, out var had) ? p with { Level = p.Level > 0 ? p.Level : had.Level, Category = p.Category ?? had.Category } : p;
+            var source = $"Pièces portées par les joueurs niveau {Level} des relevés hebdomadaires (serveurs {region.ToUpperInvariant()}), lues sur le site " +
+                         "officiel : numéro du jeu, nom français, rang, emplacement, niveau d'objet. Sans nom ni serveur de joueur. Relu par Aion 2 Todo " +
+                         "pour la liste des prix de l'hôtel des ventes.";
+            var lines = all.Values.OrderBy(p => p.Id).Select(p => "    " + JsonSerializer.Serialize(p, compact));
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            File.WriteAllText(path, $"{{\n  \"updated\": \"{date:yyyy-MM-dd}\",\n  \"source\": {JsonSerializer.Serialize(source, compact)},\n" +
+                                    $"  \"items\": [\n{string.Join(",\n", lines)}\n  ]\n}}\n");
+            return (all.Count, all.Count - before);
+        }
+    }
+
     public static async Task<int> Run(Args cli)
     {
-        var output = cli.Get("out") ?? throw new InvalidOperationException("Précise le fichier : bench --out <benchmark.json> [--count 48] [--class <classe>]");
-        var count = int.TryParse(cli.Get("count"), out var n) && n > 0 ? n : DefaultCount;
+        // --items <data/gear-items.json> : garde aussi les pièces vues. --items-only : relevé court (--count joueurs par classe, sans
+        // le top) qui n'écrit que ce fichier, pour vérifier ou compléter la liste sans toucher aux joueurs de comparaison.
+        var itemsPath = cli.Get("items");
+        var itemsOnly = cli.Has("items-only");
+        if (itemsOnly && itemsPath is null) throw new InvalidOperationException("--items-only demande --items <gear-items.json>.");
+        var output = cli.Get("out") ?? (itemsOnly ? "" : throw new InvalidOperationException(
+            "Précise le fichier : bench --out <benchmark.json> [--count 48] [--class <classe>] [--items <gear-items.json>] [--items-only]"));
+        var count = int.TryParse(cli.Get("count"), out var n) && n > 0 ? n : itemsOnly ? 6 : DefaultCount;
         var only = cli.Get("class");
         var db = GameDataStore.Load();
         var advisor = new Advisor(db);
@@ -100,11 +157,30 @@ static class BenchCommand
 
         var classes = new List<(string Code, ClassBenchmark? Bench)>();
         var gear = new GearCollector(new EffectParser(db));
+        var items = new ItemCollector();
+        // Une ligne par classe, comme les autres fichiers de données : les changements de la semaine restent lisibles.
+        var compact = new JsonSerializerOptions(GameDataStore.Json)
+        {
+            WriteIndented = false, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        };
+        if (itemsOnly)
+        {
+            foreach (var c in db.Classes.Where(c => only is null || db.FindClass(only) == c))
+            {
+                var (players, _, found, skipped, error) = await Sample(client, db, gear, items, cli.Region, c.Code, count, withTop: false);
+                Console.WriteLine($"{c.Name} : {players.Count} joueurs lus sur {found} trouvés, {skipped} écartés" + (error is null ? "" : $" (dernière erreur : {error})"));
+            }
+            if (items.Count == 0) { Console.Error.WriteLine("Aucune pièce lue : le fichier n'est pas modifié."); return 1; }
+            var (total, added) = items.Save(itemsPath!, cli.Region, today, compact);
+            Console.WriteLine($"Pièces : {items.Count} vues, {added} nouvelles, {total} en tout : {Path.GetFullPath(itemsPath!)}");
+            return 0;
+        }
         var refreshed = 0;
         foreach (var c in db.Classes)
         {
             if (only is not null && db.FindClass(only) != c) { classes.Add((c.Code, c.Benchmark)); continue; }
-            var (players, top, found, skipped, error) = await Sample(client, db, gear, cli.Region, c.Code, count);
+            var (players, top, found, skipped, error) = await Sample(client, db, gear, items, cli.Region, c.Code, count, withTop: true);
             // Trop peu de joueurs (site en maintenance, adresse changée) : on garde l'échantillon précédent de la classe.
             var keep = players.Count < Math.Max(6, count / 2);
             Console.WriteLine($"{c.Name} : {players.Count} joueurs relevés sur {found} trouvés, {skipped} écartés" +
@@ -119,12 +195,6 @@ static class BenchCommand
             return 1;
         }
 
-        // Une ligne par classe, comme les autres fichiers de données : les changements de la semaine restent lisibles.
-        var compact = new JsonSerializerOptions(GameDataStore.Json)
-        {
-            WriteIndented = false, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-        };
         var lines = classes.Where(x => x.Bench is not null).Select(x => $"    \"{x.Code}\": {JsonSerializer.Serialize(x.Bench, compact)}");
         File.WriteAllText(output, $"{{\n  \"updated\": \"{today:yyyy-MM-dd}\",\n  \"classes\": {{\n{string.Join(",\n", lines)}\n  }}\n}}\n");
         Console.WriteLine($"{refreshed}/{classes.Count} classes relevées : {Path.GetFullPath(output)}");
@@ -140,11 +210,16 @@ static class BenchCommand
                                         $"  \"soul\": {{\n{string.Join(",\n", soulLines)}\n  }},\n  \"stones\": {{\n{string.Join(",\n", stoneLines)}\n  }}\n}}\n");
             Console.WriteLine($"Options d'équipement : {file.Soul.Count} types de pièces, {file.Soul.Sum(x => x.Value.Count)} options, {gear.Players} joueurs : {gearPath}");
         }
+        if (itemsPath is not null && items.Count > 0)
+        {
+            var (total, added) = items.Save(itemsPath, cli.Region, today, compact);
+            Console.WriteLine($"Pièces : {items.Count} vues, {added} nouvelles, {total} en tout : {Path.GetFullPath(itemsPath)}");
+        }
         return 0;
     }
 
     static async Task<(List<Measured> Players, List<BenchPlayer> Top, int Found, int Skipped, string? Error)> Sample(
-        ArmoryClient client, GameDatabase db, GearCollector gear, string region, string classCode, int count)
+        ArmoryClient client, GameDatabase db, GearCollector gear, ItemCollector items, string region, string classCode, int count, bool withTop)
     {
         string? error = null;
         var hits = new List<SearchHit>();
@@ -170,6 +245,7 @@ static class BenchCommand
             try
             {
                 var s = await client.Fetch(db, region, hit.ServerId, hit.CharacterId);
+                items.Add(s);
                 // Un perso à peine équipé (ou dont les pièces ne s'ouvrent pas) fausserait la comparaison.
                 if (s.Level != Level || s.Equipment.Count(i => i.HasDetail) < 10) skipped++;
                 else
@@ -189,7 +265,7 @@ static class BenchCommand
         }
         // Top de la classe : la puissance de combat de chaque joueur trouvé (un appel léger chacun), puis les plus forts en entier.
         var powers = new List<(SearchHit Hit, int Power)>();
-        foreach (var hit in candidates)
+        foreach (var hit in withTop ? candidates : [])
         {
             try { if (await client.CombatPower(region, hit.ServerId, hit.CharacterId) is { } cp) powers.Add((hit, cp)); }
             catch (ArmoryException ex) { error = ex.Message; }
@@ -203,6 +279,7 @@ static class BenchCommand
             try
             {
                 var s = await client.Fetch(db, region, hit.ServerId, hit.CharacterId);
+                items.Add(s);
                 if (s.Level == Level && s.Equipment.Count(i => i.HasDetail) >= 10) top.Add(PeerMeasure.Measure(db, s).Player);
             }
             catch (Exception ex) when (ex is ArmoryException or InvalidDataException or JsonException or KeyNotFoundException or InvalidOperationException)
