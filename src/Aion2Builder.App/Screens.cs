@@ -51,6 +51,12 @@ sealed class UiState
     public string? GatherServer { get; set; }
     /// <summary>Récolte : le perso dont le stock (sac et coffre, Pet Meter) est montré ; null : le perso ouvert.</summary>
     public string? GatherStockChar { get; set; }
+    /// <summary>Récolte → Prix HdV : l'objet dont la courbe est montrée, le relevé à confirmer avant retrait, la saisie en cours.</summary>
+    public string? MarketItem { get; set; }
+    public int? MarketConfirm { get; set; }
+    public string? MarketPick { get; set; }
+    public string? MarketPriceText { get; set; }
+    public string? MarketError { get; set; }
     public bool HomeHow { get; set; }
     public bool StatsHow { get; set; }
     /// <summary>Listes longues (prochains points, prochaines cases) affichées en entier.</summary>
@@ -95,7 +101,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
     IReadOnlyList<ProgressPoint> progress, Func<SimulationOptions, AdviceReport> simulate,
     IReadOnlyList<(string Path, CombatLog Log)> combats, Action importCombat, Action<string> deleteCombat, Action reloadCombats, Action refresh,
     IReadOnlyList<SavedPeer> savedPeers, Action<string, string> addPeer, Action<string> removePeer, Action importInGame,
-    AccountGather accountGather, Action<string, string?, Control> openPlayer)
+    AccountGather accountGather, Action<string, string?, Control> openPlayer, MarketState market)
 {
     public static readonly (Screen Screen, string Title, string Short)[] Nav =
     [
@@ -5792,6 +5798,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
     Control GatherScreen()
     {
         var days = PetMeterGathering.Merge(accountGather.Days, PetMeterGathering.Load());
+        if (s.GatherDay == "prix") return MarketScreen(days);
         // D'où vient la récolte : ton compte (tous tes PC) avec ta clé Aion 2 Todo, sinon ce PC.
         var source = T(accountGather.Status
             ?? (accountGather.Linked ? "Récolte de ton compte : tous tes PC additionnés (Aion 2 Todo, Pet Meter v0.18.0 ou plus), plus les jours gardés sur ce PC."
@@ -5799,7 +5806,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
                   "(sur le site : onglet Familiers → Pet Meter → « Afficher ma clé »)."),
             12, accountGather.Status is { } st && !st.EndsWith('…') ? Tok.Warn : Tok.Muted, wrap: true);
         if (days.Count == 0)
-            return Page("Récolte", null, Card(new StackPanel { Spacing = 10, Children = {
+            return Page("Récolte", Choice([("Prix HdV", false, () => update(st => st.GatherDay = "prix"))]), Card(new StackPanel { Spacing = 10, Children = {
                 T("Le Pet Meter (v0.17.0 ou plus) garde le résumé de ta récolte de chaque jour : récoltes, ratées, rang supérieur, chaque ressource " +
                   "avec son rang, et les Kinah de monstres. Lance-le et récolte : le résumé apparaît ici, jour par jour.", 13, Tok.Muted, wrap: true).WithLineHeight(1.5),
                 source } }), GatherStock(days));
@@ -5816,6 +5823,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
             options.Add(("7 jours", pick == "7", () => Pick("7")));
             options.Add(("30 jours", pick == "30", () => Pick("30")));
         }
+        options.Add(("Prix HdV", false, () => Pick("prix")));
         var period = span > 0 ? $"{span} derniers jours ({Fmt.Plural(chosen.Count, "jour enregistré", "jours enregistrés")})"
             : chosen.Count > 0 ? $"{DayLabel(chosen[0])} ({chosen[0].Date.ToString("dddd d MMMM", fr)})" : pick;
 
@@ -5854,6 +5862,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
             kpis.Children.Add(Kpi("Éclatantes (jaunes)", radiant > 0 && g.Count >= radiant
                 ? $"{Fmt.Big(radiant)} · 1 sur {Fmt.Big(Math.Round((double)g.Count / radiant))}" : Fmt.Big(radiant), radiant > 0 ? unique : null));
             blocks.Add(kpis);
+            blocks.Add(MarketValue(items.Where(i => i.Id is not null).Select(i => ((long)i.Id!.Value, (long)i.Qty)), "de cette récolte"));
             blocks.Add(T("Récoltes : le compteur du jeu (récoltes commencées, ratées comprises, même faites sans le Pet Meter). Ratées, rang " +
                 "supérieur et ressources : ce que le Pet Meter a vu. Éclatantes : les ressources de rang 4 (« … éclatant »), de rareté Unique, " +
                 "en jaune dans le jeu.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4));
@@ -5981,6 +5990,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         kpis.Children.Add(Kpi(since is null ? "Évolution" : $"Depuis le {since}", prev is null ? "—" : change == 0 ? "=" : $"{(change > 0 ? "+" : "−")}{Fmt.Big(Math.Abs(change))}",
             change > 0 ? Tok.Good : change < 0 ? Tok.Bad : null));
         blocks.Children.Add(kpis);
+        if (MarketValue(totals.Select(kv => (kv.Key, kv.Value)), "de ton stock") is { } worth) blocks.Children.Add(worth);
 
         // Par rang : une colonne par conteneur, le total et l'écart.
         var rankCols = "*," + string.Join(",", containers.Select(_ => "90")) + ",90,90";

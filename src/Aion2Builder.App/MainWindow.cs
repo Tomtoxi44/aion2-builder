@@ -1051,7 +1051,7 @@ public sealed class MainWindow : Window
             grid.Children.Add(bar);
         }
         side = null;
-        if (state.Screen == Screen.Gather && report is not null) _ = LoadAccountGatherAsync();
+        if (state.Screen == Screen.Gather && report is not null) { _ = LoadAccountGatherAsync(); _ = LoadMarketAsync(); }
         var page = state.Screen == Screen.Import || report is null ? ImportHost() : Page(report);
         Grid.SetRow(page, 1);
         Grid.SetColumn(page, 1);
@@ -1127,7 +1127,10 @@ public sealed class MainWindow : Window
             combats, () => _ = ImportCombatAsync(), DeleteCombat, ReloadCombats, () => _ = RefreshAsync(),
             peerStore.Load(), (name, server) => _ = AddPeerAsync(name, server), RemovePeer, () => _ = ImportInGameAsync(),
             new AccountGather(accountGather ?? [], AccountKey() is not null, accountGatherStatus),
-            (name, classCode, anchor) => _ = OpenPlayerAsync(name, classCode, anchor));
+            (name, classCode, anchor) => _ = OpenPlayerAsync(name, classCode, anchor),
+            new MarketState(market, AccountKey() is not null, marketStatus, AddPriceAsync,
+                p => _ = MarketActionAsync(key => Market.Remove(key, p.Id), $"prix retiré : {p.ItemName}, {Fmt.Big(p.Price)} Kinah"),
+                p => _ = MarketActionAsync(key => Market.Restore(key, p.Id), $"prix rétabli : {p.ItemName}, {Fmt.Big(p.Price)} Kinah")));
     }
 
     /// <summary>
@@ -1974,6 +1977,56 @@ public sealed class MainWindow : Window
         }
         finally { accountGatherLoading = false; }
         if (state.Screen == Screen.Gather) Render();
+    }
+
+    MarketData? market;
+    string? marketStatus;
+    DateTime marketAt;
+    bool marketLoading;
+
+    /// <summary>Prix HdV de la communauté (Aion 2 Todo, avec ta clé) : relus au plus toutes les minutes, ou tout de suite après un changement.</summary>
+    async Task LoadMarketAsync(bool force = false)
+    {
+        if (marketLoading || (!force && DateTime.UtcNow - marketAt < TimeSpan.FromMinutes(1)) || AccountKey() is not { } key) return;
+        marketLoading = true;
+        marketAt = DateTime.UtcNow;
+        if (market is null) marketStatus = "Lecture des prix de la communauté sur Aion 2 Todo… (le site peut mettre une minute à se réveiller)";
+        try
+        {
+            market = await Market.Load(key);
+            marketStatus = null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            marketStatus = $"Prix de la communauté illisibles ({ex.Message}).";
+            Journal.Write("prix HdV : " + ex.Message);
+        }
+        finally { marketLoading = false; }
+        if (state.Screen == Screen.Gather) Render();
+    }
+
+    async Task<string?> AddPriceAsync(string? itemKey, string itemName, long price)
+    {
+        if (AccountKey() is not { } key) return "Il faut ta clé Aion 2 Todo (écran Familiers).";
+        string? error;
+        try { error = await Market.Add(key, itemKey, itemName, price); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { error = $"Aion 2 Todo injoignable ({ex.Message})."; }
+        if (error is null)
+        {
+            SetStatus($"prix noté : {itemName}, {Fmt.Big(price)} Kinah (partagé avec la communauté)");
+            await LoadMarketAsync(force: true);
+        }
+        return error;
+    }
+
+    async Task MarketActionAsync(Func<string, Task<string?>> action, string done)
+    {
+        if (AccountKey() is not { } key) return;
+        string? error;
+        try { error = await action(key); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { error = $"Aion 2 Todo injoignable ({ex.Message})"; }
+        SetStatus(error ?? done, error is not null);
+        await LoadMarketAsync(force: true);
     }
 
     void RemovePeer(string characterId)
