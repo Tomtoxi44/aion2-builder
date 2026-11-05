@@ -60,6 +60,10 @@ sealed record MarketState(MarketData? Data, bool Linked, string? Status, Func<st
     /// <summary>Noter les lignes gardées sur ce marché, puis vider la lecture.</summary>
     public Action<IReadOnlyList<MarketShotLine>, string> SaveShot { get; init; } = (_, _) => { };
     public Action ClearShot { get; init; } = () => { };
+    /// <summary>Une ligne lue corrigée à la main (nom, prix) : gardée sans redessiner l'écran.</summary>
+    public Action<int, MarketShotLine> EditShot { get; init; } = (_, _) => { };
+    /// <summary>Retirer une ligne lue (fausse ou en trop).</summary>
+    public Action<int> RemoveShot { get; init; } = _ => { };
 }
 
 /// <summary>
@@ -243,7 +247,7 @@ sealed partial class ScreenViews
 
     /// <summary>
     /// Prix lus sur une capture de la fenêtre Marché du jeu (#65) : la dernière capture d'écran de Windows, ou des fichiers
-    /// choisis ; chaque ligne lue (nom, annonces, prix) se décoche si elle est fausse, puis « noter » les envoie toutes.
+    /// choisis ; chaque ligne lue (nom, prix unitaire) se corrige ou se retire (✕), puis « noter » les envoie toutes.
     /// </summary>
     Control ShotCard(MarketData data, string shown)
     {
@@ -265,39 +269,58 @@ sealed partial class ScreenViews
                 Act("choisir des captures…", () => market.ReadShots(null)),
             },
         });
-        body.Children.Add(T("Dans le jeu, ouvre le Marché, cherche un objet (ou une catégorie) et fais une capture d'écran : le Builder lit chaque ligne " +
-                            "(nom, annonces, prix) sur ce PC, et tu vérifies avant de noter. La capture n'est envoyée nulle part.", 11, Tok.Muted, wrap: true));
+        body.Children.Add(T("Dans le jeu, ouvre le Marché : la liste des objets (onglet Principal) ou les annonces d'un objet, puis fais une capture " +
+                            "d'écran. Le Builder lit chaque ligne (nom, prix unitaire) sur ce PC ; corrige ou retire ce qui est faux avant de noter. " +
+                            "Sur les annonces d'un objet, c'est le prix unitaire le plus bas qui est gardé. La capture n'est envoyée nulle part.", 11, Tok.Muted, wrap: true));
         if (market.ShotStatus is { } st) body.Children.Add(T(st, 12, st.StartsWith("Lecture") ? Tok.Muted : Tok.Warn, wrap: true));
         if (market.Shot is { Count: > 0 } lines)
         {
-            const string cols = "28,*,90,120,90";
-            var table = new StackPanel { Children = { TableHeader(cols, "", "Objet lu", "Annonces", "Prix", "") } };
+            MarketItem? Known(string name) => data.Items.FirstOrDefault(x => Market.Fold(x.Name) == Market.Fold(name));
+            const string cols = "*,150,150,70,34";
+            var table = new StackPanel { Spacing = 2, Children = { TableHeader(cols, "Objet (corrige si besoin)", "Prix unitaire", "Sur la capture", "", "") } };
             for (var i = 0; i < lines.Count; i++)
             {
                 var line = lines[i];
                 var index = i;
-                var item = data.Items.FirstOrDefault(x => Market.Fold(x.Name) == Market.Fold(line.Name));
-                var keep = !s.MarketShotSkip.Contains(index);
-                var box = new CheckBox { IsChecked = keep, MinWidth = 0, Padding = new Thickness(0) };
-                box.IsCheckedChanged += (_, _) => { if (box.IsChecked == true) s.MarketShotSkip.Remove(index); else s.MarketShotSkip.Add(index); };
+                var item = Known(line.Name);
+                var bar = new Border { Width = 3, CornerRadius = new CornerRadius(1.5), Margin = new Thickness(0, 4, 8, 4),
+                    Background = item?.GameGrade is { } g ? MarketBrush(g) : Tok.Border };
+                var name = new TextBox { Text = item?.Name ?? line.Name, MinWidth = 0, FontSize = 13 };
+                var price = new TextBox { Text = Fmt.Big(line.Price), MinWidth = 0, FontSize = 13, HorizontalContentAlignment = HorizontalAlignment.Right };
+                var hint = T(item is null ? "nouveau" : "", 10, Tok.Warn, mono: true);
+                void Changed()
+                {
+                    var text = string.Join(' ', (name.Text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries));
+                    var value = long.TryParse(new string((price.Text ?? "").Where(char.IsDigit).ToArray()), out var v) ? v : 0;
+                    market.EditShot(index, line with { Name = text, Price = value });
+                    var known = Known(text);
+                    hint.Text = known is null ? "nouveau" : "";
+                    bar.Background = known?.GameGrade is { } kg ? MarketBrush(kg) : Tok.Border;
+                }
+                name.TextChanged += (_, _) => Changed();
+                price.TextChanged += (_, _) => Changed();
+                var seen = line.Listings is not { } n ? "—" : line.Lowest ? $"le plus bas de {Fmt.Plural(n, "annonce")}" : $"{n} en vente";
+                var remove = Clickable(T("✕", 12, Tok.Muted), () => market.RemoveShot(index), null, Tok.Hover, new Thickness(8, 3));
+                remove.CornerRadius = new CornerRadius(3);
                 table.Children.Add(new Border
                 {
-                    Padding = new Thickness(20, 3), Opacity = keep ? 1 : 0.55,
-                    Child = Columns(cols, box, MarketItemLine(item, item?.Name ?? line.Name),
-                        T(line.Listings?.ToString() ?? "—", 12, Tok.Text2, mono: true).AlignRight(),
-                        T(Fmt.Big(line.Price), 13, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(),
-                        item is null ? Tip(T("nouveau", 10, Tok.Warn, mono: true), "Pas encore dans la liste : il y entre sous ce nom (vérifie l'orthographe).") : T("", 10)),
+                    Padding = new Thickness(20, 2),
+                    Child = Columns(cols, new DockPanel { Children = { bar, name } }, price.WithMargin(8, 0, 0, 0),
+                        Tip(T(seen, 11, Tok.Muted).WithMargin(12, 0, 0, 0), line.Lowest
+                            ? "Annonces de cet objet lues sur la capture : le prix unitaire le plus bas est gardé."
+                            : "Nombre d'annonces affiché par le jeu (pour information : seul le prix est noté)."),
+                        Tip(hint, "Pas encore dans la liste : il y entre sous ce nom (vérifie l'orthographe)."),
+                        Tip(remove, "Retirer cette ligne")),
                 });
             }
             body.Children.Add(table);
-            var kept = lines.Where((_, i) => !s.MarketShotSkip.Contains(i)).ToList();
             body.Children.Add(new StackPanel
             {
                 Orientation = Orientation.Horizontal, Spacing = 10,
                 Children =
                 {
-                    Act($"noter {Fmt.Plural(kept.Count, "prix", "prix")}", () => { if (kept.Count > 0) market.SaveShot(kept, shown); }, main: true),
-                    Act("annuler", () => { s.MarketShotSkip.Clear(); market.ClearShot(); }),
+                    Act($"noter {Fmt.Plural(lines.Count, "prix", "prix")}", () => { if (lines.Count > 0) market.SaveShot(lines.ToList(), shown); }, main: true),
+                    Act("annuler", () => market.ClearShot()),
                     T($"sur le marché « {data.Label(shown)} », avec ton pseudo", 11, Tok.Muted).WithMargin(0, 5, 0, 0),
                 },
             });

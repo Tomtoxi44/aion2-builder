@@ -1138,6 +1138,13 @@ public sealed class MainWindow : Window
                 ReadShots = which => _ = ReadMarketShotsAsync(which),
                 SaveShot = (lines, code) => _ = SaveMarketShotAsync(lines, code),
                 ClearShot = () => { marketShot = null; marketShotStatus = null; Render(); },
+                EditShot = (i, line) => { if (marketShot is { } l && i < l.Count) l[i] = line; },
+                RemoveShot = i =>
+                {
+                    if (marketShot is { } l && i < l.Count) l.RemoveAt(i);
+                    if (marketShot is { Count: 0 }) marketShot = null;
+                    Render();
+                },
             });
     }
 
@@ -2053,7 +2060,6 @@ public sealed class MainWindow : Window
             foreach (var path in paths) lines.AddRange(MarketShotReader.Read(await ScreenshotOcr.Words(path, InGameStatsReader.MinOcrSize, minScale: 2)));
             // Un même objet sur deux captures : la dernière lecture l'emporte.
             marketShot = lines.GroupBy(l => Market.Fold(l.Name)).Select(g => g.Last()).ToList();
-            state.MarketShotSkip.Clear();
             marketShotStatus = marketShot.Count == 0
                 ? "Aucune ligne de prix lue : il faut une capture de la fenêtre Marché (onglet Principal), avec les colonnes Objet, Liste de vente et Prix."
                 : null;
@@ -2072,6 +2078,7 @@ public sealed class MainWindow : Window
         if (AccountKey() is not { } key) { marketShotStatus = "Il faut ta clé Aion 2 Todo (écran Familiers)."; Render(); return; }
         var items = market?.Items ?? [];
         var errors = new List<string>();
+        var failed = new List<MarketShotLine>();  // gardées à l'écran pour être corrigées ; les autres sont notées
         var done = 0;
         foreach (var line in lines)
         {
@@ -2080,11 +2087,10 @@ public sealed class MainWindow : Window
             try { error = await Market.Add(key, item?.Key, item?.Name ?? line.Name, line.Price, marketCode); }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { error = $"Aion 2 Todo injoignable ({ex.Message})"; }
             if (error is null) done++;
-            else errors.Add($"{line.Name} : {error}");
+            else { errors.Add($"{(line.Name.Length > 0 ? line.Name : "(sans nom)")} : {error}"); failed.Add(line); }
         }
-        marketShot = errors.Count == 0 ? null : marketShot;
+        marketShot = failed.Count == 0 ? null : failed;
         marketShotStatus = errors.Count == 0 ? null : string.Join("\n", errors.Take(4));
-        state.MarketShotSkip.Clear();
         SetStatus($"{Fmt.Plural(done, "prix noté", "prix notés")} depuis la capture (partagés avec la communauté)", errors.Count > 0);
         await LoadMarketAsync(force: true);
         Render();

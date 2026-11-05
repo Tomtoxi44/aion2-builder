@@ -62,7 +62,6 @@ sealed class UiState
     /// <summary>Récolte → Prix HdV : filtres des derniers prix (texte cherché, rang du jeu « Rare »…, type « Récolte »…).</summary>
     public string? MarketQuery { get; set; }
     /// <summary>Prix HdV lus sur une capture : les lignes décochées (non notées).</summary>
-    public HashSet<int> MarketShotSkip { get; } = [];
     public string? MarketGrade { get; set; }
     public string? MarketKind { get; set; }
     public bool HomeHow { get; set; }
