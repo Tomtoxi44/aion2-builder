@@ -5,7 +5,11 @@ using Aion2Builder.Model;
 
 namespace Aion2Builder.Import;
 
-public sealed class PetSyncException(string message) : ArmoryException(message);
+public sealed class PetSyncException(string message, bool keyRefused = false) : ArmoryException(message)
+{
+    /// <summary>Le site a refusé la clé (401) : remplacée par une nouvelle, ou désactivée.</summary>
+    public bool KeyRefused { get; } = keyRefused;
+}
 
 /// <summary>
 /// Lit la collection de familiers sur Aion 2 Todo, où le Pet Meter (lecture du trafic du jeu) l'envoie avec une clé
@@ -60,7 +64,7 @@ public sealed class PetSyncClient(HttpClient http) : IDisposable
             if (key is not null) req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
             using var res = await http.SendAsync(req, ct);
             if (res.StatusCode == HttpStatusCode.Unauthorized)
-                throw new PetSyncException("Clé refusée par Aion 2 Todo : elle a été remplacée ou désactivée. Crée une nouvelle clé (onglet Familiers → Pet Meter) et recolle-la.");
+                throw new PetSyncException("Clé refusée par Aion 2 Todo : elle a été remplacée ou désactivée. Crée une nouvelle clé (onglet Familiers → Pet Meter) et recolle-la.", keyRefused: true);
             if (res.StatusCode == HttpStatusCode.TooManyRequests) throw new PetSyncException("Aion 2 Todo limite les demandes : réessaie dans une minute.");
             if (!res.IsSuccessStatusCode) throw new PetSyncException($"Aion 2 Todo a répondu {(int)res.StatusCode}.");
             return await res.Content.ReadAsStringAsync(ct);

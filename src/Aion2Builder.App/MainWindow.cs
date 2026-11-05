@@ -1965,7 +1965,14 @@ public sealed class MainWindow : Window
     bool accountGatherLoading;
 
     /// <summary>La clé Aion 2 Todo : celle reliée dans le Builder, sinon celle du Pet Meter de ce PC.</summary>
-    string? AccountKey() => pets.Key is { Length: > 0 } k ? k : PetStore.PetMeterKey();
+    /// <summary>
+    /// Clé Aion 2 Todo : celle de l'écran Familiers, sinon celle du Pet Meter de ce PC. Une clé que le site refuse (remplacée par
+    /// une nouvelle, souvent depuis l'autre PC) est écartée pour la session, et la suivante est essayée.
+    /// </summary>
+    string? AccountKey() => new[] { pets.Key, PetStore.PetMeterKey() }.FirstOrDefault(k => k is { Length: > 0 } && !refusedKeys.Contains(k));
+    readonly HashSet<string> refusedKeys = [];
+    const string KeyRefused = "Ta clé Aion 2 Todo est refusée par le site : elle a été remplacée par une nouvelle (peut-être depuis ton autre PC). " +
+                              "Recolle la clé actuelle dans l'écran Familiers (le site la montre dans son onglet Familiers → Pet Meter).";
 
     async Task LoadAccountGatherAsync()
     {
@@ -1976,8 +1983,16 @@ public sealed class MainWindow : Window
         try
         {
             using var client = PetSyncClient.Create();
-            accountGather = await client.Gathering(key);
-            accountGatherStatus = null;
+            while (true)
+            {
+                try { accountGather = await client.Gathering(key); accountGatherStatus = null; break; }
+                catch (PetSyncException ex) when (ex.KeyRefused)
+                {
+                    refusedKeys.Add(key);
+                    if (AccountKey() is not { } next) { accountGatherStatus = KeyRefused + " En attendant, seuls les jours de ce PC sont montrés."; break; }
+                    key = next;
+                }
+            }
         }
         catch (Exception ex) when (ex is ArmoryException or System.Text.Json.JsonException)
         {
@@ -2085,8 +2100,17 @@ public sealed class MainWindow : Window
         if (market is null) marketStatus = "Lecture des prix de la communauté sur Aion 2 Todo… (le site peut mettre une minute à se réveiller)";
         try
         {
-            market = await Market.Load(key);
-            marketStatus = null;
+            while (true)
+            {
+                try { market = await Market.Load(key); marketStatus = null; break; }
+                catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    Journal.Write("prix HdV : clé refusée par le site");
+                    refusedKeys.Add(key);
+                    if (AccountKey() is not { } next) { marketStatus = KeyRefused; break; }
+                    key = next;
+                }
+            }
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
@@ -2405,6 +2429,8 @@ public sealed class MainWindow : Window
         {
             await petStore.Refresh(key);
             pets = petStore.Load();
+            refusedKeys.Clear();
+            marketAt = accountGatherAt = default;  // prix et récolte du compte relus avec la nouvelle clé
             SetStatus("familiers à jour");
             Recompute();
         }
