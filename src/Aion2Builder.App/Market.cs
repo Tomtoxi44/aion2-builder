@@ -119,6 +119,17 @@ static class Market
         return await Error(await http.PostAsJsonAsync("/api/sync/market/recipes", recipe));
     }
 
+    /// <summary>Noms lus sur une capture de la fenêtre d'artisanat : ils entrent dans la liste des objets, pour tous. Renvoie le nombre ajouté.</summary>
+    public static async Task<int> AddCrafted(string key, IEnumerable<(string Name, string? Grade, string? Category)> items)
+    {
+        using var http = BugReports.Client(key);
+        var response = await http.PostAsJsonAsync("/api/sync/market/crafted",
+            new { items = items.Select(i => new { name = i.Name, grade = i.Grade, category = i.Category }) });
+        if (!response.IsSuccessStatusCode) return 0;
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return doc.RootElement.TryGetProperty("added", out var added) && added.TryGetInt32(out var n) ? n : 0;
+    }
+
     /// <summary>Prix des PNJ marchands (communs) : noter ou corriger, retirer.</summary>
     public static async Task<string?> AddNpc(string key, string name, long price, string? tab)
     {

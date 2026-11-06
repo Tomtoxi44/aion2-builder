@@ -12,8 +12,14 @@ namespace Aion2Builder.Analysis;
 /// </summary>
 public sealed record CraftShotPart(string Name, bool Cut, int? Qty, string? Grade);
 
-/// <summary>Une recette lue : l'objet fabriqué (null s'il n'a pas été lu) et ses matériaux, dans l'ordre de la fenêtre.</summary>
-public sealed record CraftShot(CraftShotPart? Output, List<CraftShotPart> Inputs);
+/// <summary>
+/// Une recette lue : l'objet fabriqué (null s'il n'a pas été lu) et ses matériaux, dans l'ordre de la fenêtre ; HasMaterials =
+/// la colonne « Matériaux de fabrication » est sur la capture. Listed : les noms entiers de la liste des recettes à gauche (sans
+/// celui qui défile, coupé aux deux bouts) ; Bound : « l'objet fabriqué sera lié d'âme » ; Category : l'onglet ouvert (« Forge ·
+/// Épées »), null s'il n'est pas lu.
+/// </summary>
+public sealed record CraftShot(CraftShotPart? Output, List<CraftShotPart> Inputs, bool HasMaterials = true, List<CraftShotPart>? Listed = null,
+    bool Bound = false, string? Category = null);
 
 /// <summary>
 /// Lit une capture de la fenêtre d'artisanat du jeu (Forge, Armure, Artisanat, Alchimie…), reconnue par l'OCR de Windows. Sous
@@ -29,20 +35,24 @@ public static class CraftShotReader
     static readonly Regex QtyLine = new(@"^([0-9OoIl|]{1,6})\s*/\s*([0-9OoIl|]{1,6})$");
     static readonly Regex CutEnd = new(@"\s*(\.{2,}|…|\.?„|,,)[.…„,]*$");
 
-    /// <param name="problem">Non nul quand la capture est refusée (pas de colonne « Matériaux de fabrication »).</param>
+    static readonly string[] MainTabs = ["forge", "armure", "artisanat", "alchimie", "cuisine"];
+
+    /// <param name="problem">
+    /// Non nul quand la capture est refusée : ni la colonne « Matériaux de fabrication », ni le nom d'un objet fabriqué. Sans la
+    /// colonne, l'objet et la liste des recettes sont quand même lus (HasMaterials = false).
+    /// </param>
     public static CraftShot? Read(IReadOnlyList<OcrWord> words, out string? problem)
     {
         problem = NoHeader;
+        if (words.Count == 0) return null;
         var header = words.FirstOrDefault(w => Fold(w.Text) == "materiaux"
             && words.Any(o => Fold(o.Text).StartsWith("fabrication") && o.X > w.X && Math.Abs(Center(o) - Center(w)) < w.Height));
-        if (header is null) return null;
-        problem = null;
-        var h = header.Height;
-        var left = header.X - 8 * h;
+        var h = header?.Height ?? Median(words.Select(w => w.Height));
+        var left = header is null ? words.Max(w => w.X + w.Width) + 1 : header.X - 8 * h;
 
         // La colonne des matériaux : sous le titre, à sa hauteur de texte (les icônes lues comme « 64 » ou « @ » sont plus hautes
         // ou plus à gauche).
-        var column = words.Where(w => w.X >= left && w.Y > header.Y + h * 0.8 && w.Height < 2.6 * h).ToList();
+        var column = header is null ? [] : words.Where(w => w.X >= left && w.Y > header.Y + h * 0.8 && w.Height < 2.6 * h).ToList();
         var inputs = new List<CraftShotPart>();
         (string Text, string? Grade)? pending = null;
         foreach (var line in Lines(column, h))
@@ -62,13 +72,70 @@ public static class CraftShotReader
         }
         if (pending is { } last) inputs.Add(Part(last.Text, last.Grade, null));
 
-        // L'objet fabriqué : la ligne au plus gros texte à gauche de la colonne (le titre doré sous l'image).
+        // L'objet fabriqué : le morceau de ligne au plus gros texte à gauche de la colonne (le titre doré sous l'image) ; une ligne
+        // est coupée là où les mots s'écartent (la liste des recettes, à gauche, peut être à la même hauteur).
         var body = words.Where(w => w.X + w.Width < left).ToList();
+        var segments = Segments(Lines(body, h), h);
         CraftShotPart? output = null;
-        var title = Lines(body, h).Where(l => l.Any(w => w.Text.Count(char.IsLetter) >= 3))
+        var title = segments.Where(l => l.Any(w => w.Text.Count(char.IsLetter) >= 3))
             .Select(l => (Line: l, Size: Median(l.Select(w => w.Height)))).Where(x => x.Size >= 1.4 * h).MaxBy(x => x.Size);
-        if (title.Line is { } t) output = Part(Text(t).TrimStart('*', '★', '☆', '•', '·', ' '), GradeOf(t), 1);
-        return new CraftShot(output, inputs);
+        if (title.Line is { } t) output = Part(Text(t), GradeOf(t), 1);
+        if (output is null && header is null) return null;
+        problem = null;
+
+        // La liste des recettes, à gauche du titre : les noms entiers qui commencent par une majuscule (assombris quand ils ne sont
+        // pas choisis : leur couleur n'est souvent pas lue). Les noms des amis (blancs, un seul mot) et celui qui défile (coupé, il
+        // touche le bord de la liste) sont écartés.
+        var listed = new List<CraftShotPart>();
+        if (title.Line is { } tl)
+        {
+            var titleX = tl.Min(w => w.X);
+            var rows = segments.Where(l => l != tl && l.Max(w => w.X + w.Width) < titleX - 2 * h && l.Count(w => w.Text.Count(char.IsLetter) >= 2) >= 2
+                                           && GradeOf(l) != "Common").ToList();
+            var edge = rows.Count >= 2 ? rows.Max(l => l.Max(w => w.X + w.Width)) : double.MaxValue;
+            foreach (var row in rows)
+            {
+                var part = Part(Text(row), GradeOf(row), null);
+                if (part.Cut || part.Name.Length < 3 || !char.IsUpper(part.Name[0]) || row.Max(w => w.X + w.Width) >= edge - 0.6 * h) continue;
+                if (listed.All(p => Fold(p.Name) != Fold(part.Name)) && Fold(part.Name) != Fold(output?.Name ?? "")) listed.Add(part);
+            }
+        }
+
+        // « l'objet fabriqué sera lié d'âme pour le personnage qui l'a créé »
+        var all = Fold(string.Join(' ', Lines(words, h).Select(Text)));
+        var bound = all.Contains("lie d'ame pour le personnage") || all.Contains("sera lie d'ame");
+
+        // L'onglet ouvert : le plus clair des onglets (Forge, Armure…) et des sous-onglets (Tout, Épées…), blancs, les autres gris.
+        string? Selected(List<OcrWord> tabs)
+        {
+            var lit = tabs.Where(w => w.Rgb >= 0).OrderByDescending(w => Bright(w.Rgb)).ToList();
+            return lit.Count >= 2 && Bright(lit[0].Rgb) >= 190 && Bright(lit[1].Rgb) < 160 ? lit[0].Text : lit.Count == 1 && Bright(lit[0].Rgb) >= 190 ? lit[0].Text : null;
+        }
+        var main = Selected(words.Where(w => MainTabs.Contains(Fold(w.Text))).ToList());
+        var tout = words.FirstOrDefault(w => Fold(w.Text) == "tout");
+        var sub = tout is null ? null : Selected(words.Where(w => Math.Abs(Center(w) - Center(tout)) < tout.Height && w.Text.Count(char.IsLetter) >= 3).ToList());
+        if (sub is not null && Fold(sub) == "tout") sub = null;
+        var category = main is null ? sub : sub is null ? main : $"{main} · {sub}";
+        return new CraftShot(output, inputs, header is not null, listed, bound, category);
+    }
+
+    static int Bright(int rgb) => Math.Max(rgb >> 16 & 255, Math.Max(rgb >> 8 & 255, rgb & 255));
+
+    /// <summary>Une ligne coupée en morceaux là où deux mots voisins sont écartés de plus de 3 hauteurs de texte.</summary>
+    static List<List<OcrWord>> Segments(List<List<OcrWord>> lines, double h)
+    {
+        var parts = new List<List<OcrWord>>();
+        foreach (var line in lines)
+        {
+            var current = new List<OcrWord>();
+            foreach (var w in line)
+            {
+                if (current.Count > 0 && w.X - (current[^1].X + current[^1].Width) > 3 * Math.Max(h, w.Height)) { parts.Add(current); current = []; }
+                current.Add(w);
+            }
+            if (current.Count > 0) parts.Add(current);
+        }
+        return parts;
     }
 
     /// <summary>
@@ -90,7 +157,8 @@ public static class CraftShotReader
         }).ToList();
         var output = main.Output ?? other.Output;
         if (output is { Cut: true } && other.Output is { Cut: false } o && o.Name.Length > output.Name.Length) output = o;
-        return new CraftShot(output, inputs);
+        var listed = (main.Listed ?? []).Concat(other.Listed ?? []).GroupBy(p => Fold(p.Name)).Select(g => g.OrderByDescending(p => p.Name.Length).First()).ToList();
+        return new CraftShot(output, inputs, main.HasMaterials || other.HasMaterials, listed, main.Bound || other.Bound, main.Category ?? other.Category);
     }
 
     static CraftShotPart Part(string text, string? grade, int? qty)

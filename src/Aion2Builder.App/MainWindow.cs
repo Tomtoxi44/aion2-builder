@@ -2099,7 +2099,22 @@ public sealed class MainWindow : Window
         try
         {
             var (shot, problem) = await CraftShots.ReadAsync(path);
-            Update(st => st.CraftShotStatus = shot is null ? "Capture refusée : " + problem : CraftShotFill.Fill(st.CraftDraft, shot, market));
+            if (shot is null) { Update(st => st.CraftShotStatus = "Capture refusée : " + problem); return; }
+            Update(st => st.CraftShotStatus = CraftShotFill.Fill(st.CraftDraft, shot, market));
+            // Les noms entiers que la liste des objets ne connaît pas (objets fabriqués souvent absents de l'hôtel) y entrent, pour tous.
+            var names = CraftShotFill.NewNames(shot, market);
+            if (names.Count > 0 && AccountKey() is { } key)
+            {
+                int added;
+                try { added = await Market.AddCrafted(key, names); }
+                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { added = 0; }
+                if (added > 0)
+                {
+                    Update(st => st.CraftShotStatus = (st.CraftShotStatus ?? "") +
+                        $" {Fmt.Plural(added, "objet ajouté", "objets ajoutés")} à la liste des objets, pour tous : {string.Join(", ", names.Take(6).Select(n => n.Name))}{(names.Count > 6 ? "…" : "")}.");
+                    await LoadMarketAsync(force: true);
+                }
+            }
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
         {

@@ -16,11 +16,12 @@ namespace Aion2Builder.App;
 sealed record RecipePart(string Key, string Name, int Qty, long? Npc = null);
 
 /// <summary>Une recette notée sur Aion 2 Todo : objet fabriqué (Qty par fabrication), ingrédients, coût en Kinah, note, auteur.</summary>
-sealed record CraftRecipe(int Id, RecipePart Output, List<RecipePart> Inputs, long Kinah, string? Note, DateTime At, string? By, bool Mine);
+/// <param name="Bound">L'objet fabriqué est lié d'âme à qui le fabrique : il ne se revend pas, on ne juge que ce qu'il coûte.</param>
+sealed record CraftRecipe(int Id, RecipePart Output, List<RecipePart> Inputs, long Kinah, string? Note, DateTime At, string? By, bool Mine, bool Bound = false);
 
 /// <summary>Recette envoyée à Aion 2 Todo : chaque objet par sa clé de la liste, sinon par son nom ; Npc = prix chez le PNJ.</summary>
 sealed record RecipePartSend(string? Key, string? Name, int Qty, long? Npc = null);
-sealed record RecipeSend(RecipePartSend Output, List<RecipePartSend> Inputs, long Kinah, string? Note);
+sealed record RecipeSend(RecipePartSend Output, List<RecipePartSend> Inputs, long Kinah, string? Note, bool Bound = false);
 
 /// <summary>Le formulaire « Noter une recette », gardé tel quel d'un affichage à l'autre.</summary>
 sealed class CraftDraft
@@ -30,6 +31,8 @@ sealed class CraftDraft
     public List<CraftDraftLine> Inputs { get; } = [new(), new()];
     public string Kinah { get; set; } = "";
     public string Note { get; set; } = "";
+    /// <summary>L'objet fabriqué sera lié d'âme (lu sur la capture, ou coché).</summary>
+    public bool Bound { get; set; }
 }
 
 sealed class CraftDraftLine
@@ -91,7 +94,8 @@ sealed class CraftBook(MarketData data, Dictionary<string, MarketPrice> latest, 
         void Seen(DateTime at) { if (oldest is null || at < oldest) oldest = at; }
 
         long? sell = null;
-        if (PriceOf(rc.Output) is { } op) { sell = (long)Math.Round(op.Price * rc.Output.Qty * (1 - tax)); Seen(op.At); }
+        if (rc.Bound) { }  // lié d'âme à la fabrication : il ne se revend pas, même si le même objet a un prix à l'hôtel
+        else if (PriceOf(rc.Output) is { } op) { sell = (long)Math.Round(op.Price * rc.Output.Qty * (1 - tax)); Seen(op.At); }
         else noPrice.Add(rc.Output.Name);
 
         long inputs = 0, buy = 0, npc = 0;
@@ -354,6 +358,18 @@ sealed partial class ScreenViews
                 if (p.C.Oldest < stale) verdictLines.Children.Add(T($"prix du {p.C.Oldest!.Value.ToLocalTime():dd/MM} : à revoir", 10, Tok.Warn, mono: true));
                 verdict = Tip(verdictLines, detail);
             }
+            else if (rc.Bound && p.Cost is { } boundCost)
+                verdict = Tip(new StackPanel
+                {
+                    Children =
+                    {
+                        T("lié d'âme : pour toi", 12, Tok.Text2, FontWeight.SemiBold),
+                        T($"te coûte {Fmt.Big(boundCost)}", 11, Tok.Muted, mono: true),
+                    },
+                }, $"L'objet fabriqué sera lié d'âme à ton perso : il ne se revend pas, la question est ce qu'il te coûte. Fabriquer coûte {Fmt.Big(boundCost)} Kinah : " +
+                   $"tes ingrédients de l'hôtel vendus tels quels {Fmt.Big(p.C.Inputs!.Value)}" + (p.C.Npc > 0 ? $", achats au PNJ {Fmt.Big(p.C.Npc)}" : "") +
+                   (p.C.Fee > 0 ? $", fabrication {Fmt.Big(p.C.Fee)}" : "") + $". Prix : derniers notés sur {data.Label(shown)}" +
+                   (p.C.Oldest is { } bo ? $", le plus ancien du {bo.ToLocalTime():dd/MM}." : "."));
             else if (p.C.Sell is null && p.Cost is { } cost && npcByName.TryGetValue(Market.Fold(rc.Output.Name), out var sold) && sold.Price * rc.Output.Qty < cost)
                 // Pas de prix à l'hôtel, mais le PNJ le vend : moins cher de l'acheter que de le fabriquer.
                 verdict = Tip(new StackPanel
@@ -592,6 +608,9 @@ sealed partial class ScreenViews
         kinah.TextChanged += (_, _) => draft.Kinah = kinah.Text ?? "";
         var note = new TextBox { Text = draft.Note, Width = 260, PlaceholderText = "note : métier, niveau… (facultatif)" };
         note.TextChanged += (_, _) => draft.Note = note.Text ?? "";
+        var bound = Tip(Clickable(T(draft.Bound ? "☑ lié d'âme" : "☐ lié d'âme", 12, draft.Bound ? Accent.Main : Tok.Muted, mono: true),
+                () => update(_ => draft.Bound = !draft.Bound), null, Tok.Hover, new Thickness(6, 5)),
+            "Coche si la fenêtre dit « l'objet fabriqué sera lié d'âme » : il ne se revend pas, l'écran dira ce qu'il te coûte au lieu de « fabrique ou vends ».");
         async void Submit()
         {
             static int Number(string text, int fallback) => int.TryParse(new string(text.Where(char.IsDigit).ToArray()), out var n) ? n : fallback;
@@ -621,7 +640,7 @@ sealed partial class ScreenViews
             if (inputs.Count == 0) { update(st => st.CraftError = "Ajoute au moins un ingrédient."); return; }
             var cost = long.TryParse(new string(draft.Kinah.Where(char.IsDigit).ToArray()), out var k) ? k : 0;
             var output = Part(draft.Output, Number(draft.OutputQty, 1));
-            var error = await market.AddRecipe(new RecipeSend(output, inputs, cost, draft.Note.Trim().Length > 0 ? draft.Note.Trim() : null));
+            var error = await market.AddRecipe(new RecipeSend(output, inputs, cost, draft.Note.Trim().Length > 0 ? draft.Note.Trim() : null, draft.Bound));
             update(st =>
             {
                 st.CraftError = error;
@@ -630,7 +649,7 @@ sealed partial class ScreenViews
         }
         var save = Clickable(T("noter la recette", 12, Tok.OnAccent, FontWeight.SemiBold, mono: true), Submit, Accent.Main, null, new Thickness(14, 5));
         save.CornerRadius = new CornerRadius(3);
-        form.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { kinah, note, save } });
+        form.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { kinah, note, bound, save } });
         if (s.CraftError is { } err) form.Children.Add(T(err, 12, Tok.Bad, wrap: true));
         form.Children.Add(T("Recopie la fenêtre d'artisanat du jeu : les quantités d'UNE fabrication. Un objet de la liste « Objets du PNJ » (plus bas) prend son prix " +
                             "tout seul ; pour un autre objet acheté chez un marchand, coche « PNJ » et note son prix. La recette vaut pour tous les joueurs d'Aion 2 Todo, " +
