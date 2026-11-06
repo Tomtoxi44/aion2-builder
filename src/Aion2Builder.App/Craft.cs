@@ -510,7 +510,7 @@ sealed partial class ScreenViews
         // ✕) lance la recherche dès que Text est posé, et Avalonia plante si le filtre « Custom » n'existe pas encore.
         var box = new AutoCompleteBox
         {
-            ItemFilter = (search, o) => o is MarketItem i && Market.Matches(search, $"{i.Name} {i.Category}"),
+            ItemFilter = (search, o) => o is MarketItem i && Market.Matches(Uncut(search), $"{i.Name} {i.Category}"),
             // Une ligne recyclée par Avalonia arrive vide : panneau vide, pas de plantage.
             ItemTemplate = new FuncDataTemplate<MarketItem?>((i, _) => i is null ? new Panel() : MarketItemLine(i, i.Name, 13, withKind: true)),
             ItemsSource = items, FilterMode = AutoCompleteFilterMode.Custom, MinimumPrefixLength = 0, MaxDropDownHeight = 320,
@@ -567,6 +567,7 @@ sealed partial class ScreenViews
                 T("par fabrication", 11, Tok.Muted).WithMargin(0, 7, 0, 0),
             },
         });
+        if (CutHelp(items, draft.Output, name => draft.Output = name) is { } outputHelp) form.Children.Add(outputHelp);
         for (var i = 0; i < draft.Inputs.Count; i++)
         {
             var line = draft.Inputs[i];
@@ -598,6 +599,7 @@ sealed partial class ScreenViews
             if (draft.Inputs.Count > 1)
                 row.Children.Add(Clickable(T("✕", 12, Tok.Muted), () => update(st => st.CraftDraft.Inputs.Remove(line)), null, Tok.Hover, new Thickness(8, 5)));
             form.Children.Add(row);
+            if (CutHelp(items, line.Name, name => line.Name = name) is { } help) form.Children.Add(help);
         }
         var add = Clickable(T("+ ingrédient", 12, Accent.Main, FontWeight.SemiBold, mono: true), () => update(st => { if (st.CraftDraft.Inputs.Count < 10) st.CraftDraft.Inputs.Add(new()); }),
             null, Tok.Hover, new Thickness(6, 3));
@@ -624,7 +626,8 @@ sealed partial class ScreenViews
             // Un nom coupé par le jeu (lu sur une capture) entrerait dans la liste des objets sous un faux nom.
             if (draft.Inputs.Select(l => l.Name).Prepend(draft.Output).FirstOrDefault(n => n.Contains('…') || n.TrimEnd().EndsWith("...")) is { } cut)
             {
-                update(st => st.CraftError = $"Complète le nom coupé « {cut.Trim()} » (nom entier au survol en jeu, ou choisis-le dans la liste).");
+                update(st => st.CraftError = $"« {cut.Trim()} » : le jeu a coupé ce nom (« … »), je ne peux pas le noter tel quel. Choisis le bon objet juste " +
+                                              "sous la case, ou survole-le en jeu pour lire son nom entier et tape-le.");
                 return;
             }
             var lines = draft.Inputs.Where(l => l.Name.Trim().Length >= 2).ToList();
@@ -659,6 +662,33 @@ sealed partial class ScreenViews
         form.Children.Add(Tip(hub, "Calculateur d'artisanat d'AION 2 Hub (site de fans, en anglais, recettes tirées du jeu) : pour lire une recette et la recopier ici. " +
                                    "Le Builder ne reprend rien de ce site sans leur accord."));
         return Card(form, "Noter une recette", null, new Thickness(16, 10, 16, 12));
+    }
+
+    /// <summary>Un nom coupé par le jeu (« Épée éclatante du Roi dr… ») sans ses « … », pour chercher les objets qui commencent ainsi.</summary>
+    static string? Uncut(string? text) => text?.Trim().TrimEnd('…', '.', ' ');
+
+    static bool IsCut(string name) => name.TrimEnd().EndsWith('…') || name.TrimEnd().EndsWith("...");
+
+    /// <summary>
+    /// Sous une case dont le nom est coupé par le jeu : les objets connus qui commencent ainsi (un clic remplace le nom), ou, s'il
+    /// n'y en a pas, quoi faire. Null pour un nom entier.
+    /// </summary>
+    Control? CutHelp(List<MarketItem> items, string name, Action<string> set)
+    {
+        if (!IsCut(name)) return null;
+        var prefix = Market.Fold(Uncut(name));
+        var candidates = items.Where(i => Market.Fold(i.Name).StartsWith(prefix)).Select(i => i.Name).Distinct().Take(8).ToList();
+        var row = new WrapPanel { Margin = new Thickness(80, -4, 0, 2) };
+        row.Children.Add(T(candidates.Count > 0 ? "Nom coupé par le jeu. C'est :" : "Nom coupé par le jeu, et aucun objet connu ne commence ainsi : survole-le en jeu pour lire son nom entier et tape-le.",
+            11, Tok.Warn).WithMargin(0, 3, 8, 0));
+        foreach (var c in candidates)
+        {
+            var choice = Clickable(T(c, 11, Accent.Main, mono: true), () => update(_ => set(c)), null, Tok.Hover, new Thickness(6, 2));
+            choice.Margin = new Thickness(0, 0, 6, 4);
+            row.Children.Add(choice);
+        }
+        if (candidates.Count > 1) row.Children.Add(T("(au survol en jeu, le nom s'affiche en entier)", 11, Tok.Faint).WithMargin(0, 3, 0, 0));
+        return row;
     }
 
     /// <summary>Liste des objets du PNJ par nom (sans accents ni majuscules).</summary>
