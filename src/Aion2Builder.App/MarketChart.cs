@@ -35,7 +35,7 @@ sealed partial class ScreenViews
     }
 
     /// <summary>
-    /// Prix HdV en graphique : les objets cochés à droite (8 au plus), une courbe chacun ; la période (7, 30, 90 jours, tout) et
+    /// Prix HdV en graphique : les objets cochés à droite (8 au plus), une courbe chacun ; la période (3 jours, 7 jours, 1 mois) et
     /// la mesure (prix en Kinah, ou évolution en % depuis le début de la période, pour comparer des objets de prix très
     /// différents) ; sous le graphique, la légende avec les chiffres de chaque objet.
     /// </summary>
@@ -44,7 +44,7 @@ sealed partial class ScreenViews
         var now = DateTime.UtcNow;
         var days = s.MarketDays;
         var from = days > 0 ? now.AddDays(-days) : rows.Count == 0 ? now.AddDays(-30) : rows.Min(x => x.List[0].At.ToUniversalTime());
-        var periods = new[] { (7, "7 jours"), (30, "30 jours"), (90, "90 jours"), (0, "tout") };
+        var periods = new[] { (3, "3 jours"), (7, "7 jours"), (30, "1 mois") };
         yield return new StackPanel
         {
             Orientation = Orientation.Horizontal, Spacing = 10,
@@ -121,7 +121,7 @@ sealed partial class ScreenViews
                 body.Children.Add(T("Prix très différents : les petits se lisent mal sur le même axe ; « évolution % » les compare mieux.", 11, Tok.Muted, wrap: true).WithMargin(8, 0, 8, 0));
         }
         if (s.MarketSeries.Any(k => k is not null)) body.Children.Add(legend);
-        var periodText = days > 0 ? $"{days} derniers jours" : "depuis le premier relevé";
+        var periodText = days == 30 ? "le dernier mois" : days > 0 ? $"{days} derniers jours" : "depuis le premier relevé";
         var chart = Card(body, $"Courbes des prix · {data.Label(shown)}", T($"{periodText} · {(s.MarketPercent ? "évolution %" : "prix unitaire en Kinah")}", 11, Tok.Muted, mono: true),
             new Thickness(12, 10, 12, 8));
 
@@ -259,16 +259,21 @@ sealed class MultiChart : Control
 
     static string Short(string name, int max = 22) => name.Length <= max ? name : name[..(max - 1)] + "…";
 
-    /// <summary>Dates en bas : un repère par jour, 2 jours, semaine… selon la place ; le premier et le dernier jour à défaut.</summary>
-    List<DateTime> DateTicks()
+    /// <summary>
+    /// Dates en bas : un repère toutes les 6 ou 12 heures sur une période courte (3 jours), sinon par jour, 2 jours, semaine…
+    /// selon la place ; le premier et le dernier jour à défaut. Step : l'écart choisi, en jours.
+    /// </summary>
+    List<DateTime> DateTicks(out double step)
     {
         var span = (to - from).TotalDays;
-        var room = Math.Max(2, (int)(plot.Width / 72));
-        var step = new[] { 1, 2, 7, 14, 30, 61, 91, 182, 365 }.FirstOrDefault(d => span / d <= room, 730);
+        var room = Math.Max(2, (int)(plot.Width / 80));
+        var chosen = new[] { 0.25, 0.5, 1, 2, 7, 14, 30, 61, 91, 182, 365 }.FirstOrDefault(d => span / d <= room, 730);
+        step = chosen;
         var ticks = new List<DateTime>();
-        var t = from.ToLocalTime().Date;
-        if (t < from.ToLocalTime()) t = t.AddDays(1);
-        for (; t <= to.ToLocalTime(); t = t.AddDays(step)) ticks.Add(t.ToUniversalTime());
+        var local = from.ToLocalTime();
+        var t = chosen < 1 ? local.Date.AddHours(Math.Ceiling(local.TimeOfDay.TotalHours / (chosen * 24)) * chosen * 24) : local.Date;
+        if (t < local) t = t.AddDays(1);
+        for (; t <= to.ToLocalTime(); t = t.AddDays(chosen)) ticks.Add(t.ToUniversalTime());
         return ticks.Count > 0 ? ticks : new List<DateTime> { from, to };
     }
 
@@ -306,9 +311,10 @@ sealed class MultiChart : Control
             ctx.DrawText(tickText[k], new Point(plot.X - 8 - tickText[k].Width, y - tickText[k].Height / 2));
         }
         var lastRight = double.MinValue;
-        foreach (var t in DateTicks())
+        foreach (var t in DateTicks(out var tickStep))
         {
-            var label = Text(t.ToLocalTime().ToString("dd/MM"), Tok.Muted);
+            // Repères dans la journée : l'heure, et la date seulement à minuit.
+            var label = Text(tickStep < 1 && t.ToLocalTime().TimeOfDay.TotalHours > 0 ? t.ToLocalTime().ToString("HH'h'") : t.ToLocalTime().ToString("dd/MM"), Tok.Muted);
             var x = Math.Clamp(X(t) - label.Width / 2, 0, Math.Max(0, Bounds.Width - label.Width));
             if (x < lastRight + 8) continue;
             ctx.DrawLine(grid, new Point(X(t), plot.Bottom), new Point(X(t), plot.Bottom + 4));
