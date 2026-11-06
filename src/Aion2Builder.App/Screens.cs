@@ -63,6 +63,12 @@ sealed class UiState
     public string? MarketQuery { get; set; }
     public string? MarketGrade { get; set; }
     public string? MarketKind { get; set; }
+    /// <summary>Prix HdV en graphique au lieu de la liste : les objets tracés (une case par couleur, gardée tant que l'objet reste
+    /// tracé), la période en jours (0 : tout) et l'évolution en % au lieu du prix.</summary>
+    public bool MarketChart { get; set; }
+    public string?[] MarketSeries { get; } = new string?[8];
+    public int MarketDays { get; set; } = 30;
+    public bool MarketPercent { get; set; }
     /// <summary>Écran Inventaire : le perso montré, le texte cherché, le rangement (« sac », « coffre », « autres » ; null : tout).</summary>
     public string? InventoryChar { get; set; }
     public string? InventoryQuery { get; set; }
@@ -5482,15 +5488,17 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
     // ----- Simulation « et si » -----
 
     /// <summary>Choix exclusifs en boutons (l'actif en couleur secondaire).</summary>
-    static Control Choice(IEnumerable<(string Text, bool On, Action Do)> options)
+    /// <param name="wrap">Boutons à la ligne quand la place manque (colonne étroite).</param>
+    static Control Choice(IEnumerable<(string Text, bool On, Action Do)> options, bool wrap = false)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        Panel row = wrap ? new WrapPanel() : new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         foreach (var (text, on, act) in options)
         {
             var b = Clickable(T(text, 12, on ? Tok.OnAccent : Tok.Text2, FontWeight.SemiBold, mono: true), act, on ? Accent.Main : Tok.Window, on ? null : Tok.HoverStrong, new Thickness(10, 3));
             b.CornerRadius = new CornerRadius(3);
             b.BorderBrush = Tok.Border;
             b.BorderThickness = new Thickness(1);
+            if (wrap) b.Margin = new Thickness(0, 0, 6, 6);
             row.Children.Add(b);
         }
         return row;

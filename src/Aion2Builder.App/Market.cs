@@ -451,6 +451,15 @@ sealed partial class ScreenViews
             if (others.SelectedItem is string label && choices.FirstOrDefault(m => m.Label == label) is { } m)
                 update(st => { st.MarketMarket = m.Code; st.MarketItem = null; st.MarketConfirm = null; });
         };
+        var here = data.Prices.Where(p => p.Market.Equals(shown, StringComparison.OrdinalIgnoreCase)).ToList();
+        var removedHere = data.Removed.Where(p => p.Market.Equals(shown, StringComparison.OrdinalIgnoreCase)).ToList();
+        // Vue graphique : à la première ouverture, l'objet choisi dans la liste (sinon le dernier relevé) y est déjà tracé.
+        var view = Choice([("liste", !s.MarketChart, () => update(st => st.MarketChart = false)),
+            ("graphique", s.MarketChart, () => update(st =>
+            {
+                st.MarketChart = true;
+                if (st.MarketSeries.All(k => k is null) && (st.MarketItem ?? here.MaxBy(p => p.At)?.ItemKey) is { } first) st.MarketSeries[0] = first;
+            }))]);
         blocks.Add(new StackPanel
         {
             Spacing = 6,
@@ -465,13 +474,15 @@ sealed partial class ScreenViews
                         Choice(quick.Select(m => ($"{m.Label}{(m.Prices > 0 ? $" · {m.Prices}" : "")}", m.Code.Equals(shown, StringComparison.OrdinalIgnoreCase),
                             (Action)(() => update(st => { st.MarketMarket = m.Code; st.MarketItem = null; st.MarketConfirm = null; }))))),
                         others,
+                        T("Vue", 13, weight: FontWeight.Medium).WithMargin(14, 4, 0, 0),
+                        view,
                     },
                 },
                 T(hint, 11, Tok.Muted, wrap: true),
             },
         });
-        var here = data.Prices.Where(p => p.Market.Equals(shown, StringComparison.OrdinalIgnoreCase)).ToList();
-        var removedHere = data.Removed.Where(p => p.Market.Equals(shown, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (s.MarketChart)
+            return Page("Hôtel des ventes · prix de la communauté", back, blocks.Concat(MarketChartBlocks(data, shown, MarketRows(data, here))).ToArray());
 
         // Les chiffres du marché : objets qui ont un prix, relevés de la semaine, le dernier, la valeur de ta récolte du jour.
         var gameToday = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-7));
@@ -541,19 +552,12 @@ sealed partial class ScreenViews
 
         // Derniers prix : un objet par ligne, rangés comme l'hôtel du jeu (la récolte par famille, du blanc au jaune, puis
         // l'équipement) ; filtres par rang et par type ; recherche instantanée ; clic : sa courbe plus bas.
-        var byItem = here.GroupBy(p => p.ItemKey).Select(g => (Key: g.Key, Item: ItemOf(g.Key), List: g.OrderBy(p => p.At).ToList())).ToList();
-        // Famille d'une ressource : son numéro sans le dernier chiffre (Aria, Aria fraîche, pure, éclatante), nommée par la plus commune.
-        var family = data.Items.Where(i => i.IsGathering && long.TryParse(i.Key, out _)).GroupBy(i => long.Parse(i.Key) / 10)
-            .ToDictionary(g => g.Key, g => g.MinBy(i => i.Rank)!.Name);
-        string SortName((string Key, MarketItem? Item, List<MarketPrice> List) x) =>
-            x.Item?.IsGathering == true && long.TryParse(x.Key, out var id) && family.TryGetValue(id / 10, out var f) ? f : x.List[^1].ItemName;
-        int GradeRank(MarketItem? i) => i?.GameGrade is { } g ? db.Grade(g).Rank : 0;
+        var byItem = MarketRows(data, here);
         var present = byItem.Select(x => x.Item?.GameGrade).OfType<string>().Distinct().OrderBy(g => db.Grade(g).Rank).ToList();
         var kinds = byItem.Select(x => x.Item?.IsGathering == true ? "Récolte" : "Équipement et autres").Distinct().ToList();
         var filtered = byItem
             .Where(x => s.MarketGrade is null || x.Item?.GameGrade == s.MarketGrade)
-            .Where(x => s.MarketKind is null || (x.Item?.IsGathering == true ? "Récolte" : "Équipement et autres") == s.MarketKind)
-            .OrderByDescending(x => x.Item?.IsGathering == true).ThenBy(SortName, French).ThenBy(x => GradeRank(x.Item)).ThenBy(x => x.List[^1].ItemName, French).ToList();
+            .Where(x => s.MarketKind is null || (x.Item?.IsGathering == true ? "Récolte" : "Équipement et autres") == s.MarketKind).ToList();
         var selected = byItem.FirstOrDefault(x => x.Key == s.MarketItem);
         if (selected.Key is null && byItem.Count > 0) selected = byItem.MaxBy(x => x.List[^1].At);
         if (byItem.Count == 0)
