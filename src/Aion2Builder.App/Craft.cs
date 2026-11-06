@@ -184,8 +184,18 @@ sealed partial class ScreenViews
             return Page("Craft", null, Card(T(market.Status ?? "Lecture des recettes et des prix sur Aion 2 Todo…", 13, Tok.Muted, wrap: true)));
         var shown = MarketShown(data);
         var latest = data.Latest(shown);
-        var recipes = data.Recipes ?? [];
         var tax = TaxOf(shown);
+        var npcByName = NpcByName(data);
+        // Un ingrédient de la liste « Objets du PNJ » s'achète à son prix du PNJ (le prix à jour de la liste), sauf s'il est moins
+        // cher à l'hôtel ; l'objet fabriqué garde toujours son prix de l'hôtel.
+        var hdvPrices = new CraftBook(data, latest, tax, []);
+        RecipePart Priced(RecipePart p)
+        {
+            if (!npcByName.TryGetValue(Market.Fold(p.Name), out var n)) return p;
+            if (p.Npc is null && hdvPrices.PriceOf(p)?.Price is { } h && h < n.Price) return p;
+            return p with { Npc = n.Price };
+        }
+        var recipes = (data.Recipes ?? []).Select(rc => rc with { Inputs = rc.Inputs.Select(Priced).ToList() }).ToList();
         var taxNote = shown.StartsWith('*') ? $"{tax:P0} (notes coréennes, à vérifier en jeu)" : $"{tax:P0}";
         var book = new CraftBook(data, latest, tax, recipes);
 
@@ -279,7 +289,18 @@ sealed partial class ScreenViews
         foreach (var p in visible)
         {
             var rc = p.Recipe;
-            var head = MarketItemLine(p.Item, rc.Output.Qty > 1 ? $"{rc.Output.Name} ×{rc.Output.Qty}" : rc.Output.Name, 13, withKind: true);
+            Control head = MarketItemLine(p.Item, rc.Output.Qty > 1 ? $"{rc.Output.Name} ×{rc.Output.Qty}" : rc.Output.Name, 13, withKind: true);
+            if (long.TryParse(rc.Output.Key, out var gameId))
+                head = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal, Spacing = 10,
+                    Children =
+                    {
+                        head,
+                        Tip(Clickable(T("AION 2 Hub ↗", 10, Accent.Main, mono: true), () => OpenLink($"https://aion2hub.com/database/items/{gameId}"), null, Tok.Hover, new Thickness(4, 1)),
+                            "Fiche de l'objet sur AION 2 Hub (site de fans, en anglais) : sa recette pour la vérifier. Rien n'est repris automatiquement."),
+                    },
+                };
             // Les ingrédients : quantité par fabrication, ton stock entre parenthèses (en orange s'il n'y en a pas assez),
             // le prix à l'unité des objets du PNJ.
             var parts = new WrapPanel();
@@ -368,6 +389,7 @@ sealed partial class ScreenViews
             Filter();
         }
         blocks.Add(RecipeForm(data));
+        blocks.Add(NpcCard(data));
 
         var right = owners.Count > 1
             ? Choice(owners.Select(c => (c.Character, c == who, (Action)(() => update(st => st.InventoryChar = c.Character)))))
@@ -457,13 +479,16 @@ sealed partial class ScreenViews
     /// <summary>Liste des objets proposés dans une case d'objet (recherche sans accents ni majuscules, aussi par type).</summary>
     AutoCompleteBox ItemPicker(List<MarketItem> items, string text, string placeholder, double width, Action<string> changed)
     {
+        // Filtre et modèle AVANT FilterMode et Text : redessiner le formulaire avec un nom déjà tapé (« + ingrédient », « PNJ »,
+        // ✕) lance la recherche dès que Text est posé, et Avalonia plante si le filtre « Custom » n'existe pas encore.
         var box = new AutoCompleteBox
         {
-            ItemsSource = items, FilterMode = AutoCompleteFilterMode.Custom, Text = text, MinimumPrefixLength = 0, MaxDropDownHeight = 320,
-            PlaceholderText = placeholder, Width = width,
             ItemFilter = (search, o) => o is MarketItem i && Market.Matches(search, $"{i.Name} {i.Category}"),
             // Une ligne recyclée par Avalonia arrive vide : panneau vide, pas de plantage.
             ItemTemplate = new FuncDataTemplate<MarketItem?>((i, _) => i is null ? new Panel() : MarketItemLine(i, i.Name, 13, withKind: true)),
+            ItemsSource = items, FilterMode = AutoCompleteFilterMode.Custom, MinimumPrefixLength = 0, MaxDropDownHeight = 320,
+            PlaceholderText = placeholder, Width = width,
+            Text = text,
         };
         box.TextChanged += (_, _) => changed(box.Text ?? "");
         return box;
@@ -476,7 +501,9 @@ sealed partial class ScreenViews
     Control RecipeForm(MarketData data)
     {
         var draft = s.CraftDraft;
+        var npcByName = NpcByName(data);
         var items = data.Items.OrderByDescending(i => i.Gathered).ThenByDescending(i => i.IsGathering).ThenBy(i => i.Name, French)
+            .Concat((data.Npc ?? []).OrderBy(n => n.Name, French).Select(n => new MarketItem(n.Key, n.Name, 0, false, $"PNJ · {n.Tab ?? "marchand"} · {Fmt.Big(n.Price)} Kinah")))
             .DistinctBy(i => Market.Fold(i.Name)).ToList();
         TextBox Qty(string text, Action<string> changed)
         {
@@ -500,7 +527,11 @@ sealed partial class ScreenViews
         for (var i = 0; i < draft.Inputs.Count; i++)
         {
             var line = draft.Inputs[i];
-            var npc = Tip(Clickable(T(line.Npc ? "☑ PNJ" : "☐ PNJ", 12, line.Npc ? Accent.Main : Tok.Muted, mono: true), () => update(_ => line.Npc = !line.Npc), null, Tok.Hover, new Thickness(6, 5)),
+            var npc = Tip(Clickable(T(line.Npc ? "☑ PNJ" : "☐ PNJ", 12, line.Npc ? Accent.Main : Tok.Muted, mono: true), () => update(_ =>
+            {
+                line.Npc = !line.Npc;
+                if (line.Npc && line.NpcPrice.Trim().Length == 0 && npcByName.TryGetValue(Market.Fold(line.Name), out var listed)) line.NpcPrice = listed.Price.ToString();
+            }), null, Tok.Hover, new Thickness(6, 5)),
                 "Coche si cet ingrédient s'achète chez un PNJ (catalyseur…) : note son prix à l'unité. Il ne se revend pas à l'hôtel.");
             var row = new StackPanel
             {
@@ -550,7 +581,10 @@ sealed partial class ScreenViews
                 update(st => st.CraftError = $"Note le prix à l'unité de « {bad.Name.Trim()} » chez le PNJ.");
                 return;
             }
-            var inputs = lines.Select(l => Part(l.Name, Number(l.Qty, 1), l.Npc ? long.Parse(new string(l.NpcPrice.Where(char.IsDigit).ToArray())) : null)).ToList();
+            // Coché « PNJ » : le prix tapé ; sinon un objet de la liste « Objets du PNJ » prend son prix du PNJ.
+            var inputs = lines.Select(l => Part(l.Name, Number(l.Qty, 1),
+                l.Npc ? long.Parse(new string(l.NpcPrice.Where(char.IsDigit).ToArray()))
+                : npcByName.TryGetValue(Market.Fold(l.Name.Trim()), out var listed) ? listed.Price : null)).ToList();
             if (inputs.Count == 0) { update(st => st.CraftError = "Ajoute au moins un ingrédient."); return; }
             var cost = long.TryParse(new string(draft.Kinah.Where(char.IsDigit).ToArray()), out var k) ? k : 0;
             var output = Part(draft.Output, Number(draft.OutputQty, 1));
@@ -565,9 +599,84 @@ sealed partial class ScreenViews
         save.CornerRadius = new CornerRadius(3);
         form.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { kinah, note, save } });
         if (s.CraftError is { } err) form.Children.Add(T(err, 12, Tok.Bad, wrap: true));
-        form.Children.Add(T("Recopie la fenêtre d'artisanat du jeu : les quantités d'UNE fabrication ; coche « PNJ » pour un objet acheté chez un marchand et note son prix. " +
-                            "La recette vaut pour tous les joueurs d'Aion 2 Todo, avec ton pseudo ; n'importe qui peut retirer une recette fausse. " +
-                            "Un objet hors liste entre sous le nom que tu tapes.", 11, Tok.Muted, wrap: true));
+        form.Children.Add(T("Recopie la fenêtre d'artisanat du jeu : les quantités d'UNE fabrication. Un objet de la liste « Objets du PNJ » (plus bas) prend son prix " +
+                            "tout seul ; pour un autre objet acheté chez un marchand, coche « PNJ » et note son prix. La recette vaut pour tous les joueurs d'Aion 2 Todo, " +
+                            "avec ton pseudo ; n'importe qui peut retirer une recette fausse. Un objet hors liste entre sous le nom que tu tapes.", 11, Tok.Muted, wrap: true));
+        var hub = Clickable(T("chercher une recette sur AION 2 Hub ↗", 11, Accent.Main, mono: true), () => OpenLink("https://aion2hub.com/tools/crafting-calculator"), null, Tok.Hover, new Thickness(4, 2));
+        hub.HorizontalAlignment = HorizontalAlignment.Left;
+        form.Children.Add(Tip(hub, "Calculateur d'artisanat d'AION 2 Hub (site de fans, en anglais, recettes tirées du jeu) : pour lire une recette et la recopier ici. " +
+                                   "Le Builder ne reprend rien de ce site sans leur accord."));
         return Card(form, "Noter une recette", null, new Thickness(16, 10, 16, 12));
+    }
+
+    /// <summary>Liste des objets du PNJ par nom (sans accents ni majuscules).</summary>
+    static Dictionary<string, NpcItem> NpcByName(MarketData data) =>
+        (data.Npc ?? []).GroupBy(n => Market.Fold(n.Name)).ToDictionary(g => g.Key, g => g.First());
+
+    /// <summary>
+    /// « Objets du PNJ » : les prix des marchands, communs à tous les joueurs d'Aion 2 Todo (les mêmes pour tous dans le jeu), par
+    /// onglet du marchand ; noter ou corriger un prix (par le nom), retirer un objet faux.
+    /// </summary>
+    Control NpcCard(MarketData data)
+    {
+        var list = data.Npc ?? [];
+        var body = new StackPanel { Spacing = 8 };
+        foreach (var tab in list.GroupBy(n => n.Tab ?? "Autres"))
+        {
+            body.Children.Add(T(tab.Key, 11, Tok.Muted, FontWeight.SemiBold, mono: true));
+            var wrap = new WrapPanel();
+            foreach (var n in tab)
+            {
+                var item = n;
+                var who = n.By is null ? "relevé sur les captures des marchands" : $"noté par {(n.Mine ? "toi" : n.By)} {Market.Since(n.At)}";
+                wrap.Children.Add(new Border
+                {
+                    BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Padding = new Thickness(8, 3, 2, 3),
+                    Margin = new Thickness(0, 0, 6, 6),
+                    Child = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal, Spacing = 6,
+                        Children =
+                        {
+                            Tip(T(n.Name, 12, Tok.Text), who),
+                            T(Fmt.Big(n.Price), 12, Tok.Text2, mono: true),
+                            Tip(Clickable(T("✕", 10, Tok.Faint), () => market.RemoveNpc(item), null, Tok.Hover, new Thickness(4, 1)),
+                                "Retirer cet objet de la liste (faux ou en double), pour tous. Pour corriger son prix, note-le à nouveau."),
+                        },
+                    },
+                });
+            }
+            body.Children.Add(wrap);
+        }
+        if (list.Count == 0) body.Children.Add(T("Aucun objet du PNJ noté.", 12, Tok.Muted));
+
+        var name = new TextBox { Text = s.NpcName, Width = 260, PlaceholderText = "nom complet : Catalyseur, Sel…" };
+        name.TextChanged += (_, _) => s.NpcName = name.Text ?? "";
+        var price = new TextBox { Text = s.NpcPrice, Width = 130, PlaceholderText = "prix à l'unité" };
+        price.TextChanged += (_, _) => s.NpcPrice = price.Text ?? "";
+        var tabBox = new TextBox { Text = s.NpcTab, Width = 200, PlaceholderText = "onglet : Consommables… (facultatif)" };
+        tabBox.TextChanged += (_, _) => s.NpcTab = tabBox.Text ?? "";
+        async void Save()
+        {
+            var digits = new string(s.NpcPrice.Where(char.IsDigit).ToArray());
+            if (s.NpcName.Trim().Length < 2) { update(st => st.NpcError = "Note le nom de l'objet."); return; }
+            if (!long.TryParse(digits, out var value) || value < 1) { update(st => st.NpcError = "Note son prix à l'unité chez le PNJ."); return; }
+            var error = await market.AddNpc(s.NpcName.Trim(), value, s.NpcTab.Trim().Length > 0 ? s.NpcTab.Trim() : null);
+            update(st =>
+            {
+                st.NpcError = error;
+                if (error is null) { st.NpcName = ""; st.NpcPrice = ""; }
+            });
+        }
+        var add = Clickable(T("noter le prix", 12, Tok.OnAccent, FontWeight.SemiBold, mono: true), Save, Accent.Main, null, new Thickness(14, 5));
+        add.CornerRadius = new CornerRadius(3);
+        body.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(0, 4, 0, 0), Children = { name, price, tabBox, add } });
+        if (s.NpcError is { } err) body.Children.Add(T(err, 12, Tok.Bad, wrap: true));
+        body.Children.Add(T("Les prix des marchands sont les mêmes pour tout le monde : un joueur les note une fois, pour tous. Un objet déjà là est corrigé " +
+                            "si tu notes le même nom. Le marchand coupe les noms longs (« … ») : note le nom complet, affiché au survol en jeu.", 11, Tok.Muted, wrap: true));
+
+        var toggle = Clickable(T(s.NpcOpen ? "masquer" : $"afficher ({list.Count})", 11, Accent.Main, mono: true), () => update(st => st.NpcOpen = !st.NpcOpen), null, Tok.Hover, new Thickness(6, 2));
+        return Card(s.NpcOpen ? body : T($"{Fmt.Plural(list.Count, "objet")} avec leur prix chez le PNJ.", 12, Tok.Muted), $"Objets du PNJ ({list.Count})", toggle,
+            new Thickness(16, 10, 16, 12));
     }
 }

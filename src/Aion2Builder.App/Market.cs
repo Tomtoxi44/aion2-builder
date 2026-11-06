@@ -38,8 +38,14 @@ sealed record MarketRemoved(int Id, string ItemKey, string ItemName, long Price,
 /// <summary>Un marché proposé par le site : code, nom affiché, nombre de prix, le tien (tes persos du site y jouent).</summary>
 sealed record MarketChoice(string Code, string Label, int Prices, bool Mine);
 
+/// <summary>
+/// Un objet vendu par un PNJ marchand (liste commune d'Aion 2 Todo) : clé « npc:… », nom du jeu, prix à l'unité, onglet du
+/// marchand ; By = pseudo de qui l'a noté (null : relevé de départ), Mine = toi.
+/// </summary>
+sealed record NpcItem(string Key, string Name, long Price, string? Tab, string? By, DateTime At, bool Mine);
+
 sealed record MarketData(List<MarketItem> Items, List<MarketPrice> Prices, List<MarketRemoved> Removed, List<MarketChoice>? Markets = null, string? DefaultMarket = null,
-    List<CraftRecipe>? Recipes = null)
+    List<CraftRecipe>? Recipes = null, List<NpcItem>? Npc = null)
 {
     /// <summary>Dernier prix de chaque objet sur un marché (les prix arrivent du plus ancien au plus récent).</summary>
     public Dictionary<string, MarketPrice> Latest(string market) =>
@@ -71,6 +77,9 @@ sealed record MarketState(MarketData? Data, bool Linked, string? Status, Func<st
     public Func<RecipeSend, Task<string?>> AddRecipe { get; init; } = _ => Task.FromResult<string?>(null);
     public Action<CraftRecipe> RemoveRecipe { get; init; } = _ => { };
     public Action<int> RestoreRecipe { get; init; } = _ => { };
+    /// <summary>Écran Craft : noter ou corriger le prix d'un objet du PNJ (nom, prix, onglet), pour tous ; le retirer.</summary>
+    public Func<string, long, string?, Task<string?>> AddNpc { get; init; } = (_, _, _) => Task.FromResult<string?>(null);
+    public Action<NpcItem> RemoveNpc { get; init; } = _ => { };
 }
 
 /// <summary>
@@ -106,6 +115,19 @@ static class Market
     {
         using var http = BugReports.Client(key);
         return await Error(await http.PostAsJsonAsync("/api/sync/market/recipes", recipe));
+    }
+
+    /// <summary>Prix des PNJ marchands (communs) : noter ou corriger, retirer.</summary>
+    public static async Task<string?> AddNpc(string key, string name, long price, string? tab)
+    {
+        using var http = BugReports.Client(key);
+        return await Error(await http.PostAsJsonAsync("/api/sync/market/npc", new { name, price, tab }));
+    }
+
+    public static async Task<string?> RemoveNpc(string key, string npcKey)
+    {
+        using var http = BugReports.Client(key);
+        return await Error(await http.PostAsJsonAsync("/api/sync/market/npc/remove", new { key = npcKey }));
     }
 
     public static async Task<string?> RemoveRecipe(string key, int id)
@@ -513,13 +535,16 @@ sealed partial class ScreenViews
         // Noter un prix : l'objet (liste avec recherche, sans accents ni majuscules, aussi par type : « anneau », « épées »), le prix, « noter ».
         var catalog = data.Items.OrderByDescending(i => i.Gathered).ThenByDescending(i => i.IsGathering).ThenBy(i => i.Name, French)
             .DistinctBy(i => Market.Fold(i.Name)).ToList();
+        // Filtre et modèle AVANT FilterMode et Text : un texte déjà là lance la recherche tout de suite, et Avalonia plante si le
+        // filtre « Custom » n'est pas encore posé.
         var pick = new AutoCompleteBox
         {
-            ItemsSource = catalog, FilterMode = AutoCompleteFilterMode.Custom, Text = s.MarketPick ?? "", MinimumPrefixLength = 0, MaxDropDownHeight = 340,
-            PlaceholderText = "objet : Od, orichalque, un anneau…", MinWidth = 320,
             ItemFilter = (search, o) => o is MarketItem i && Market.Matches(search, $"{i.Name} {i.Category}"),
             // Avalonia rappelle le modèle avec un objet vide quand il recycle une ligne de la liste (en tapant) : ligne vide, pas de plantage.
             ItemTemplate = new FuncDataTemplate<MarketItem?>((i, _) => i is null ? new Panel() : MarketItemLine(i, i.Name, 13, withKind: true)),
+            ItemsSource = catalog, FilterMode = AutoCompleteFilterMode.Custom, MinimumPrefixLength = 0, MaxDropDownHeight = 340,
+            PlaceholderText = "objet : Od, orichalque, un anneau…", MinWidth = 320,
+            Text = s.MarketPick ?? "",
         };
         pick.TextChanged += (_, _) => s.MarketPick = pick.Text;
         var price = new TextBox { Text = s.MarketPriceText ?? "", Width = 150, PlaceholderText = "prix unitaire (Kinah)" };

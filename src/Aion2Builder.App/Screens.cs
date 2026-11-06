@@ -83,6 +83,12 @@ sealed class UiState
     public CraftDraft CraftDraft { get; set; } = new();
     public string? CraftError { get; set; }
     public (int Id, string Name)? CraftUndo { get; set; }
+    /// <summary>Écran Craft → « Objets du PNJ » : saisie d'un objet (nom, prix, onglet), erreur, liste dépliée.</summary>
+    public string NpcName { get; set; } = "";
+    public string NpcPrice { get; set; } = "";
+    public string NpcTab { get; set; } = "";
+    public string? NpcError { get; set; }
+    public bool NpcOpen { get; set; } = true;
     public bool HomeHow { get; set; }
     public bool StatsHow { get; set; }
     /// <summary>Listes longues (prochains points, prochaines cases) affichées en entier.</summary>

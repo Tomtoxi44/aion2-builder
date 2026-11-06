@@ -1147,6 +1147,8 @@ public sealed class MainWindow : Window
                 AddRecipe = AddRecipeAsync,
                 RemoveRecipe = rc => _ = MarketActionAsync(key => Market.RemoveRecipe(key, rc.Id), $"recette retirée : {rc.Output.Name} (rétablissable)"),
                 RestoreRecipe = id => _ = MarketActionAsync(key => Market.RestoreRecipe(key, id), "recette rétablie"),
+                AddNpc = AddNpcAsync,
+                RemoveNpc = item => _ = MarketActionAsync(key => Market.RemoveNpc(key, item.Key), $"objet du PNJ retiré : {item.Name}"),
                 RemoveShot = i =>
                 {
                     if (marketShot is { } l && i < l.Count) l.RemoveAt(i);
@@ -2191,6 +2193,21 @@ public sealed class MainWindow : Window
         if (error is null)
         {
             SetStatus($"recette notée : {recipe.Output.Name} (partagée avec la communauté)");
+            await LoadMarketAsync(force: true);
+        }
+        return error;
+    }
+
+    /// <summary>Écran Craft : noter le prix d'un objet du PNJ pour tous ; la liste est relue aussitôt.</summary>
+    async Task<string?> AddNpcAsync(string name, long price, string? tab)
+    {
+        if (AccountKey() is not { } key) return "Il faut ta clé Aion 2 Todo (écran Familiers).";
+        string? error;
+        try { error = await Market.AddNpc(key, name, price, tab); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { error = $"Aion 2 Todo injoignable ({ex.Message})."; }
+        if (error is null)
+        {
+            SetStatus($"prix du PNJ noté : {name} (partagé avec la communauté)");
             await LoadMarketAsync(force: true);
         }
         return error;
