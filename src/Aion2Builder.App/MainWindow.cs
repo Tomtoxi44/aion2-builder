@@ -1148,6 +1148,7 @@ public sealed class MainWindow : Window
                 RemoveRecipe = rc => _ = MarketActionAsync(key => Market.RemoveRecipe(key, rc.Id), $"recette retirée : {rc.Output.Name} (rétablissable)"),
                 RestoreRecipe = id => _ = MarketActionAsync(key => Market.RestoreRecipe(key, id), "recette rétablie"),
                 AddNpc = AddNpcAsync,
+                ReadCraft = which => _ = ReadCraftShotAsync(which),
                 RemoveNpc = item => _ = MarketActionAsync(key => Market.RemoveNpc(key, item.Key), $"objet du PNJ retiré : {item.Name}"),
                 RemoveShot = i =>
                 {
@@ -2053,20 +2054,65 @@ public sealed class MainWindow : Window
     /// de Windows (Images\Captures d'écran, Vidéos\Captures), de moins de 30 min ; null = fichiers choisis. Les lignes lues
     /// attendent ta validation dans l'écran HdV.
     /// </summary>
+    /// <summary>La capture d'écran de Windows la plus récente (Images\Captures d'écran, Vidéos\Captures), de moins de 30 min.</summary>
+    static FileInfo? LatestScreenshot()
+    {
+        var folders = new[]
+        {
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots"),
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Captures d'écran"),
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Captures"),
+        };
+        return folders.Where(d => Directory.Exists(d))
+            .SelectMany(d => new DirectoryInfo(d).EnumerateFiles().Where(f => f.Extension.ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".webp"))
+            .Where(f => DateTime.Now - f.LastWriteTime < TimeSpan.FromMinutes(30)).OrderByDescending(f => f.LastWriteTime).FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Écran Craft : lit une capture de la fenêtre d'artisanat du jeu (la dernière capture d'écran, ou un fichier choisi) et
+    /// remplit « Noter une recette » ; rien n'est noté sans ton clic.
+    /// </summary>
+    async Task ReadCraftShotAsync(string? which)
+    {
+        string? path;
+        if (which == "latest")
+        {
+            path = LatestScreenshot()?.FullName;
+            if (path is null)
+            {
+                Update(st => st.CraftShotStatus = "Aucune capture d'écran de moins de 30 min (Images\\Captures d'écran, Vidéos\\Captures) : fais-en une de la fenêtre " +
+                                                  "d'artisanat avec la recette choisie (Impr. écran), ou « choisir une capture… ».");
+                return;
+            }
+        }
+        else
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+            {
+                Title = "Capture de la fenêtre d'artisanat du jeu", AllowMultiple = false,
+                FileTypeFilter = [new Avalonia.Platform.Storage.FilePickerFileType("Images") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.webp"] }],
+            });
+            path = files.FirstOrDefault(f => f.Path.IsFile)?.Path.LocalPath;
+            if (path is null) return;
+        }
+        Update(st => st.CraftShotStatus = "Lecture de la capture…");
+        try
+        {
+            var (shot, problem) = await CraftShots.ReadAsync(path);
+            Update(st => st.CraftShotStatus = shot is null ? "Capture refusée : " + problem : CraftShotFill.Fill(st.CraftDraft, shot, market));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
+        {
+            Update(st => st.CraftShotStatus = $"Lecture impossible : {ex.Message}");
+        }
+    }
+
     async Task ReadMarketShotsAsync(string? which)
     {
         List<string> paths;
         if (which == "latest")
         {
-            var folders = new[]
-            {
-                System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots"),
-                System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Captures d'écran"),
-                System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Captures"),
-            };
-            var latest = folders.Where(d => Directory.Exists(d))
-                .SelectMany(d => new DirectoryInfo(d).EnumerateFiles().Where(f => f.Extension.ToLowerInvariant() is ".png" or ".jpg" or ".jpeg"))
-                .Where(f => DateTime.Now - f.LastWriteTime < TimeSpan.FromMinutes(30)).OrderByDescending(f => f.LastWriteTime).FirstOrDefault();
+            var latest = LatestScreenshot();
             if (latest is null)
             {
                 marketShotStatus = "Aucune capture d'écran de moins de 30 min (Images\\Captures d'écran, Vidéos\\Captures) : fais-en une du Marché du jeu, ou « choisir des captures… ».";

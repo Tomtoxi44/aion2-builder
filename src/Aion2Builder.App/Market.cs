@@ -80,6 +80,8 @@ sealed record MarketState(MarketData? Data, bool Linked, string? Status, Func<st
     /// <summary>Écran Craft : noter ou corriger le prix d'un objet du PNJ (nom, prix, onglet), pour tous ; le retirer.</summary>
     public Func<string, long, string?, Task<string?>> AddNpc { get; init; } = (_, _, _) => Task.FromResult<string?>(null);
     public Action<NpcItem> RemoveNpc { get; init; } = _ => { };
+    /// <summary>Écran Craft : lire une capture de la fenêtre d'artisanat (« latest » : la dernière capture d'écran ; null : choisir).</summary>
+    public Action<string?> ReadCraft { get; init; } = _ => { };
 }
 
 /// <summary>

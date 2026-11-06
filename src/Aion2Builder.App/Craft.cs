@@ -354,6 +354,17 @@ sealed partial class ScreenViews
                 if (p.C.Oldest < stale) verdictLines.Children.Add(T($"prix du {p.C.Oldest!.Value.ToLocalTime():dd/MM} : à revoir", 10, Tok.Warn, mono: true));
                 verdict = Tip(verdictLines, detail);
             }
+            else if (p.C.Sell is null && p.Cost is { } cost && npcByName.TryGetValue(Market.Fold(rc.Output.Name), out var sold) && sold.Price * rc.Output.Qty < cost)
+                // Pas de prix à l'hôtel, mais le PNJ le vend : moins cher de l'acheter que de le fabriquer.
+                verdict = Tip(new StackPanel
+                {
+                    Children =
+                    {
+                        T("achète-le au PNJ", 12, Tok.Warn, FontWeight.SemiBold),
+                        T($"{Fmt.Big(sold.Price * rc.Output.Qty)} au PNJ, {Fmt.Big(cost)} à fabriquer", 11, Tok.Muted, mono: true),
+                    },
+                }, $"Le PNJ vend {rc.Output.Name} {Fmt.Big(sold.Price)} Kinah l'unité ; le fabriquer coûte {Fmt.Big(cost)} Kinah (tes ingrédients vendus tels quels, " +
+                   "achats au PNJ, fabrication). Sans prix noté à l'hôtel, on ne sait pas s'il s'y vend plus cher.");
             else verdict = Tip(T($"prix manquant : {string.Join(", ", p.C.NoPrice.Distinct().Take(3))}", 11, Tok.Faint, wrap: true),
                 $"Note le prix de ces objets (écran HdV, sur {data.Label(shown)}), ou leur recette s'ils se fabriquent, pour savoir s'il vaut mieux fabriquer ou vendre. " +
                 "Un objet acheté chez un PNJ se note avec son prix dans la recette.");
@@ -512,6 +523,22 @@ sealed partial class ScreenViews
             return box;
         }
         var form = new StackPanel { Spacing = 8 };
+        // Remplir depuis une capture de la fenêtre d'artisanat du jeu (lue sur ce PC).
+        var latestShot = Clickable(T("lire la dernière capture d'écran", 12, Tok.OnAccent, FontWeight.SemiBold, mono: true), () => market.ReadCraft("latest"), Accent.Main, null, new Thickness(12, 4));
+        latestShot.CornerRadius = new CornerRadius(3);
+        var pickShot = Clickable(T("choisir une capture…", 12, Accent.Main, FontWeight.SemiBold, mono: true), () => market.ReadCraft(null), null, Tok.Hover, new Thickness(8, 4));
+        form.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 10,
+            Children =
+            {
+                Tip(latestShot, "Dans le jeu, choisis la recette dans la fenêtre d'artisanat (Forge, Armure, Artisanat, Alchimie…) et fais Impr. écran : " +
+                                "le Builder lit l'objet fabriqué et ses matériaux avec leurs quantités, puis remplit le formulaire. Rien n'est noté sans ton clic."),
+                pickShot,
+                T("remplit le formulaire depuis la fenêtre d'artisanat du jeu", 11, Tok.Muted).WithMargin(0, 5, 0, 0),
+            },
+        });
+        if (s.CraftShotStatus is { } shotStatus) form.Children.Add(T(shotStatus, 11, shotStatus.Contains("À compléter") || shotStatus.StartsWith("Capture refusée") ? Tok.Warn : Tok.Text2, wrap: true));
         form.Children.Add(new StackPanel
         {
             Orientation = Orientation.Horizontal, Spacing = 10,
@@ -575,6 +602,12 @@ sealed partial class ScreenViews
                 return new RecipePartSend(item?.Key, item?.Name ?? clean, qty, npc);
             }
             if (draft.Output.Trim().Length < 2) { update(st => st.CraftError = "Choisis ce que la recette fabrique."); return; }
+            // Un nom coupé par le jeu (lu sur une capture) entrerait dans la liste des objets sous un faux nom.
+            if (draft.Inputs.Select(l => l.Name).Prepend(draft.Output).FirstOrDefault(n => n.Contains('…') || n.TrimEnd().EndsWith("...")) is { } cut)
+            {
+                update(st => st.CraftError = $"Complète le nom coupé « {cut.Trim()} » (nom entier au survol en jeu, ou choisis-le dans la liste).");
+                return;
+            }
             var lines = draft.Inputs.Where(l => l.Name.Trim().Length >= 2).ToList();
             if (lines.FirstOrDefault(l => l.Npc && !long.TryParse(new string(l.NpcPrice.Where(char.IsDigit).ToArray()), out var u) | u < 1) is { } bad)
             {
@@ -592,7 +625,7 @@ sealed partial class ScreenViews
             update(st =>
             {
                 st.CraftError = error;
-                if (error is null) st.CraftDraft = new CraftDraft();
+                if (error is null) { st.CraftDraft = new CraftDraft(); st.CraftShotStatus = null; }
             });
         }
         var save = Clickable(T("noter la recette", 12, Tok.OnAccent, FontWeight.SemiBold, mono: true), Submit, Accent.Main, null, new Thickness(14, 5));

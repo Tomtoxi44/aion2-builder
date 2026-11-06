@@ -29,6 +29,16 @@ sealed class Program
             HdvRelay.Read(shot, read);
             return;
         }
+        // Diagnostic d'une capture de la fenêtre d'artisanat : ce que l'écran Craft en lirait (objet, matériaux, quantités).
+        if (args is ["--craft-read", var craftShot, ..] && args.Length <= 3)
+        {
+            var scale = args.Length == 3 && double.TryParse(args[2], System.Globalization.CultureInfo.InvariantCulture, out var sc) ? sc : 2;
+            var (craftRead, craftProblem) = CraftShots.ReadAsync(craftShot, scale).GetAwaiter().GetResult();
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.WriteLine(craftProblem ?? System.Text.Json.JsonSerializer.Serialize(craftRead, new System.Text.Json.JsonSerializerOptions
+                { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+            return;
+        }
         if (args is ["--hdv-send", var lines, var sent])
         {
             HdvRelay.Send(lines, sent);
