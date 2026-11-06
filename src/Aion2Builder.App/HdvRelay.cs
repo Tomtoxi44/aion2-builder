@@ -58,6 +58,12 @@ static class HdvRelay
     public static void NoteMarket(string code, string label) => SaveRelay(LoadRelay() with { Market = code, Label = label });
 
     /// <summary>« --hdv-read capture.png lu.json » : les lignes lues (ou le problème), comme dans l'écran Prix HdV.</summary>
+    /// <summary>
+    /// Niveau de la lecture, renvoyé au Pet Meter avec chaque lecture : 2 = les pièces d'équipement du Marché (nom et « Niv.
+    /// d'objet » sur deux lignes, v1.1.121). Un Builder plus ancien ne le renvoie pas : le Pet Meter demande de le relancer.
+    /// </summary>
+    const int Reader = 2;
+
     public static void Read(string image, string output)
     {
         object result;
@@ -66,11 +72,11 @@ static class HdvRelay
             // Image doublée, comme dans l'écran : sur un écran 1080p, le texte du Marché est trop fin pour l'OCR.
             var words = ScreenshotOcr.Words(image, InGameStatsReader.MinOcrSize, minScale: 2, colors: true).GetAwaiter().GetResult();
             var lines = MarketShotReader.Read(words, out var problem);
-            result = new { problem = problem is null ? null : MarketShotReader.NoTitles, lines };
+            result = new { problem = problem is null ? null : MarketShotReader.NoTitles, lines, reader = Reader };
         }
         catch (Exception ex)  // processus lancé par le Pet Meter : il lit l'erreur dans le fichier
         {
-            result = new { problem = $"lecture impossible ({ex.Message})", lines = Array.Empty<MarketShotLine>() };
+            result = new { problem = $"lecture impossible ({ex.Message})", lines = Array.Empty<MarketShotLine>(), reader = Reader };
         }
         File.WriteAllText(output, JsonSerializer.Serialize(result, Json));
     }
