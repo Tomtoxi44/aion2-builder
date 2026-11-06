@@ -60,7 +60,7 @@ public static class MarketShotReader
         var left = grade.Key is null ? double.MinValue : grade.Left - height * 2;
         var top = objet.Y + objet.Height + height * 0.3;
         var read = new List<(string Name, int? Count, long Price, string? Grade)>();
-        foreach (var row in Lines(words.Where(w => w.Y > top && w.X >= left).ToList(), height))
+        var rows = Lines(words.Where(w => w.Y > top && w.X >= left).ToList(), height).Select(row =>
         {
             var sorted = row.OrderBy(w => w.X).ToList();
             var nameWords = sorted.Where(w => w.X + w.Width / 2 < nameEnd).ToList();
@@ -69,9 +69,26 @@ public static class MarketShotReader
                 .GroupBy(w => numeric.MinBy(t => Math.Abs((t.Left + t.Right) / 2 - (w.X + w.Width / 2))))
                 .ToDictionary(g => g.Key, g => g.ToList());
             var value = cells.TryGetValue(price, out var p) ? Number(p) : null;
-            if (name.Length < 2 || value is not > 0) continue;
-            int? listings = count.Key is not null && cells.TryGetValue(count, out var c) && Number(c) is { } n and < 100_000 ? (int)n : null;
-            read.Add((name, listings, value.Value, NameGrade(nameWords)));
+            // « Niv. d'objet 36 » sous le nom d'une pièce d'équipement : pas un nom.
+            var level = Fold(name).Contains("dobjet") && name.Any(char.IsDigit);
+            return (Center: row.Average(Center), NameWords: nameWords, Name: name, Cells: cells, Value: value, Level: level);
+        }).ToList();
+        foreach (var row in rows)
+        {
+            if (row.Value is not > 0) continue;
+            var named = row;
+            // Pièce d'équipement : nom et « Niv. d'objet » sur deux lignes, les nombres centrés entre elles sur une ligne à part.
+            // Ils vont au nom sans nombre le plus proche (moins de 1,8 hauteur de texte).
+            if (row.Name.Length < 2)
+            {
+                var near = rows.Where(r => r.Name.Length >= 2 && !r.Level && r.Value is null && Math.Abs(r.Center - row.Center) < height * 1.8)
+                    .OrderBy(r => Math.Abs(r.Center - row.Center)).ToList();
+                if (near.Count == 0) continue;
+                named = near[0];
+            }
+            if (named.Name.Length < 2 || named.Level) continue;
+            int? listings = count.Key is not null && row.Cells.TryGetValue(count, out var c) && Number(c) is { } n and < 100_000 ? (int)n : null;
+            read.Add((named.Name, listings, row.Value.Value, NameGrade(named.NameWords)));
         }
         if (count.Key is not null || numeric.All(t => t.Key != "temps"))
             return read.Select(r => new MarketShotLine(r.Name, r.Count, r.Price, Grade: r.Grade)).ToList();
