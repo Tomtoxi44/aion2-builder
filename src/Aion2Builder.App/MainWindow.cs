@@ -1057,7 +1057,7 @@ public sealed class MainWindow : Window
             grid.Children.Add(bar);
         }
         side = null;
-        if (state.Screen is Screen.Gather or Screen.Market or Screen.Inventory or Screen.Craft && report is not null) { _ = LoadAccountGatherAsync(); _ = LoadMarketAsync(); }
+        if (state.Screen is Screen.Gather or Screen.Market or Screen.Inventory or Screen.Craft && report is not null) { _ = LoadAccountGatherAsync(); _ = LoadMarketAsync(); SyncPendingShot(); }
         var page = state.Screen == Screen.Import || report is null ? ImportHost() : Page(report);
         Grid.SetRow(page, 1);
         Grid.SetColumn(page, 1);
@@ -1141,7 +1141,7 @@ public sealed class MainWindow : Window
                 Shot = marketShot, ShotStatus = marketShotStatus,
                 ReadShots = which => _ = ReadMarketShotsAsync(which),
                 SaveShot = (lines, code) => _ = SaveMarketShotAsync(lines, code),
-                ClearShot = () => { marketShot = null; marketShotStatus = null; Render(); },
+                ClearShot = () => { marketShot = null; marketShotStatus = null; KeepShot(); Render(); },
                 EditShot = (i, line) => { if (marketShot is { } l && i < l.Count) l[i] = line; },
                 NameItem = NameItemAsync,
                 AddRecipe = AddRecipeAsync,
@@ -1151,6 +1151,7 @@ public sealed class MainWindow : Window
                 {
                     if (marketShot is { } l && i < l.Count) l.RemoveAt(i);
                     if (marketShot is { Count: 0 }) marketShot = null;
+                    KeepShot();
                     Render();
                 },
             });
@@ -2020,6 +2021,29 @@ public sealed class MainWindow : Window
     MarketData? market;
     string? marketStatus;
     List<MarketShotLine>? marketShot;  // lignes lues sur des captures de l'hôtel, en attente de validation
+    DateTime pendingStamp = DateTime.MinValue;  // date du fichier des lignes en attente déjà reprise (hdv-pending.json)
+
+    /// <summary>
+    /// Lignes en attente gardées sur le disque (HdvRelay.PendingFile) : elles survivent à la fermeture du Builder, et le relevé du
+    /// Pet Meter y ajoute les siennes (nom inconnu, prix refusé).
+    /// </summary>
+    void KeepShot()
+    {
+        HdvRelay.SavePending(marketShot);
+        pendingStamp = File.Exists(HdvRelay.PendingFile) ? File.GetLastWriteTimeUtc(HdvRelay.PendingFile) : default;
+    }
+
+    /// <summary>Le fichier des lignes en attente a changé (relevé du Pet Meter, ou lancement) : ses lignes rejoignent « Lire une capture ».</summary>
+    void SyncPendingShot()
+    {
+        var stamp = File.Exists(HdvRelay.PendingFile) ? File.GetLastWriteTimeUtc(HdvRelay.PendingFile) : default;
+        if (stamp == pendingStamp) return;
+        pendingStamp = stamp;
+        if (HdvRelay.LoadPending() is not { Count: > 0 } waiting) return;
+        marketShot = (marketShot ?? []).Concat(waiting).GroupBy(l => Market.Fold(l.Name)).Select(g => g.Last()).ToList();
+        marketShotStatus = $"{Fmt.Plural(marketShot.Count, "ligne lue attend", "lignes lues attendent")} d'être notée{(marketShot.Count > 1 ? "s" : "")} " +
+                           "(relevé du Pet Meter ou capture pas encore notée) : vérifie les noms marqués « nouveau », puis « noter ».";
+    }
     string? marketShotStatus;
 
     /// <summary>
@@ -2071,14 +2095,15 @@ public sealed class MainWindow : Window
                 lines.AddRange(MarketShotReader.Read(await ScreenshotOcr.Words(path, InGameStatsReader.MinOcrSize, minScale: 2, colors: true), out var problem));
                 if (problem is not null) refused++;
             }
-            // Un même objet sur deux captures : la dernière lecture l'emporte.
-            marketShot = lines.GroupBy(l => Market.Fold(l.Name)).Select(g => g.Last()).ToList();
+            // Un même objet sur deux captures : la dernière lecture l'emporte ; les lignes qui attendaient déjà restent.
+            marketShot = (marketShot ?? []).Concat(lines).GroupBy(l => Market.Fold(l.Name)).Select(g => g.Last()).ToList();
             marketShotStatus = refused > 0
                 ? (paths.Count == 1 ? "Capture refusée : " : $"{Fmt.Plural(refused, "capture refusée", "captures refusées")} sur {paths.Count} : ") + MarketShotReader.NoTitles
-                : marketShot.Count == 0
+                : lines.Count == 0
                     ? "Aucune ligne de prix lue sous les titres des colonnes : il faut la liste des objets ou les annonces d'un objet, avec leurs prix."
                     : null;
             if (marketShot.Count == 0) marketShot = null;
+            KeepShot();
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
         {
@@ -2106,6 +2131,7 @@ public sealed class MainWindow : Window
             else { errors.Add($"{(line.Name.Length > 0 ? line.Name : "(sans nom)")} : {error}"); failed.Add(line); }
         }
         marketShot = failed.Count == 0 ? null : failed;
+        KeepShot();
         marketShotStatus = errors.Count == 0 ? null : string.Join("\n", errors.Take(4));
         SetStatus($"{Fmt.Plural(done, "prix noté", "prix notés")} depuis la capture (partagés avec la communauté)", errors.Count > 0);
         await LoadMarketAsync(force: true);

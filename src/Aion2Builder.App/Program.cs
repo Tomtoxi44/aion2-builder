@@ -23,6 +23,17 @@ sealed class Program
                 (w.Rgb < 0 ? "" : $"#{w.Rgb:X6} {Aion2Builder.Analysis.MarketShotReader.GradeOf(w.Rgb)}")));
             return;
         }
+        // Relevé HdV du Pet Meter, sans fenêtre : lire une capture, puis noter les lignes lues (voir HdvRelay).
+        if (args is ["--hdv-read", var shot, var read])
+        {
+            HdvRelay.Read(shot, read);
+            return;
+        }
+        if (args is ["--hdv-send", var lines, var sent])
+        {
+            HdvRelay.Send(lines, sent);
+            return;
+        }
         // Essai sans fenêtre, lancé par la mise à jour avant de remplacer l'exe : 0 si cette version démarre sur ce PC.
         if (args is ["--selftest"])
         {
@@ -31,6 +42,7 @@ sealed class Program
         }
         // Données et analyse du dernier perso lues sur un autre fil pendant qu'Avalonia démarre (voir Startup).
         Startup.Begin();
+        HdvRelay.NoteExe();  // le Pet Meter lance ce Builder pour lire ses relevés HdV
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

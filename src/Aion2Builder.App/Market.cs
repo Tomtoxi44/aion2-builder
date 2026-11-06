@@ -281,6 +281,29 @@ sealed partial class ScreenViews
         return Card(body, "Vendre ou garder ?", T("ton stock, aux prix de la communauté", 11, Tok.Muted, mono: true), new Thickness(16, 10, 16, 12));
     }
 
+    /// <summary>Tuto de l'écran : les trois façons de relever les prix, de la plus rapide (relevé du Pet Meter, touche F9) à la main.</summary>
+    static Control HowTo(string marketLabel)
+    {
+        (string Title, string Text)[] ways =
+        [
+            ("Relevé avec le Pet Meter · le plus rapide",
+             "Dans le Pet Meter : ⋯ → Outils → « Relevé HdV ». En jeu, ouvre le Marché et appuie sur F9 à chaque page (la ligne des titres des colonnes " +
+             "doit se voir). La pastille dit ce qui est lu sur chaque capture ; « Envoyer » note tout d'un coup, sans passer par ici. Le Builder doit " +
+             "seulement être installé sur ce PC et ouvert une fois."),
+            ("Une capture à la fois",
+             "Win+Maj+S ou Impr. écran sur le Marché du jeu, puis « dernière capture d'écran » plus bas : tu corriges les lignes avant de les noter."),
+            ("À la main", "Choisis l'objet, tape son prix unitaire, puis « noter »."),
+        ];
+        var body = new StackPanel { Spacing = 8 };
+        for (var i = 0; i < ways.Length; i++)
+            body.Children.Add(Columns("18,*", T($"{i + 1}", 13, Accent.Main, FontWeight.SemiBold, mono: true),
+                new StackPanel { Spacing = 2, Children = { T(ways[i].Title, 13, weight: FontWeight.Medium), T(ways[i].Text, 12, Tok.Muted, wrap: true) } }));
+        body.Children.Add(T($"Les prix vont sur le marché choisi en haut (« {marketLabel} »), avec ton pseudo. Ce qui est lu : le nom (et son rang, à sa couleur) " +
+                            "et le prix unitaire ; sur les annonces d'un objet, le plus bas. Un objet pas encore dans la liste, ou un prix refusé, attend dans " +
+                            "« Lire une capture » : vérifie son nom, puis « noter ». Les captures ne quittent pas ton PC.", 11, Tok.Muted, wrap: true));
+        return Card(body, "Comment relever les prix", T("3 façons", 11, Tok.Muted, mono: true), new Thickness(16, 10, 16, 12));
+    }
+
     /// <summary>
     /// Prix lus sur une capture de la fenêtre Marché du jeu (#65) : la dernière capture d'écran de Windows, ou des fichiers
     /// choisis ; chaque ligne lue (nom, prix unitaire) se corrige ou se retire (✕), puis « noter » les envoie toutes.
@@ -416,6 +439,7 @@ sealed partial class ScreenViews
 
         // Le marché : tes serveurs d'abord, puis ceux qui ont des prix, puis une liste de tous les autres.
         var shown = MarketShown(data);
+        HdvRelay.NoteMarket(shown, data.Label(shown));  // le relevé du Pet Meter note ses prix sur ce marché
         var choices = data.Markets ?? [new MarketChoice(shown, data.Label(shown), 0, true)];
         var quick = choices.Where(m => m.Mine || m.Prices > 0 || m.Code.Equals(shown, StringComparison.OrdinalIgnoreCase)).Take(8).ToList();
         var others = new ComboBox
@@ -473,6 +497,7 @@ sealed partial class ScreenViews
                                 (hv.Missing > 0 ? $" ; {Fmt.Plural(hv.Missing, "ressource")} sans prix ici, pas comptée{(hv.Missing > 1 ? "s" : "")} : note leur prix pour l'avoir en entier." : ".")
                 : "Ce que rapporterait ta récolte du jour au prix de la communauté : aucune ressource récoltée aujourd'hui n'a encore de prix sur ce marché."));
         blocks.Add(kpis);
+        blocks.Add(HowTo(data.Label(shown)));
 
         // Noter un prix : l'objet (liste avec recherche, sans accents ni majuscules, aussi par type : « anneau », « épées »), le prix, « noter ».
         var catalog = data.Items.OrderByDescending(i => i.Gathered).ThenByDescending(i => i.IsGathering).ThenBy(i => i.Name, French)
