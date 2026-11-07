@@ -65,15 +65,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
+        # Une relance du job (dépôt sur le site raté) retrouve la version déjà créée : elle remplace alors son exe.
         run: |
+          gh release view "v$env:VERSION" *> $null
+          if ($LASTEXITCODE -eq 0) { gh release upload "v$env:VERSION" publish\Aion2Builder.exe --clobber; exit $LASTEXITCODE }
           gh release create "v$env:VERSION" publish\Aion2Builder.exe --target "$env:GITHUB_SHA" --title "Aion 2 Builder v$env:VERSION" `
             --notes "Exe Windows autonome (sans installation), compilé par GitHub Actions depuis $env:GITHUB_SHA. Code signing policy (SignPath Foundation) : https://github.com/Tomtoxi44/aion2-builder#code-signing-policy"
 
       - name: Dépôt sur Aion 2 Todo
         if: env.BUILDER_UPLOAD_KEY != ''
         shell: pwsh
+        # Le site (offre gratuite) s'endort : on le réveille d'abord, puis on laisse au dépôt le temps d'un redémarrage.
         run: |
-          curl.exe --fail-with-body -sS --retry 3 --retry-all-errors --max-time 600 -X PUT `
+          curl.exe -s -o NUL --max-time 180 "https://aion2-todo-7275.azurewebsites.net/api/downloads/builder"
+          curl.exe --fail-with-body -sS --retry 6 --retry-delay 20 --retry-all-errors --max-time 600 -X PUT `
             -H "X-Upload-Key: $env:BUILDER_UPLOAD_KEY" -H "Content-Type: application/octet-stream" `
             --data-binary "@publish/Aion2Builder.exe" `
             "https://aion2-todo-7275.azurewebsites.net/api/downloads/builder?version=$env:VERSION"
