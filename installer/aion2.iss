@@ -56,6 +56,7 @@ Filename: "{app}\Builder\Aion2Builder.exe"; WorkingDir: "{app}\Builder"; Descrip
 ; Restes des mises à jour automatiques (anciens exe), pas les données.
 Type: files; Name: "{app}\Builder\Aion2Builder.ancien-*.exe"
 Type: files; Name: "{app}\Builder\Aion2Builder.nouveau.exe"
+Type: files; Name: "{app}\Builder\Aion2Builder.refuse.exe"
 Type: files; Name: "{app}\PetMeter\aion2-pet-meter.exe.old"
 Type: files; Name: "{app}\PetMeter\aion2-pet-meter.new.exe"
 Type: files; Name: "{app}\PetMeter\aion2-pet-meter.new.txt"

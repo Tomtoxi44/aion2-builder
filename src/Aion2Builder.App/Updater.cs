@@ -119,15 +119,29 @@ static class Updater
         }
 
         // 2. Remplacement, puis lancement : la nouvelle version écrit « .maj-ok » une fois sa fenêtre ouverte.
+        // Un antivirus garde souvent le fichier téléchargé ouvert quelques secondes après l'essai (il l'analyse) : chaque étape
+        // est réessayée, la nouvelle version est COPIÉE (une copie passe là où un déplacement est refusé), et au moindre échec
+        // l'exe en cours est remis à sa place. Jamais de dossier sans Aion2Builder.exe (le raccourci ne marcherait plus).
+        trial.Dispose();
         var old = Path.Combine(dir, $"{name}.ancien-{DateTime.Now:yyyyMMddHHmmss}.exe");
         var ok = Path.Combine(dir, $"{name}.maj-ok");
         File.Delete(ok);
-        File.Move(exe, old);
-        File.Move(downloaded, exe);
+        await Retry(() => File.Move(exe, old));
         void Restore()
         {
-            File.Move(exe, Path.Combine(dir, $"{name}.nouveau.exe"), overwrite: true);
-            File.Move(old, exe);
+            try { if (File.Exists(exe)) File.Move(exe, Path.Combine(dir, $"{name}.refuse.exe"), overwrite: true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* l'exe reste là : l'appli aussi */ }
+            for (var i = 0; i < 20 && !File.Exists(exe) && File.Exists(old); i++)
+            {
+                try { File.Move(old, exe); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Thread.Sleep(500); }
+            }
+        }
+        try { await Retry(() => File.Copy(downloaded, exe, overwrite: true)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Restore();
+            throw new IOException($"La version {release.Label} n'a pas pu remplacer l'ancienne ({ex.Message}) : ta version {CurrentLabel} reste en place, réessaie plus tard.");
         }
         Process started;
         try { started = Process.Start(new ProcessStartInfo(exe, AfterUpdate) { UseShellExecute = false, WorkingDirectory = dir })!; }
@@ -150,6 +164,16 @@ static class Updater
             throw new InvalidOperationException($"La version {release.Label} s'est arrêtée au démarrage : ta version {CurrentLabel} est remise en place.");
         }
         // Toujours en route au bout d'une minute, sans fenêtre encore : on la laisse finir de démarrer.
+    }
+
+    /// <summary>Une opération sur un fichier, réessayée 20 fois (10 s) tant qu'il est tenu par un autre programme (antivirus, indexation).</summary>
+    static async Task Retry(Action act)
+    {
+        for (var i = 0; ; i++)
+        {
+            try { act(); return; }
+            catch (Exception ex) when (ex is (IOException or UnauthorizedAccessException) and not FileNotFoundException && i < 20) { await Task.Delay(500); }
+        }
     }
 
     /// <summary>Message quand Windows refuse de lancer la nouvelle version.</summary>
@@ -203,13 +227,17 @@ static class Updater
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
-    /// <summary>Efface les versions remplacées et les téléchargements interrompus (au lancement suivant).</summary>
+    /// <summary>
+    /// Efface les téléchargements et les versions remplacées (au lancement suivant), sauf la dernière version remplacée : si un
+    /// antivirus retire un jour le nouvel exe, elle reste là pour revenir en arrière (la renommer Aion2Builder.exe).
+    /// </summary>
     public static void CleanOld()
     {
         if (Environment.ProcessPath is not { } exe) return;
         var dir = Path.GetDirectoryName(exe)!;
         var name = Path.GetFileNameWithoutExtension(exe);
-        foreach (var file in Directory.EnumerateFiles(dir, $"{name}.ancien-*.exe").Append(Path.Combine(dir, $"{name}.nouveau.exe")))
+        var replaced = Directory.EnumerateFiles(dir, $"{name}.ancien-*.exe").OrderByDescending(f => f, StringComparer.Ordinal).Skip(1);
+        foreach (var file in replaced.Append(Path.Combine(dir, $"{name}.nouveau.exe")).Append(Path.Combine(dir, $"{name}.refuse.exe")))
         {
             try { File.Delete(file); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* encore utilisé : au prochain lancement */ }
