@@ -2304,7 +2304,12 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         if (cmp.NextTarget(x) is { } next)
             return ($"↑ {StatValue(x, next.Value)} · {next.Label}", x.Weight >= 0.6 ? Tok.Bad : Tok.Warn,
                 $"Il te manque {StatValue(x, next.Value - x.GameValue)}" + (x.Hidden is null ? "" : $" (en jeu : {StatValue(x, x.GameValue)})") + $".\n{tip}");
-        return ($"✓ {StatValue(x, targets[^1].Value)} atteint", Tok.Good, tip);
+        var goals = targets.Where(t => !StatComparison.LimitOnly(x, t)).ToList();
+        if (goals.Count == 0)
+            return ($"plafond {StatValue(x, targets[^1].Value)}", Tok.Faint,
+                $"Pas un objectif pour un {r.Profile.Class.Name} : stat {StatImportance(x).Text} pour ta classe, inutile de la monter.\n"
+                + "Seulement une limite commune à toutes les classes :\n" + string.Join("\n", targets.Select(t => $"{StatValue(x, t.Value)} · {t.Label} — {t.Source}")));
+        return ($"✓ {StatValue(x, goals[^1].Value)} atteint", Tok.Good, tip);
     }
 
     /// <summary>
@@ -2414,7 +2419,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
             var (importance, importanceColor) = StatImportance(x);
             var (advised, advisedColor, advisedTip) = Advised(x, cmp);
             // Valeurs des guides (en jeu) placées sur l'échelle des joueurs (sans la part cachée), avec tes stats en jeu.
-            var targets = cmp.TargetsFor(x).Select(t => t.Value - x.Shift).ToList();
+            var targets = cmp.TargetsFor(x).Where(t => !StatComparison.LimitOnly(x, t)).Select(t => t.Value - x.Shift).ToList();
             var cells = new List<Control>
             {
                 T(x.Def.Name, 13), T(importance, 12, importanceColor),

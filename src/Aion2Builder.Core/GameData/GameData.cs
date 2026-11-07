@@ -421,7 +421,11 @@ public sealed record StigmaSettings
 /// une stat en %, la valeur plate sinon. <see cref="Label"/> dit pour quoi (« Sanctuaire », « 50 % de critiques »),
 /// <see cref="Source"/> d'où vient le chiffre ; <see cref="Cap"/> : au-delà, la stat ne sert plus.
 /// </summary>
-public sealed record StatTarget(string Stat, double Value, string Label, string Source, bool Cap = false);
+public sealed record StatTarget(string Stat, double Value, string Label, string Source, bool Cap = false)
+{
+    /// <summary>Valeur commune à toutes les classes (settings.json), pas tirée d'un guide de la classe.</summary>
+    public bool Common { get; init; }
+}
 
 public sealed record StatSettings
 {

@@ -113,8 +113,14 @@ public sealed record StatComparison(List<BenchPlayer>? Peers, string? PeersText,
 
     public List<StatTarget> TargetsFor(StatTotal x) => Targets.GetValueOrDefault(x.Def.Key) ?? [];
 
+    /// <summary>
+    /// Plafond commun à toutes les classes pour une stat que la classe ne met pas en priorité (le CRIT d'un Templier) : une
+    /// limite à ne pas dépasser, pas un objectif à atteindre.
+    /// </summary>
+    public static bool LimitOnly(StatTotal x, StatTarget t) => t.Common && t.Cap && x.Weight < 0.8;
+
     /// <summary>Prochaine valeur conseillée pas encore atteinte ; null si toutes le sont (ou s'il n'y en a pas).</summary>
-    public StatTarget? NextTarget(StatTotal x) => TargetsFor(x).FirstOrDefault(t => t.Value > x.GameValue + 1e-9);
+    public StatTarget? NextTarget(StatTotal x) => TargetsFor(x).FirstOrDefault(t => t.Value > x.GameValue + 1e-9 && !LimitOnly(x, t));
 
     /// <summary>Plafond dépassé : la stat ne sert plus au-delà (2 % de marge).</summary>
     public StatTarget? CapExceeded(StatTotal x) => TargetsFor(x).FirstOrDefault(t => t.Cap && x.GameValue > t.Value * 1.02);

@@ -155,7 +155,7 @@ public sealed class StatAnalyzer(GameDatabase db, IReadOnlyList<StatSource>? ext
     {
         var own = p.Class.StatTargets.GetValueOrDefault(p.Mode) ?? [];
         var replaced = own.Select(t => t.Stat).ToHashSet();
-        return (db.Settings.Stats.Targets.GetValueOrDefault(p.Mode) ?? []).Where(t => !replaced.Contains(t.Stat)).Concat(own)
+        return (db.Settings.Stats.Targets.GetValueOrDefault(p.Mode) ?? []).Where(t => !replaced.Contains(t.Stat)).Select(t => t with { Common = true }).Concat(own)
             .GroupBy(t => t.Stat).ToDictionary(g => g.Key, g => g.OrderBy(t => t.Value).ToList());
     }
 

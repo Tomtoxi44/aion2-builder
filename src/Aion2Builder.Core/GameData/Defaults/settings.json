@@ -47,9 +47,9 @@
     "_targets": "Valeurs conseillées communes (elles dépendent des monstres visés, pas de la classe) ; une classe les remplace stat par stat dans classes.json (statTargets).",
     "targets": {
       "PvE": [
-        { "stat": "Accuracy", "value": 900, "label": "Conquête", "source": "guide Templier : Précision visée selon le contenu (≈ 900 en Conquête)" },
-        { "stat": "Accuracy", "value": 1300, "label": "Sanctuaire", "source": "guide Templier : Précision visée selon le contenu (≈ 1 300 en Sanctuaire)" },
-        { "stat": "Critical", "value": 1300, "label": "50 % de critiques, plafond", "source": "guides Rôdeur et Assassin : ≈ 1 300 de CRIT pour 50 % de critiques, plafond des serveurs occidentaux", "cap": true }
+        { "stat": "Accuracy", "value": 900, "label": "Conquête", "source": "Précision visée selon le contenu, pour toutes les classes car elle dépend des monstres (≈ 900 en Conquête, chiffre d'un guide Templier)" },
+        { "stat": "Accuracy", "value": 1300, "label": "Sanctuaire", "source": "Précision visée selon le contenu, pour toutes les classes car elle dépend des monstres (≈ 1 300 en Sanctuaire, chiffre d'un guide Templier)" },
+        { "stat": "Critical", "value": 1300, "label": "50 % de critiques, plafond", "source": "règle du jeu sur les serveurs occidentaux : ≈ 1 300 de CRIT donnent 50 % de critiques, le maximum (chiffre relevé par les guides Rôdeur et Assassin, il vaut pour toutes les classes)", "cap": true }
       ]
     }
   },
