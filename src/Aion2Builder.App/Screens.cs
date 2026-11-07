@@ -15,6 +15,12 @@ using static Aion2Builder.App.Ui;
 
 namespace Aion2Builder.App;
 
+/// <summary>Pages de l'écran Craft (barre de gauche).</summary>
+enum CraftPage { Overview, Recipe, New, Npc }
+
+/// <summary>Pages de l'écran HdV (barre de gauche).</summary>
+enum MarketPage { Prices, Chart, Add, Stock, Removed }
+
 enum Screen { Import, Home, Stats, Gear, Skills, Build, Combat, Daeva, Pets, Simulate, Progress, Details, Gather, Market, Inventory, Craft }
 
 /// <summary>Sous-pages de l'écran Équipement (sous-menu du rail).</summary>
@@ -65,7 +71,8 @@ sealed class UiState
     public string? MarketKind { get; set; }
     /// <summary>Prix HdV en graphique au lieu de la liste : les objets tracés (une case par couleur, gardée tant que l'objet reste
     /// tracé), la période en jours (0 : tout) et l'évolution en % au lieu du prix.</summary>
-    public bool MarketChart { get; set; }
+    /// <summary>Page ouverte de l'écran HdV (barre de gauche).</summary>
+    public MarketPage MarketPage { get; set; }
     public string?[] MarketSeries { get; } = new string?[8];
     public int MarketDays { get; set; } = 30;
     public bool MarketPercent { get; set; }
@@ -73,6 +80,9 @@ sealed class UiState
     public string? InventoryChar { get; set; }
     public string? InventoryQuery { get; set; }
     public string? InventoryPlace { get; set; }
+    /// <summary>Famille ouverte de l'écran Inventaire (null : tout), et l'objet choisi (son numéro du jeu).</summary>
+    public string? InventoryFamily { get; set; }
+    public long? InventoryItem { get; set; }
     /// <summary>Écran Inventaire : noms tapés pour les objets sans nom (gardés d'un affichage à l'autre), et le dernier message.</summary>
     public Dictionary<long, string> InventoryNames { get; } = [];
     public string? InventoryNameStatus { get; set; }
@@ -80,6 +90,9 @@ sealed class UiState
     /// dernière erreur, et la recette qu'on vient de retirer (rétablissable).</summary>
     public string? CraftQuery { get; set; }
     public string? CraftFilter { get; set; }
+    /// <summary>Page ouverte de l'écran Craft, et la recette ouverte (son numéro).</summary>
+    public CraftPage CraftPage { get; set; }
+    public int? CraftRecipe { get; set; }
     public CraftDraft CraftDraft { get; set; } = new();
     public string? CraftError { get; set; }
     public (int Id, string Name)? CraftUndo { get; set; }
@@ -92,7 +105,6 @@ sealed class UiState
     public string NpcPrice { get; set; } = "";
     public string NpcTab { get; set; } = "";
     public string? NpcError { get; set; }
-    public bool NpcOpen { get; set; } = true;
     public bool HomeHow { get; set; }
     public bool StatsHow { get; set; }
     /// <summary>Listes longues (prochains points, prochaines cases) affichées en entier.</summary>
@@ -191,6 +203,9 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         Screen.Daeva => DaevaSide(),
         Screen.Skills => SkillsSide(),
         Screen.Build => BuildSide(),
+        Screen.Craft => CraftSide(),
+        Screen.Market => MarketSide(),
+        Screen.Inventory => InventorySide(),
         _ => null,
     };
 
@@ -203,6 +218,8 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         Screen.Daeva => SelectedBoard?.Board.Name,
         Screen.Combat => s.CombatList ? "Tous les combats"
             : CombatLogShown is { } log ? s.CombatGroup is not null ? $"Séance · {log.Target}" : $"{log.Target} · {log.ImportedAtUtc.ToLocalTime():HH:mm}" : null,
+        Screen.Craft => market.Linked && market.Data is not null ? CraftCrumb() : null,
+        Screen.Market => market.Linked && market.Data is not null ? MarketPageTitle(s.MarketPage) : null,
         _ => null,
     };
 
@@ -212,7 +229,11 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
     /// </summary>
     Control SideItem(string? icon, string title, string? badge, IBrush? badgeColor, string? preview, bool selected, Action open, Control? extra = null, string? tip = null)
     {
-        var text = new StackPanel { Spacing = 2, Children = { T(title, 13, selected ? Tok.Text : Tok.Text2, selected ? FontWeight.SemiBold : FontWeight.Normal) } };
+        // Titre sur deux lignes au plus : des noms proches (« Épée du Roi dragon blanc / sage ») restent distincts.
+        var head = T(title, 13, selected ? Tok.Text : Tok.Text2, selected ? FontWeight.SemiBold : FontWeight.Normal, wrap: true);
+        head.MaxLines = 2;
+        head.TextTrimming = TextTrimming.CharacterEllipsis;
+        var text = new StackPanel { Spacing = 2, Children = { head } };
         // Aperçu sur deux lignes au plus (coupé avec « … » au-delà) plutôt que tronqué à la largeur de la barre.
         if (preview is not null) text.Children.Add(new TextBlock { Text = preview, FontSize = 11, Foreground = Tok.Muted, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis });
         if (extra is not null) text.Children.Add(extra);
@@ -281,9 +302,9 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         Screen.Simulate => (Simulate(), SimulateInspector()),
         Screen.Progress => (ProgressScreen(), null),
         Screen.Gather => (GatherScreen(), null),
-        Screen.Market => (MarketScreen(PetMeterGathering.Merge(accountGather.Days, PetMeterGathering.Load())), null),
-        Screen.Inventory => (InventoryScreen(PetMeterGathering.Merge(accountGather.Days, PetMeterGathering.Load())), null),
-        Screen.Craft => (CraftScreen(PetMeterGathering.Merge(accountGather.Days, PetMeterGathering.Load())), null),
+        Screen.Market => (MarketScreen(PetMeterGathering.Merge(accountGather.Days, PetMeterGathering.Load())), MarketInspector()),
+        Screen.Inventory => (InventoryScreen(), InventoryInspector()),
+        Screen.Craft => (CraftScreen(), null),
         _ => (Details(), null),
     };
 
@@ -693,6 +714,14 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         if (!done.Remove(f.Title)) done.Add(f.Title);
         onInputs(inputs with { Done = done, DoneFor = r.Character.FetchedAtUtc });
     }
+
+    /// <summary>Case à cocher dessinée (pas un caractère : « ☑ » sort en émoji violet selon la police).</summary>
+    static Border Tick(bool on, double size = 16) => new()
+    {
+        Width = size, Height = size, CornerRadius = new CornerRadius(3), BorderThickness = new Thickness(1.5),
+        BorderBrush = on ? Accent.Main : Tok.Muted, Background = on ? Accent.Main : Brushes.Transparent, VerticalAlignment = VerticalAlignment.Center,
+        Child = on ? T("✓", size - 5, Tok.OnAccent, FontWeight.Bold).Centered() : null,
+    };
 
     Border Check(Finding f)
     {

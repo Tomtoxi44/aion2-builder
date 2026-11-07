@@ -260,11 +260,14 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    ouvre le jour.
    Avec ta clé Aion 2 Todo (la même que celle du Pet Meter), c'est la récolte de tout ton compte : le Pet Meter v0.18.0
    envoie le détail du jour avec sa synchro, le site additionne tes PC, et l'écran le lit, quel que soit le PC.
-   **Prix HdV** (bouton en haut de l'écran Récolte, avec ta clé) : les prix de l'hôtel des ventes notés à la main par les
-   joueurs d'Aion 2 Todo (aucune source publique n'existe), les mêmes que l'onglet « Prix HdV » du site : dernier prix de
-   chaque objet avec son auteur et sa date, évolution, petite courbe, et la courbe d'un objet avec chaque relevé. Tu peux
-   noter un prix (partagé avec ton pseudo) et retirer un prix faux, pour tout le monde, rétablissable pendant 30 jours. La
-   récolte du jour et ton stock affichent leur valeur au dernier prix de la communauté.
+   **HdV** (rail, avec ta clé) : les prix de l'hôtel des ventes notés à la main par les joueurs d'Aion 2 Todo (aucune
+   source publique n'existe), les mêmes que l'onglet « Prix HdV » du site. Barre de gauche : Derniers prix (un objet par
+   ligne, l'objet choisi dans l'inspecteur avec sa courbe et chaque relevé), Courbes, Noter des prix (Pet Meter F9, capture
+   ou à la main), Vendre ou garder ?, Retirés récemment. Un prix faux se retire pour tout le monde, rétablissable 30 jours.
+   **Inventaire** : ton sac et ton coffre lus par le Pet Meter, par famille (barre de gauche), à la valeur des derniers
+   prix ; l'inspecteur dit où est rangé l'objet choisi et les recettes qui l'utilisent. **Craft** : les recettes notées par
+   les joueurs ; la vue d'ensemble dit quoi fabriquer avec ton stock, et chaque recette (barre de gauche) a sa page : coût,
+   vente, gain, et le tableau de ses ingrédients (décoche ce que tu as déjà : il sort du coût).
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par

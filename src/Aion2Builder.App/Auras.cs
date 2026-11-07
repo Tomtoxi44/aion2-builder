@@ -158,7 +158,7 @@ sealed partial class ScreenViews
             {
                 var on = chosen.Any(a => a.Code == aura.Code);
                 var rank = chosen.FindIndex(a => a.Code == aura.Code);
-                var box = Tip(Clickable(T(on ? "☑" : "☐", 15, on ? Accent.Main : Tok.Muted), () => Toggle(aura), null, Tok.Hover, new Thickness(6, 0)),
+                var box = Tip(Clickable(Tick(on), () => Toggle(aura), null, Tok.Hover, new Thickness(8, 4)),
                     on ? "Retirer ce sort des auras." : chosen.Count >= MaxAuras ? $"{MaxAuras} sorts au plus." : "Montrer ce sort dans les auras.");
                 Control up = on && rank > 0
                     ? Tip(Clickable(T("↑", 13, Tok.Muted, mono: true), () => Up(aura), null, Tok.Hover, new Thickness(6, 0)), "Plus à gauche dans l'overlay.")

@@ -326,7 +326,7 @@ sealed partial class ScreenViews
              "doit se voir). La pastille dit ce qui est lu sur chaque capture ; « Envoyer » note tout d'un coup, sans passer par ici. Le Builder doit " +
              "seulement être installé sur ce PC et ouvert une fois."),
             ("Une capture à la fois",
-             "Win+Maj+S ou Impr. écran sur le Marché du jeu, puis « dernière capture d'écran » plus bas : tu corriges les lignes avant de les noter."),
+             "Win+Maj+S ou Impr. écran sur le Marché du jeu, puis « dernière capture d'écran » ci-dessus : tu corriges les lignes avant de les noter."),
             ("À la main", "Choisis l'objet, tape son prix unitaire, puis « noter »."),
         ];
         var body = new StackPanel { Spacing = 8 };
@@ -449,26 +449,60 @@ sealed partial class ScreenViews
         return priced.Count == 0 ? null : (priced.Sum(x => x.Qty * latest[x.Id.ToString()].Price), list.Count - priced.Count);
     }
 
+    /// <summary>Changer de page de l'écran HdV ; la page Courbes trace d'emblée l'objet choisi (sinon le dernier relevé).</summary>
+    void MarketGo(MarketPage page, List<MarketPrice> here) => update(st =>
+    {
+        st.MarketPage = page;
+        if (page == MarketPage.Chart && st.MarketSeries.All(k => k is null) && (st.MarketItem ?? here.MaxBy(p => p.At)?.ItemKey) is { } first) st.MarketSeries[0] = first;
+    });
+
+    /// <summary>Barre de gauche de l'écran HdV : les derniers prix, les courbes, noter des prix, vendre ou garder, les retraits récents.</summary>
+    SidePanel? MarketSide()
+    {
+        if (!market.Linked || market.Data is not { } data) return null;
+        var shown = MarketShown(data);
+        var here = data.Prices.Where(p => p.Market.Equals(shown, StringComparison.OrdinalIgnoreCase)).ToList();
+        var last = here.MaxBy(p => p.At);
+        var body = new StackPanel();
+        void Item(string icon, MarketPage page, string title, string? badge, IBrush? color, string preview) =>
+            body.Children.Add(SideItem(icon, title, badge, color, preview, s.MarketPage == page, () => MarketGo(page, here)));
+        Item(Icons.List, MarketPage.Prices, "Derniers prix", $"{here.Select(p => p.ItemKey).Distinct().Count()}", Tok.Text2,
+            last is null ? "aucun prix sur ce marché" : $"dernier relevé {Market.Since(last.At)}");
+        Item(Icons.Route, MarketPage.Chart, "Courbes", null, null, "jusqu'à 8 objets sur un graphique");
+        var pending = market.Shot?.Count ?? 0;
+        Item(Icons.Card, MarketPage.Add, "Noter des prix", pending > 0 ? $"{pending}" : null, Tok.Warn,
+            pending > 0 ? $"{Fmt.Plural(pending, "ligne lue", "lignes lues")} à vérifier" : "Pet Meter (F9), capture d'écran ou à la main");
+        Item(Icons.Box, MarketPage.Stock, "Vendre ou garder ?", null, null, "ta récolte en stock, aux prix de ce marché");
+        var removed = data.Removed.Count(p => p.Market.Equals(shown, StringComparison.OrdinalIgnoreCase));
+        if (removed > 0 || s.MarketPage == MarketPage.Removed)
+            Item(Icons.Swap, MarketPage.Removed, "Retirés récemment", $"{removed}", Tok.Muted, "rétablir un prix retiré par erreur");
+        return new SidePanel($"HdV · {data.Label(shown)}", null, body);
+    }
+
+    static string MarketPageTitle(MarketPage page) => page switch
+    {
+        MarketPage.Chart => "Courbes",
+        MarketPage.Add => "Noter des prix",
+        MarketPage.Stock => "Vendre ou garder ?",
+        MarketPage.Removed => "Retirés récemment",
+        _ => "Derniers prix",
+    };
+
     /// <summary>
-    /// Récolte → Prix HdV, présenté comme l'hôtel du jeu : chaque objet à la couleur de son rang (blanc, vert, bleu, jaune), les
-    /// chiffres du marché en tête, un prix à noter, les derniers prix filtrables (recherche, rang, type), la courbe d'un objet avec
-    /// chaque relevé (retirer un prix faux, en deux clics), et les retraits récents à rétablir.
+    /// Écran HdV, présenté comme l'hôtel du jeu : chaque objet à la couleur de son rang (blanc, vert, bleu, jaune). Pages (barre de
+    /// gauche) : les derniers prix (chiffres du marché, filtres, un objet par ligne ; l'objet choisi dans l'inspecteur), les
+    /// courbes, noter des prix, vendre ou garder, les retraits récents à rétablir.
     /// </summary>
     Control MarketScreen(IReadOnlyList<Combat.GatherDay> days)
     {
-        // Écran à part (rail « HdV ») depuis la v1.1.104 ; la Récolte reste à un clic.
-        var back = Choice([("Récolte", false, () => update(st => { st.Screen = Screen.Gather; if (st.GatherDay == "prix") st.GatherDay = null; })), ("Prix HdV", true, () => { })]);
-        const string hint = "L'hôtel de chaque serveur a ses propres prix ; l'hôtel inter-serveurs réunit tous les serveurs de la région. " +
-                            "Choisis celui où tu as vu le prix : la page n'affiche que les prix de ce marché.";
+        const string title = "Hôtel des ventes";
         if (!market.Linked)
-            return Page("Hôtel des ventes · prix de la communauté", back, Card(T("Les prix de l'hôtel des ventes sont notés par les joueurs d'Aion 2 Todo et partagés entre eux. " +
+            return Page(title, null, Card(T("Les prix de l'hôtel des ventes sont notés par les joueurs d'Aion 2 Todo et partagés entre eux. " +
                 "Pour les voir et en noter ici, colle ta clé Aion 2 Todo dans l'écran Familiers du Builder (sur le site : onglet Familiers → Pet Meter → " +
                 "« Afficher ma clé »), ou garde le Pet Meter relié : sa clé est reprise toute seule.", 13, Tok.Muted, wrap: true).WithLineHeight(1.5)));
         if (market.Data is not { } data)
-            return Page("Hôtel des ventes · prix de la communauté", back, T(market.Status ?? "Lecture des prix…", 13, Tok.Muted, wrap: true));
+            return Page(title, null, T(market.Status ?? "Lecture des prix…", 13, Tok.Muted, wrap: true));
 
-        var items = data.Items.GroupBy(i => i.Key).ToDictionary(g => g.Key, g => g.First());
-        MarketItem? ItemOf(string key) => items.GetValueOrDefault(key);
         var blocks = new List<Control?>();
         if (market.Status is { } status) blocks.Add(T(status, 12, Tok.Warn, wrap: true));
 
@@ -487,37 +521,42 @@ sealed partial class ScreenViews
                 update(st => { st.MarketMarket = m.Code; st.MarketItem = null; st.MarketConfirm = null; });
         };
         var here = data.Prices.Where(p => p.Market.Equals(shown, StringComparison.OrdinalIgnoreCase)).ToList();
-        var removedHere = data.Removed.Where(p => p.Market.Equals(shown, StringComparison.OrdinalIgnoreCase)).ToList();
-        // Vue graphique : à la première ouverture, l'objet choisi dans la liste (sinon le dernier relevé) y est déjà tracé.
-        var view = Choice([("liste", !s.MarketChart, () => update(st => st.MarketChart = false)),
-            ("graphique", s.MarketChart, () => update(st =>
-            {
-                st.MarketChart = true;
-                if (st.MarketSeries.All(k => k is null) && (st.MarketItem ?? here.MaxBy(p => p.At)?.ItemKey) is { } first) st.MarketSeries[0] = first;
-            }))]);
         blocks.Add(new StackPanel
         {
-            Spacing = 6,
+            Orientation = Orientation.Horizontal, Spacing = 10,
             Children =
             {
-                new StackPanel
-                {
-                    Orientation = Orientation.Horizontal, Spacing = 10,
-                    Children =
-                    {
-                        T("Marché", 13, weight: FontWeight.Medium).WithMargin(0, 4, 0, 0),
-                        Choice(quick.Select(m => ($"{m.Label}{(m.Prices > 0 ? $" · {m.Prices}" : "")}", m.Code.Equals(shown, StringComparison.OrdinalIgnoreCase),
-                            (Action)(() => update(st => { st.MarketMarket = m.Code; st.MarketItem = null; st.MarketConfirm = null; }))))),
-                        others,
-                        T("Vue", 13, weight: FontWeight.Medium).WithMargin(14, 4, 0, 0),
-                        view,
-                    },
-                },
-                T(hint, 11, Tok.Muted, wrap: true),
+                Tip(T("Marché", 13, weight: FontWeight.Medium).WithMargin(0, 4, 0, 0),
+                    "L'hôtel de chaque serveur a ses propres prix ; l'hôtel inter-serveurs réunit tous les serveurs de la région. Choisis celui où tu as vu " +
+                    "le prix : l'écran n'affiche que les prix de ce marché, et c'est sur lui que tes prix sont notés."),
+                Choice(quick.Select(m => ($"{m.Label}{(m.Prices > 0 ? $" · {m.Prices}" : "")}", m.Code.Equals(shown, StringComparison.OrdinalIgnoreCase),
+                    (Action)(() => update(st => { st.MarketMarket = m.Code; st.MarketItem = null; st.MarketConfirm = null; }))))),
+                others,
             },
         });
-        if (s.MarketChart)
-            return Page("Hôtel des ventes · prix de la communauté", back, blocks.Concat(MarketChartBlocks(data, shown, MarketRows(data, here))).ToArray());
+        var pageTitle = $"{title} · {MarketPageTitle(s.MarketPage)}";
+
+        switch (s.MarketPage)
+        {
+            case MarketPage.Chart:
+                return Page(pageTitle, null, blocks.Concat(MarketChartBlocks(data, shown, MarketRows(data, here))).ToArray());
+            case MarketPage.Add:
+                blocks.Add(MarketPriceForm(data, shown));
+                blocks.Add(ShotCard(data, shown));
+                blocks.Add(HowTo(data.Label(shown)));
+                return Page(pageTitle, null, blocks.ToArray());
+            case MarketPage.Stock:
+                blocks.Add(SellOrKeep(data, shown, days) ?? Card(T("Ton stock de récolte vient du Pet Meter de ce PC (inventory.json, v0.21.0 ou plus, lancé avant " +
+                    "d'entrer en jeu). Sans lui, rien à estimer.", 13, Tok.Muted, wrap: true), "Vendre ou garder ?"));
+                return Page(pageTitle, null, blocks.ToArray());
+            case MarketPage.Removed:
+                blocks.Add(MarketRemovedCard(data, shown));
+                return Page(pageTitle, null, blocks.ToArray());
+        }
+
+        if (market.Shot is { Count: > 0 } waiting)
+            blocks.Add(Clickable(T($"{Fmt.Plural(waiting.Count, "ligne lue", "lignes lues")} sur une capture de l'hôtel attend{(waiting.Count > 1 ? "ent" : "")} ta vérification · ouvrir « Noter des prix »",
+                12, Tok.Warn, wrap: true), () => MarketGo(MarketPage.Add, here), null, Tok.Hover, new Thickness(0, 2)));
 
         // Les chiffres du marché : objets qui ont un prix, relevés de la semaine, le dernier, la valeur de ta récolte du jour.
         var gameToday = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(-7));
@@ -536,16 +575,90 @@ sealed partial class ScreenViews
             lastPrice is null ? "Aucun prix sur ce marché." : $"{lastPrice.ItemName} : {Fmt.Big(lastPrice.Price)} Kinah, par {By(lastPrice)} le {lastPrice.At.ToLocalTime():dd/MM HH:mm}")
             .WithMargin(0, 0, 10, 0));
         kpis.Children.Add(Tip(Kpi("Ta récolte du jour vaut", harvest is { } h ? $"≈ {Fmt.Big(h.Value)} Kinah" : "—", harvest is null ? null : Tok.Good, 20,
-                harvest is { } hn ? "si tu vendais ce que tu as récolté aujourd'hui au dernier prix noté ici" +
-                                    (hn.Missing > 0 ? $" ({Fmt.Plural(hn.Missing, "ressource")} sans prix, pas comptée{(hn.Missing > 1 ? "s" : "")})" : "")
+                harvest is { } hn ? "au dernier prix noté ici" + (hn.Missing > 0 ? $" ({Fmt.Plural(hn.Missing, "ressource")} sans prix, pas comptée{(hn.Missing > 1 ? "s" : "")})" : "")
                     : "aucune ressource récoltée aujourd'hui n'a encore de prix ici"),
             harvest is { } hv ? "Ce que rapporterait ce que tu as récolté aujourd'hui (jour de jeu en cours) si tu le vendais au dernier prix noté de chaque ressource sur ce marché" +
                                 (hv.Missing > 0 ? $" ; {Fmt.Plural(hv.Missing, "ressource")} sans prix ici, pas comptée{(hv.Missing > 1 ? "s" : "")} : note leur prix pour l'avoir en entier." : ".")
                 : "Ce que rapporterait ta récolte du jour au prix de la communauté : aucune ressource récoltée aujourd'hui n'a encore de prix sur ce marché."));
         blocks.Add(kpis);
-        blocks.Add(HowTo(data.Label(shown)));
 
-        // Noter un prix : l'objet (liste avec recherche, sans accents ni majuscules, aussi par type : « anneau », « épées »), le prix, « noter ».
+        // Derniers prix : un objet par ligne, rangés comme l'hôtel du jeu (la récolte par famille, du blanc au jaune, puis
+        // l'équipement) ; filtres par rang et par type ; recherche instantanée ; clic : l'objet dans l'inspecteur.
+        var byItem = MarketRows(data, here);
+        var present = byItem.Select(x => x.Item?.GameGrade).OfType<string>().Distinct().OrderBy(g => db.Grade(g).Rank).ToList();
+        var kinds = byItem.Select(x => x.Item?.IsGathering == true ? "Récolte" : "Équipement et autres").Distinct().ToList();
+        var filtered = byItem
+            .Where(x => s.MarketGrade is null || x.Item?.GameGrade == s.MarketGrade)
+            .Where(x => s.MarketKind is null || (x.Item?.IsGathering == true ? "Récolte" : "Équipement et autres") == s.MarketKind).ToList();
+        var selected = MarketSelected(byItem);
+        if (byItem.Count == 0)
+        {
+            blocks.Add(Card(T($"Aucun prix noté pour l'instant sur ce marché ({data.Label(shown)}) : note le premier (barre de gauche → « Noter des prix »).", 13, Tok.Muted, wrap: true),
+                "Derniers prix de la communauté"));
+            return Page(pageTitle, null, blocks.ToArray());
+        }
+        var query = new TextBox { Text = s.MarketQuery ?? "", PlaceholderText = "filtrer : aria, anneau…", Width = 210 };
+        var filters = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { query } };
+        if (present.Count > 1)
+            filters.Children.Add(Choice(new[] { ("tous les rangs", s.MarketGrade is null, (Action)(() => update(st => st.MarketGrade = null))) }
+                .Concat(present.Select(g => (Market.GradeWord(g), s.MarketGrade == g, (Action)(() => update(st => st.MarketGrade = g)))))));
+        if (kinds.Count > 1)
+            filters.Children.Add(Choice(new[] { ("tout", s.MarketKind is null, (Action)(() => update(st => st.MarketKind = null))) }
+                .Concat(kinds.Select(k => (k == "Récolte" ? "récolte" : "équipement et autres", s.MarketKind == k, (Action)(() => update(st => st.MarketKind = k)))))));
+
+        const string cols = "*,130,110,80,170,96";
+        var rows = new List<(Control Row, string Text)>();
+        foreach (var x in filtered)
+        {
+            var last = x.List[^1];
+            var prev = x.List.Count > 1 ? x.List[^2] : null;
+            var d = prev is null ? 0 : last.Price - prev.Price;
+            var pct = prev is null || prev.Price == 0 ? 0 : d * 100.0 / prev.Price;
+            var grade = x.Item?.GameGrade;
+            var spark = x.List.Count > 1
+                ? (Control)new TimeChart(x.List.TakeLast(20).Select(p => new ChartPoint(p.At, p.Price, $"{p.At.ToLocalTime():dd/MM HH:mm} : {Fmt.Big(p.Price)}")).ToList(),
+                    v => Fmt.Big(v), grade is null ? Accent.Main : MarketBrush(grade), 22, compact: true) { Width = 90, HorizontalAlignment = HorizontalAlignment.Left }
+                : T("—", 12, Tok.Faint, mono: true);
+            var evolution = prev is null ? (Control)T("—", 12, Tok.Muted, mono: true).AlignRight()
+                : Tip(T(d == 0 ? "=" : Math.Abs(pct) < 0.05 ? "≈" : $"{(d > 0 ? "+" : "−")}{Math.Abs(pct):0.#} %", 12, d > 0 ? Tok.Good : d < 0 ? Tok.Bad : Tok.Muted, mono: true).AlignRight(),
+                    d == 0 ? $"Même prix qu'au relevé d'avant ({Fmt.Big(prev.Price)})" : $"{(d > 0 ? "+" : "−")}{Fmt.Big(Math.Abs(d))} Kinah depuis le relevé d'avant ({Fmt.Big(prev.Price)}, {prev.At.ToLocalTime():dd/MM})");
+            var when = T($"{Market.Since(last.At)} · {By(last)}", 12, Tok.Muted);
+            var key = x.Key;
+            var row = TableRow(Columns(cols, MarketItemLine(x.Item, last.ItemName),
+                T(x.Item?.Kind ?? "noté par son nom", 11, Tok.Muted),
+                T(Fmt.Big(last.Price), 13, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(),
+                evolution, when, spark), x.Key == selected?.Key, () => update(st => { st.MarketItem = key; st.MarketConfirm = null; }));
+            rows.Add((row, $"{last.ItemName} {x.Item?.Category}"));
+        }
+        var none = T("Aucun objet ne correspond à ce filtre.", 12, Tok.Muted).WithMargin(20, 8, 20, 8);
+        void Filter()
+        {
+            var shownRows = 0;
+            foreach (var (row, text) in rows) { row.IsVisible = Market.Matches(query.Text, text); if (row.IsVisible) shownRows++; }
+            none.IsVisible = shownRows == 0;
+        }
+        query.TextChanged += (_, _) => { s.MarketQuery = query.Text; Filter(); };
+        Filter();
+        blocks.Add(filters);
+        blocks.Add(TableCard("Derniers prix de la communauté", T($"{Fmt.Plural(filtered.Count, "objet")} · prix unitaire en Kinah · clic : le détail à droite", 11, Tok.Muted, mono: true),
+            TableHeader(cols, "Objet", "Type", "Prix", "Évolution", "Dernier relevé", "Tendance"), rows.Select(x => x.Row).Append((Control)none)));
+        blocks.Add(T("Prix unitaires notés à la main par les joueurs d'Aion 2 Todo (aucune source publique n'existe), avec le pseudo de leur auteur : " +
+                     "les mêmes que l'onglet « Prix HdV » du site. Un prix faux se retire par n'importe qui (inspecteur → « retirer ») et se rétablit pendant 30 jours.",
+            11, Tok.Muted, wrap: true).WithLineHeight(1.4));
+        return Page(pageTitle, null, blocks.ToArray());
+    }
+
+    /// <summary>L'objet choisi dans la liste des prix, sinon le dernier relevé.</summary>
+    (string Key, MarketItem? Item, List<MarketPrice> List)? MarketSelected(List<(string Key, MarketItem? Item, List<MarketPrice> List)> byItem)
+    {
+        if (byItem.Count == 0) return null;
+        var selected = byItem.FirstOrDefault(x => x.Key == s.MarketItem);
+        return selected.Key is not null ? selected : byItem.MaxBy(x => x.List[^1].At);
+    }
+
+    /// <summary>Noter un prix à la main : l'objet (liste avec recherche, sans accents ni majuscules, aussi par type), le prix, « noter ».</summary>
+    Control MarketPriceForm(MarketData data, string shown)
+    {
         var catalog = data.Items.OrderByDescending(i => i.Gathered).ThenByDescending(i => i.IsGathering).ThenBy(i => i.Name, French)
             .DistinctBy(i => Market.Fold(i.Name)).ToList();
         // Filtre et modèle AVANT FilterMode et Text : un texte déjà là lance la recherche tout de suite, et Avalonia plante si le
@@ -584,136 +697,107 @@ sealed partial class ScreenViews
         if (s.MarketError is { } err) form.Children.Add(T(err, 12, Tok.Bad, wrap: true));
         form.Children.Add(T($"Noté pour le marché « {data.Label(shown)} », partagé avec tous les joueurs d'Aion 2 Todo avec ton pseudo ; la date est celle où tu le notes. " +
                             "Un objet hors liste est noté sous le nom que tu tapes.", 11, Tok.Muted, wrap: true));
-        blocks.Add(Card(form, "Noter un prix vu à l'hôtel des ventes", null, new Thickness(16, 10, 16, 12)));
-        blocks.Add(ShotCard(data, shown));
-        blocks.Add(SellOrKeep(data, shown, days));
+        return Card(form, "Noter un prix à la main", null, new Thickness(16, 10, 16, 12));
+    }
 
-        // Derniers prix : un objet par ligne, rangés comme l'hôtel du jeu (la récolte par famille, du blanc au jaune, puis
-        // l'équipement) ; filtres par rang et par type ; recherche instantanée ; clic : sa courbe plus bas.
-        var byItem = MarketRows(data, here);
-        var present = byItem.Select(x => x.Item?.GameGrade).OfType<string>().Distinct().OrderBy(g => db.Grade(g).Rank).ToList();
-        var kinds = byItem.Select(x => x.Item?.IsGathering == true ? "Récolte" : "Équipement et autres").Distinct().ToList();
-        var filtered = byItem
-            .Where(x => s.MarketGrade is null || x.Item?.GameGrade == s.MarketGrade)
-            .Where(x => s.MarketKind is null || (x.Item?.IsGathering == true ? "Récolte" : "Équipement et autres") == s.MarketKind).ToList();
-        var selected = byItem.FirstOrDefault(x => x.Key == s.MarketItem);
-        if (selected.Key is null && byItem.Count > 0) selected = byItem.MaxBy(x => x.List[^1].At);
-        if (byItem.Count == 0)
-            blocks.Add(Card(T($"Aucun prix noté pour l'instant sur ce marché ({data.Label(shown)}) : note le premier au-dessus.", 13, Tok.Muted), "Derniers prix de la communauté"));
-        else
+    /// <summary>Retirés ces 30 derniers jours sur ce marché : rétablir un prix retiré par erreur.</summary>
+    Control MarketRemovedCard(MarketData data, string shown)
+    {
+        var removed = data.Removed.Where(p => p.Market.Equals(shown, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (removed.Count == 0) return Card(T("Aucun prix retiré ces 30 derniers jours sur ce marché.", 13, Tok.Muted), "Retirés récemment");
+        var items = data.Items.GroupBy(i => i.Key).ToDictionary(g => g.Key, g => g.First());
+        const string remCols = "*,110,260,90";
+        return TableCard("Retirés récemment", T("30 derniers jours", 11, Tok.Muted),
+            TableHeader(remCols, "Objet", "Prix", "Noté · retiré", ""),
+            removed.Select(p => (Control)new Border
+            {
+                Padding = new Thickness(20, 4),
+                Child = Columns(remCols, MarketItemLine(items.GetValueOrDefault(p.ItemKey), p.ItemName), T(Fmt.Big(p.Price), 12, Tok.Text2, mono: true).AlignRight(),
+                    T($"par {p.By ?? "un compte supprimé"} le {p.At.ToLocalTime():dd/MM} · retiré par {p.RemovedBy ?? "un compte supprimé"} le {p.RemovedAt.ToLocalTime():dd/MM}", 11, Tok.Muted, wrap: true),
+                    Right(Clickable(T("rétablir", 11, Accent.Main, mono: true), () => market.Restore(p), null, Tok.Hover, new Thickness(6, 2)))),
+            }));
+    }
+
+    /// <summary>Un objet en titre d'inspecteur : barre de la couleur de son rang, nom coloré (sur plusieurs lignes), sa catégorie dessous.</summary>
+    Control ItemTitle(MarketItem? item, string name)
+    {
+        var grade = item?.GameGrade;
+        var bar = new Border { Width = 3, CornerRadius = new CornerRadius(1.5), Margin = new Thickness(0, 2, 10, 2), Background = grade is null ? Tok.Border : MarketBrush(grade) };
+        DockPanel.SetDock(bar, Dock.Left);
+        var text = new StackPanel { Spacing = 3, Children = { T(name, 17, MarketBrush(grade), FontWeight.SemiBold, wrap: true) } };
+        if (item is not null)
+            text.Children.Add(T(item.Kind + (grade is null || item.IsGathering ? "" : $" · {Market.GradeWord(grade)}") + (item.Gathered ? " · récolté" : ""), 12, Tok.Muted, wrap: true));
+        return new DockPanel { Children = { bar, text } };
+    }
+
+    /// <summary>Recettes notées qui utilisent cet objet (clic : la recette dans l'écran Craft).</summary>
+    Control? UsedInRecipes(MarketData data, string key, string name)
+    {
+        var uses = (data.Recipes ?? []).Where(rc => rc.Inputs.Any(p => p.Key == key || Market.Fold(p.Name) == Market.Fold(name))).ToList();
+        if (uses.Count == 0) return null;
+        var list = new StackPanel { Spacing = 2, Children = { Label("Sert à fabriquer") } };
+        foreach (var rc in uses.Take(8))
         {
-            var query = new TextBox { Text = s.MarketQuery ?? "", PlaceholderText = "filtrer : aria, anneau…", Width = 210 };
-            var filters = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { query } };
-            if (present.Count > 1)
-                filters.Children.Add(Choice(new[] { ("tous les rangs", s.MarketGrade is null, (Action)(() => update(st => st.MarketGrade = null))) }
-                    .Concat(present.Select(g => (Market.GradeWord(g), s.MarketGrade == g, (Action)(() => update(st => st.MarketGrade = g)))))));
-            if (kinds.Count > 1)
-                filters.Children.Add(Choice(new[] { ("tout", s.MarketKind is null, (Action)(() => update(st => st.MarketKind = null))) }
-                    .Concat(kinds.Select(k => (k == "Récolte" ? "récolte" : "équipement et autres", s.MarketKind == k, (Action)(() => update(st => st.MarketKind = k)))))));
-
-            const string cols = "*,130,110,80,170,96";
-            var rows = new List<(Control Row, string Text)>();
-            foreach (var x in filtered)
-            {
-                var last = x.List[^1];
-                var prev = x.List.Count > 1 ? x.List[^2] : null;
-                var d = prev is null ? 0 : last.Price - prev.Price;
-                var pct = prev is null || prev.Price == 0 ? 0 : d * 100.0 / prev.Price;
-                var grade = x.Item?.GameGrade;
-                var spark = x.List.Count > 1
-                    ? (Control)new TimeChart(x.List.TakeLast(20).Select(p => new ChartPoint(p.At, p.Price, $"{p.At.ToLocalTime():dd/MM HH:mm} : {Fmt.Big(p.Price)}")).ToList(),
-                        v => Fmt.Big(v), grade is null ? Accent.Main : MarketBrush(grade), 22, compact: true) { Width = 90, HorizontalAlignment = HorizontalAlignment.Left }
-                    : T("—", 12, Tok.Faint, mono: true);
-                var evolution = prev is null ? (Control)T("—", 12, Tok.Muted, mono: true).AlignRight()
-                    : Tip(T(d == 0 ? "=" : $"{(d > 0 ? "+" : "−")}{Math.Abs(pct):0.#} %", 12, d > 0 ? Tok.Good : d < 0 ? Tok.Bad : Tok.Muted, mono: true).AlignRight(),
-                        d == 0 ? $"Même prix qu'au relevé d'avant ({Fmt.Big(prev.Price)})" : $"{(d > 0 ? "+" : "−")}{Fmt.Big(Math.Abs(d))} Kinah depuis le relevé d'avant ({Fmt.Big(prev.Price)}, {prev.At.ToLocalTime():dd/MM})");
-                var when = Tip(T($"{Market.Since(last.At)} · {By(last)}" + (x.List.Count > 1 ? $" · {x.List.Count}" : ""), 12, Tok.Muted),
-                    $"Dernier relevé le {last.At.ToLocalTime():dddd dd/MM à HH:mm}, par {By(last)}" + (x.List.Count > 1 ? $" ; {x.List.Count} relevés sur ce marché" : ""));
-                var row = TableRow(Columns(cols, MarketItemLine(x.Item, last.ItemName),
-                    T(x.Item?.Kind ?? "noté par son nom", 11, Tok.Muted),
-                    T(Fmt.Big(last.Price), 13, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(),
-                    evolution, when, spark), x.Key == selected.Key, () => update(st => { st.MarketItem = x.Key; st.MarketConfirm = null; }));
-                rows.Add((row, $"{last.ItemName} {x.Item?.Category}"));
-            }
-            var none = T("Aucun objet ne correspond à ce filtre.", 12, Tok.Muted).WithMargin(20, 8, 20, 8);
-            void Filter()
-            {
-                var shownRows = 0;
-                foreach (var (row, text) in rows) { row.IsVisible = Market.Matches(query.Text, text); if (row.IsVisible) shownRows++; }
-                none.IsVisible = shownRows == 0;
-            }
-            query.TextChanged += (_, _) => { s.MarketQuery = query.Text; Filter(); };
-            Filter();
-            blocks.Add(filters);
-            blocks.Add(TableCard("Derniers prix de la communauté", T($"{Fmt.Plural(filtered.Count, "objet")} · prix unitaire en Kinah", 11, Tok.Muted, mono: true),
-                TableHeader(cols, "Objet", "Type", "Prix", "Évolution", "Dernier relevé", "Tendance"), rows.Select(x => x.Row).Append((Control)none)));
+            var id = rc.Id;
+            var link = Clickable(T(rc.Output.Name, 12, Accent.Main, wrap: true), () => update(st => { st.Screen = Screen.Craft; st.CraftPage = CraftPage.Recipe; st.CraftRecipe = id; }),
+                null, Tok.Hover, new Thickness(4, 2));
+            link.HorizontalAlignment = HorizontalAlignment.Left;
+            list.Children.Add(Tip(link, "Ouvrir la recette dans l'écran Craft"));
         }
+        return list;
+    }
 
-        // L'objet choisi : sa courbe, ses chiffres et chaque relevé (le plus récent d'abord).
-        if (selected.Key is not null)
+    /// <summary>Inspecteur de l'écran HdV (page des derniers prix) : l'objet choisi, ses chiffres, sa courbe, chaque relevé (retirer un prix faux).</summary>
+    Control? MarketInspector()
+    {
+        if (s.MarketPage != MarketPage.Prices || !market.Linked || market.Data is not { } data) return null;
+        var panel = new StackPanel { Children = { SectionHeader("Inspecteur · objet") } };
+        var shown = MarketShown(data);
+        var here = data.Prices.Where(p => p.Market.Equals(shown, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (MarketSelected(MarketRows(data, here)) is not { } selected) return panel;
+        var list = selected.List;
+        var body = new StackPanel { Spacing = 14, Margin = new Thickness(14) };
+        panel.Children.Add(body);
+        body.Children.Add(ItemTitle(selected.Item, list[^1].ItemName));
+        body.Children.Add(KeyValue(
+        [
+            ("dernier prix", $"{Fmt.Big(list[^1].Price)} · {Market.Since(list[^1].At)}", Tok.Text),
+            ("moyenne", Fmt.Big(list.Average(p => (double)p.Price)), null),
+            ("plus bas", Fmt.Big(list.Min(p => p.Price)), Tok.Good),
+            ("plus haut", Fmt.Big(list.Max(p => p.Price)), Tok.Bad),
+            ("relevés", $"{list.Count} sur {data.Label(shown)}", null),
+        ]));
+        var color = selected.Item?.GameGrade is { } sg ? MarketBrush(sg) : Accent.Main;
+        if (list.Count > 1)
+            body.Children.Add(new TimeChart(list.Select(p => new ChartPoint(p.At, p.Price, $"{p.At.ToLocalTime():ddd dd/MM HH:mm} : {Fmt.Big(p.Price)} Kinah, par {By(p)}")).ToList(),
+                v => Fmt.Big(v), color, 130));
+        else body.Children.Add(T("Un seul relevé : la courbe se dessine dès le deuxième.", 12, Tok.Muted, wrap: true));
+        if (UsedInRecipes(data, selected.Key, list[^1].ItemName) is { } uses) body.Children.Add(uses);
+
+        var entries = new StackPanel { Spacing = 0, Children = { Label("Relevés · le plus récent d'abord").WithMargin(0, 0, 0, 6) } };
+        foreach (var p in Enumerable.Reverse(list).Take(30))
         {
-            var list = selected.List;
-            var body = new StackPanel { Spacing = 12 };
-            body.Children.Add(MarketItemLine(selected.Item, list[^1].ItemName, 17, withKind: true));
-            var stats = new Avalonia.Controls.Primitives.UniformGrid { Columns = 4 };
-            stats.Children.Add(Kpi("Dernier", Fmt.Big(list[^1].Price)).WithMargin(0, 0, 10, 0));
-            stats.Children.Add(Kpi("Moyenne", Fmt.Big(list.Average(p => (double)p.Price))).WithMargin(0, 0, 10, 0));
-            stats.Children.Add(Kpi("Plus bas", Fmt.Big(list.Min(p => p.Price)), Tok.Good).WithMargin(0, 0, 10, 0));
-            stats.Children.Add(Kpi("Plus haut", Fmt.Big(list.Max(p => p.Price)), Tok.Bad));
-            body.Children.Add(stats);
-            var color = selected.Item?.GameGrade is { } sg ? MarketBrush(sg) : Accent.Main;
-            if (list.Count > 1)
-            {
-                var points = list.Select(p => new ChartPoint(p.At, p.Price, $"{p.At.ToLocalTime():ddd dd/MM HH:mm} : {Fmt.Big(p.Price)} Kinah, par {By(p)}")).ToList();
-                body.Children.Add(new TimeChart(points, v => Fmt.Big(v), color, 150));
-            }
-            else body.Children.Add(T("Un seul relevé : la courbe se dessine dès le deuxième.", 12, Tok.Muted));
-
-            const string entryCols = "130,*,110,170";
-            var entries = new StackPanel { Children = { TableHeader(entryCols, "Date", "Noté par", "Prix", "") } };
-            foreach (var p in Enumerable.Reverse(list).Take(30))
-            {
-                Control action = s.MarketConfirm == p.Id
-                    ? new StackPanel
+            var price = T(Fmt.Big(p.Price), 13, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight();
+            var who = new StackPanel { Spacing = 1, Children = { T(p.At.ToLocalTime().ToString("dd/MM/yy HH:mm"), 11, Tok.Text2, mono: true), T(By(p), 11, p.Mine ? Accent.Main : Tok.Muted) } };
+            Control action = s.MarketConfirm == p.Id
+                ? new StackPanel
+                {
+                    Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Right,
+                    Children =
                     {
-                        Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Right,
-                        Children =
-                        {
-                            Clickable(T("retirer pour tous", 11, Tok.Bad, FontWeight.SemiBold, mono: true), () => { update(st => st.MarketConfirm = null); market.Remove(p); }, null, Tok.Hover, new Thickness(6, 2)),
-                            Clickable(T("non", 11, Tok.Muted, mono: true), () => update(st => st.MarketConfirm = null), null, Tok.Hover, new Thickness(6, 2)),
-                        },
-                    }
-                    : Right(Tip(Clickable(T("retirer", 11, Tok.Muted, mono: true), () => update(st => st.MarketConfirm = p.Id), null, Tok.Hover, new Thickness(6, 2)),
-                        "Un prix faux (faute de frappe, farce) : il disparaît pour tout le monde, et se rétablit pendant 30 jours."));
-                entries.Children.Add(new Border
-                {
-                    Padding = new Thickness(20, 4),
-                    Child = Columns(entryCols, T(p.At.ToLocalTime().ToString("dd/MM/yy HH:mm"), 12, Tok.Text2, mono: true), T(By(p), 12, p.Mine ? Accent.Main : Tok.Text2),
-                        T(Fmt.Big(p.Price), 12, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(), action),
-                });
-            }
-            body.Children.Add(entries);
-            blocks.Add(Card(body, "Prix de l'objet choisi", T(Fmt.Plural(list.Count, "relevé"), 11, Tok.Muted, mono: true), new Thickness(12, 10, 12, 8)));
+                        Clickable(T("retirer pour tous", 11, Tok.Bad, FontWeight.SemiBold, mono: true), () => { update(st => st.MarketConfirm = null); market.Remove(p); }, null, Tok.Hover, new Thickness(4, 2)),
+                        Clickable(T("non", 11, Tok.Muted, mono: true), () => update(st => st.MarketConfirm = null), null, Tok.Hover, new Thickness(4, 2)),
+                    },
+                }
+                : Right(Tip(Clickable(T("retirer", 11, Tok.Muted, mono: true), () => update(st => st.MarketConfirm = p.Id), null, Tok.Hover, new Thickness(4, 2)),
+                    "Un prix faux (faute de frappe, farce) : il disparaît pour tout le monde, et se rétablit pendant 30 jours."));
+            entries.Children.Add(new Border
+            {
+                Padding = new Thickness(0, 5), BorderBrush = Tok.RowLine2, BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = ColumnsSpaced("*,90,Auto", 8, who, price, action),
+            });
         }
-
-        // Retirés ces 30 derniers jours : rétablir un prix retiré par erreur.
-        if (removedHere.Count > 0)
-        {
-            const string remCols = "*,110,260,90";
-            blocks.Add(TableCard("Retirés récemment", T("30 derniers jours", 11, Tok.Muted),
-                TableHeader(remCols, "Objet", "Prix", "Noté · retiré", ""),
-                removedHere.Select(p => (Control)new Border
-                {
-                    Padding = new Thickness(20, 4),
-                    Child = Columns(remCols, MarketItemLine(ItemOf(p.ItemKey), p.ItemName), T(Fmt.Big(p.Price), 12, Tok.Text2, mono: true).AlignRight(),
-                        T($"par {p.By ?? "un compte supprimé"} le {p.At.ToLocalTime():dd/MM} · retiré par {p.RemovedBy ?? "un compte supprimé"} le {p.RemovedAt.ToLocalTime():dd/MM}", 11, Tok.Muted, wrap: true),
-                        Right(Clickable(T("rétablir", 11, Accent.Main, mono: true), () => market.Restore(p), null, Tok.Hover, new Thickness(6, 2)))),
-                })));
-        }
-
-        blocks.Add(T("Prix unitaires notés à la main par les joueurs d'Aion 2 Todo (aucune source publique n'existe), avec le pseudo de leur auteur : " +
-                     "les mêmes que l'onglet « Prix HdV » du site. Couleurs de rareté du jeu : blanc, vert, bleu, jaune. Un prix faux se retire par " +
-                     "n'importe qui et se rétablit pendant 30 jours.", 11, Tok.Muted, wrap: true).WithLineHeight(1.4));
-        return Page("Hôtel des ventes · prix de la communauté", back, blocks.ToArray());
+        body.Children.Add(entries);
+        return panel;
     }
 }
