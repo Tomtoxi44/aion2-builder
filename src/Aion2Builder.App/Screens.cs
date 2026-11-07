@@ -21,7 +21,7 @@ enum Screen { Import, Home, Stats, Gear, Skills, Build, Combat, Daeva, Pets, Sim
 enum GearPage { Overview, Roadmap, Pieces, Enchant, Stones, Arcana, Optimize }
 
 /// <summary>Sous-pages de l'écran Compétences.</summary>
-enum SkillPage { Overview, Specs, Moves, Stigmas, Macro }
+enum SkillPage { Overview, Specs, Moves, Stigmas, Macro, Auras }
 
 /// <summary>Sous-pages de l'écran Build.</summary>
 enum BuildPage { Compare, Rotations, Differences }
@@ -157,7 +157,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
     public static readonly (SkillPage Page, string Title)[] SkillPages =
     [
         (SkillPage.Overview, "Vue d'ensemble"), (SkillPage.Specs, "Spécialisations"), (SkillPage.Moves, "Déplacements"),
-        (SkillPage.Stigmas, "Stigmas"), (SkillPage.Macro, "Macro"),
+        (SkillPage.Stigmas, "Stigmas"), (SkillPage.Macro, "Macro"), (SkillPage.Auras, "Auras de recharge"),
     ];
 
     public static readonly (BuildPage Page, string Title)[] BuildPages =
@@ -1133,6 +1133,9 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         var macro = MacroAdvisor.Plan(db, r);
         Page(Icons.Play, SkillPage.Macro, macro.Lines.Count > 0 ? $"{macro.Lines.Count}" : "—", Accent.Main,
             macro.Lines.Count > 0 ? "les lignes et la macro à préparer en jeu" : "pas de rotation connue");
+        var auras = AuraStore.For(r.Character.Name);
+        Page(Icons.Star, SkillPage.Auras, auras.On && auras.List.Count > 0 ? $"{auras.List.Count}" : "—", auras.On && auras.List.Count > 0 ? Accent.Main : Tok.Muted,
+            "tes sorts prêts, au-dessus du jeu (Pet Meter)");
         return new SidePanel("Compétences", null, body);
     }
 
@@ -3020,6 +3023,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
             SkillPage.Stigmas => Page($"Compétences · stigmas ({db.Settings.Stigmas.Slots} emplacements) · {Mode}", null, StigmasBlock(sk)),
             SkillPage.Specs => SpecsPage(),
             SkillPage.Macro => MacroPage(),
+            SkillPage.Auras => AurasPage(),
             _ => SkillsOverview(),
         };
     }
