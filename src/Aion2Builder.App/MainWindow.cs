@@ -30,7 +30,7 @@ sealed record UiPrefs(string Region = "eu", string Server = "", string Name = ""
     List<string>? Tabs = null, double InspectorWidth = 340, bool InspectorHidden = false, int AutoRefreshHours = 0,
     List<string>? Mine = null, bool BottomHidden = false, double BottomHeight = 190, string BottomTab = "advice", List<string>? RailOrder = null, string GearPage = "Overview", string SkillPage = "Overview", string BuildPage = "Compare", bool SideHidden = false,
     bool TipsSeen = false, int UiVersion = 1, bool DetailsByNeed = false, bool AutoInstall = true, string? AutoInstallFailed = null,
-    string? PetMeterExe = null)
+    string? PetMeterExe = null, List<string>? CraftSkip = null)
 {
     static string PathOf => System.IO.Path.Combine(AppPaths.Root, "ui.json");
 
@@ -227,6 +227,7 @@ public sealed class MainWindow : Window
                 tabs.Add(path);
                 opened[path] = saved;
             }
+        foreach (var skip in prefs.CraftSkip ?? []) state.CraftSkip.Add(skip);
         var last = prefs.LastFile is not null && opened.ContainsKey(prefs.LastFile) ? prefs.LastFile : tabs.FirstOrDefault();
         if (last is not null)
         {
@@ -378,7 +379,8 @@ public sealed class MainWindow : Window
     void Update(Action<UiState> change)
     {
         change(state);
-        prefs = prefs with { Screen = state.Screen.ToString(), GearPage = state.GearPage.ToString(), SkillPage = state.SkillPage.ToString(), BuildPage = state.BuildPage.ToString(), DetailsByNeed = state.ByNeed };
+        prefs = prefs with { Screen = state.Screen.ToString(), GearPage = state.GearPage.ToString(), SkillPage = state.SkillPage.ToString(), BuildPage = state.BuildPage.ToString(), DetailsByNeed = state.ByNeed,
+            CraftSkip = state.CraftSkip.Count == 0 ? null : [.. state.CraftSkip.Order(StringComparer.Ordinal)] };
         prefs.Save();
         Render();
     }

@@ -85,6 +85,8 @@ sealed class UiState
     public (int Id, string Name)? CraftUndo { get; set; }
     /// <summary>Compte rendu de la dernière capture de recette lue (ce qui a été lu, complété, ce qui reste à compléter).</summary>
     public string? CraftShotStatus { get; set; }
+    /// <summary>Écran Craft : ingrédients sortis du coût (« id de recette:clé »), comme l'arme précédente qu'on a déjà ; gardés dans ui.json.</summary>
+    public HashSet<string> CraftSkip { get; } = [];
     /// <summary>Écran Craft → « Objets du PNJ » : saisie d'un objet (nom, prix, onglet), erreur, liste dépliée.</summary>
     public string NpcName { get; set; } = "";
     public string NpcPrice { get; set; } = "";

@@ -215,7 +215,11 @@ sealed partial class ScreenViews
             if (p.Npc is null && hdvPrices.PriceOf(p)?.Price is { } h && h < n.Price) return p;
             return p with { Npc = n.Price };
         }
-        var recipes = (data.Recipes ?? []).Select(rc => rc with { Inputs = rc.Inputs.Select(Priced).ToList() }).ToList();
+        var full = (data.Recipes ?? []).Select(rc => rc with { Inputs = rc.Inputs.Select(Priced).ToList() }).ToList();
+        // Ingrédients sortis du coût par un clic (tu les as déjà, comme l'arme précédente) : ni dans le coût, ni dans « tu peux en
+        // faire » ; ils restent affichés, barrés, dans la recette.
+        bool Skipped(CraftRecipe rc, RecipePart p) => s.CraftSkip.Contains($"{rc.Id}:{p.Key}");
+        var recipes = full.Select(rc => rc with { Inputs = rc.Inputs.Where(p => !Skipped(rc, p)).ToList() }).ToList();
         var taxNote = shown.StartsWith('*') ? $"{tax:P0} (notes coréennes, à vérifier en jeu)" : $"{tax:P0}";
         var book = new CraftBook(data, latest, tax, recipes);
 
@@ -229,16 +233,16 @@ sealed partial class ScreenViews
         var byName = entries?.Where(e => e.Family != "Sans nom").GroupBy(e => Market.Fold(e.Name)).ToDictionary(g => g.Key, g => g.Sum(e => e.Qty)) ?? [];
         long? HaveOf(RecipePart p) => entries is null ? null : byKey.TryGetValue(p.Key, out var q) ? q : byName.GetValueOrDefault(Market.Fold(p.Name));
 
-        var plans = recipes.Select(rc =>
+        var plans = full.Zip(recipes, (shownRc, rc) =>
         {
-            var parts = rc.Inputs.Select(p => (Part: p, Item: book.ItemOf(p), Have: HaveOf(p))).ToList();
+            var parts = shownRc.Inputs.Select(p => (Part: p, Item: book.ItemOf(p), Have: HaveOf(p))).ToList();
             var costing = book.Cost(rc);
             int? canMake = null;
             string? limit = null;
             if (entries is not null)
             {
                 // Les objets du PNJ s'achètent au besoin : ils ne limitent que par les Kinah.
-                var counts = parts.Where(x => x.Part.Npc is null).Select(x => (Name: x.Part.Name, N: (int)Math.Min(int.MaxValue, (x.Have ?? 0) / x.Part.Qty))).ToList();
+                var counts = parts.Where(x => x.Part.Npc is null && !Skipped(rc, x.Part)).Select(x => (Name: x.Part.Name, N: (int)Math.Min(int.MaxValue, (x.Have ?? 0) / x.Part.Qty))).ToList();
                 var spend = costing.Npc + costing.Fee;
                 if (spend > 0) counts.Add(("Kinah", (int)Math.Min(int.MaxValue, kinahHave / spend)));
                 if (counts.Count > 0)
@@ -322,23 +326,36 @@ sealed partial class ScreenViews
                     },
                 };
             // Les ingrédients : quantité par fabrication, ton stock entre parenthèses (en orange s'il n'y en a pas assez),
-            // le prix à l'unité des objets du PNJ.
+            // le prix à l'unité des objets du PNJ. Un clic sort un ingrédient du coût (tu l'as déjà) ou l'y remet.
             var parts = new WrapPanel();
+            var skipped = new List<string>();
             foreach (var x in p.Parts)
             {
-                var enough = x.Have is not { } h || h >= x.Part.Qty || x.Part.Npc is not null;
-                parts.Children.Add(new StackPanel
+                var off = Skipped(rc, x.Part);
+                if (off) skipped.Add(x.Part.Name);
+                var enough = off || x.Have is not { } h || h >= x.Part.Qty || x.Part.Npc is not null;
+                var name = T(x.Part.Name, 11, off ? Tok.Faint : x.Item?.GameGrade is { } g ? MarketBrush(g) : Tok.Text2);
+                if (off) name.TextDecorations = TextDecorations.Strikethrough;
+                var skipKey = $"{rc.Id}:{x.Part.Key}";
+                var chip = Clickable(new StackPanel
                 {
-                    Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 12, 0),
+                    Orientation = Orientation.Horizontal,
                     Children =
                     {
-                        T($"{x.Part.Qty} ", 11, Tok.Text2, mono: true),
-                        T(x.Part.Name, 11, x.Item?.GameGrade is { } g ? MarketBrush(g) : Tok.Text2),
-                        x.Part.Npc is { } unit ? T($" · PNJ {Fmt.Big(unit)}/u", 11, Tok.Muted, mono: true)
+                        T($"{x.Part.Qty} ", 11, off ? Tok.Faint : Tok.Text2, mono: true),
+                        name,
+                        off ? T(" · pas compté", 11, Tok.Faint, mono: true)
+                            : x.Part.Npc is { } unit ? T($" · PNJ {Fmt.Big(unit)}/u", 11, Tok.Muted, mono: true)
                             : x.Have is { } have ? T($" ({Fmt.Big(have)})", 11, enough ? Tok.Muted : Tok.Warn, mono: true) : new Panel(),
                     },
-                });
+                }, () => update(st => { if (!st.CraftSkip.Remove(skipKey)) st.CraftSkip.Add(skipKey); }), null, Tok.Hover, new Thickness(3, 1));
+                chip.Margin = new Thickness(-3, 0, 9, 0);
+                parts.Children.Add(Tip(chip, off
+                    ? $"{x.Part.Name} n'est pas compté dans le coût de cette recette (tu l'as déjà). Clic : le compter à nouveau."
+                    : $"Clic : ne pas compter {x.Part.Name} dans le coût de cette recette, si tu l'as déjà (ton arme précédente, par exemple). " +
+                      "Le coût devient celui des autres matériaux. Seulement pour toi ; tes prix et ceux des autres joueurs ne changent pas."));
             }
+            var skipText = skipped.Count == 0 ? "" : $" Pas compté (tu l'as déjà) : {string.Join(", ", skipped)} ; clic sur l'ingrédient pour le compter.";
             if (rc.Kinah > 0) parts.Children.Add(T($"+ {Fmt.Big(rc.Kinah)} Kinah", 11, Tok.Text2, mono: true));
             var by = T($"notée par {(rc.Mine ? "toi" : rc.By ?? "un compte supprimé")} {Market.Since(rc.At)}{(rc.Note is { } n ? $" · {n}" : "")}", 10, Tok.Faint, mono: true);
             var left = new StackPanel { Spacing = 2, Children = { head, parts, by } };
@@ -356,7 +373,7 @@ sealed partial class ScreenViews
                                                   "Note leur prix (écran HdV) ou leur recette pour le coût complet.";
             var costTip = p.Cost is null ? "" : $"Pour une fabrication : ingrédients de l'hôtel vendus tels quels {Fmt.Big(p.C.Inputs!.Value)} Kinah (taxe déduite)" +
                 (p.C.Chained.Count > 0 ? $", dont {string.Join(", ", p.C.Chained)} chiffré par sa recette" : "") +
-                (p.C.Npc > 0 ? $", achats au PNJ {Fmt.Big(p.C.Npc)}" : "") + (p.C.Fee > 0 ? $", fabrication {Fmt.Big(p.C.Fee)}" : "") + "." + uncountedText;
+                (p.C.Npc > 0 ? $", achats au PNJ {Fmt.Big(p.C.Npc)}" : "") + (p.C.Fee > 0 ? $", fabrication {Fmt.Big(p.C.Fee)}" : "") + "." + uncountedText + skipText;
 
             Control verdict;
             if (p.Gain is { } gain)
@@ -366,7 +383,7 @@ sealed partial class ScreenViews
                              (p.C.Npc > 0 ? ", les achats au PNJ" : "") + (p.C.Fee > 0 ? ", le coût de fabrication" : "") + ")." +
                              (p.CanMake is > 0 ? $" Avec ton stock ({Fmt.Plural(p.CanMake.Value, "fabrication")}) : {(gain >= 0 ? "+" : "−")}{Fmt.Big(Math.Abs(gain) * p.CanMake.Value)} Kinah." : "") +
                              (p.Flip is { } f ? $" En achetant les ingrédients à l'hôtel : {(f >= 0 ? "+" : "−")}{Fmt.Big(Math.Abs(f))} par fabrication." : "") +
-                             $" Prix : derniers notés sur {data.Label(shown)}" + (p.C.Oldest is { } o ? $", le plus ancien du {o.ToLocalTime():dd/MM}." : ".");
+                             $" Prix : derniers notés sur {data.Label(shown)}" + (p.C.Oldest is { } o ? $", le plus ancien du {o.ToLocalTime():dd/MM}." : ".") + skipText;
                 var verdictLines = new StackPanel
                 {
                     Children =
@@ -389,12 +406,13 @@ sealed partial class ScreenViews
                     },
                 };
                 if (!p.Complete) forSelf.Children.Add(T($"sans prix : {string.Join(", ", p.C.Uncounted.Take(2))}{(p.C.Uncounted.Count > 2 ? "…" : "")}", 10, Tok.Faint, wrap: true));
+                if (skipped.Count > 0) forSelf.Children.Add(T($"hors {Fmt.Plural(skipped.Count, "ingrédient")} déjà à toi", 10, Tok.Faint, wrap: true));
                 verdict = Tip(forSelf,
                     (rc.Bound ? "L'objet fabriqué sera lié d'âme à ton perso" : "Cet objet ne se fabrique que pour soi") +
                     $" : il ne se revend pas, la question est ce qu'il te coûte. Fabriquer coûte {(p.Complete ? "" : "au moins ")}{Fmt.Big(boundCost)} Kinah : " +
                     $"tes ingrédients de l'hôtel vendus tels quels {Fmt.Big(p.C.Inputs!.Value)}" + (p.C.Npc > 0 ? $", achats au PNJ {Fmt.Big(p.C.Npc)}" : "") +
                     (p.C.Fee > 0 ? $", fabrication {Fmt.Big(p.C.Fee)}" : "") + $". Prix : derniers notés sur {data.Label(shown)}" +
-                    (p.C.Oldest is { } bo ? $", le plus ancien du {bo.ToLocalTime():dd/MM}." : ".") + uncountedText);
+                    (p.C.Oldest is { } bo ? $", le plus ancien du {bo.ToLocalTime():dd/MM}." : ".") + uncountedText + skipText);
             }
             else if (p.C.Sell is null && p.Cost is { } cost && npcByName.TryGetValue(Market.Fold(rc.Output.Name), out var sold) && sold.Price * rc.Output.Qty < cost)
                 // Pas de prix à l'hôtel, mais le PNJ le vend : moins cher de l'acheter que de le fabriquer.
@@ -420,7 +438,7 @@ sealed partial class ScreenViews
                 Child = Columns(cols, left, make, Value(p.Cost, costTip, !p.Complete), Value(p.C.Sell, $"Vente du fabriqué, taxe de {taxNote} déduite."), verdict, remove),
             };
             lines.Add(line);
-            rows.Add((line, $"{rc.Output.Name} {p.Item?.Category} {string.Join(' ', rc.Inputs.Select(i => i.Name))} {rc.Note}"));
+            rows.Add((line, $"{rc.Output.Name} {p.Item?.Category} {string.Join(' ', p.Parts.Select(i => i.Part.Name))} {rc.Note}"));
         }
         var card = TableCard("Recettes", T(filter is null ? Fmt.Plural(visible.Count, "recette") : $"{visible.Count} sur {recipes.Count}", 11, Tok.Muted, mono: true),
             TableHeader(cols, "Fabrique (ingrédients par fabrication, ton stock)", "Tu peux en faire", "Coût", "Fabriqué", "Mieux vaut", ""), lines);
