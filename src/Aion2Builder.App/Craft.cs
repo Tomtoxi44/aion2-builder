@@ -393,23 +393,13 @@ sealed partial class ScreenViews
         body.Children.Add(SideItem(Icons.Grid, "Vue d'ensemble", sum > 0 ? $"+{Short(sum)}" : null, Tok.Good,
             m.HasStock ? sum > 0 ? "ce que je fabriquerais avec ton stock" : "rien de rentable avec ton stock" : "toutes les recettes et leur verdict",
             s.CraftPage == CraftPage.Overview, () => update(st => st.CraftPage = CraftPage.Overview)));
-        body.Children.Add(SideGroup($"Recettes · {m.Plans.Count}"));
-        foreach (var p in m.Plans)
+        // Les recettes sont dans la page (choix « C » du 8 novembre) : ici, seulement la recette ouverte.
+        if (s.CraftPage == CraftPage.Recipe && m.Plans.FirstOrDefault(p => p.Recipe.Id == s.CraftRecipe) is { } open)
         {
-            var (call, _, color) = CallOf(p, m);
-            var (badge, preview) = call switch
-            {
-                CraftCall.Make => ($"+{Short(p.Gain!.Value)}", p.CanMake is > 0 ? $"fabrique · {p.CanMake} possible{(p.CanMake > 1 ? "s" : "")} avec ton stock" : "fabrique · par fabrication"),
-                CraftCall.SellInputs => ($"−{Short(-p.Gain!.Value)}", "vends plutôt les ingrédients"),
-                CraftCall.ForSelf => ((p.Complete ? "" : "≥ ") + Short(p.Cost!.Value), p.Recipe.Bound ? "lié d'âme · son coût pour toi" : "ne se vend pas · son coût pour toi"),
-                CraftCall.BuyNpc => ("PNJ", "moins cher chez le PNJ"),
-                _ => ("?", $"prix manquant : {string.Join(", ", p.C.NoPrice.Distinct().Take(2))}"),
-            };
-            var id = p.Recipe.Id;
-            body.Children.Add(SideItem(null, p.Recipe.Output.Name, badge, color, preview, s.CraftPage == CraftPage.Recipe && s.CraftRecipe == id,
-                () => update(st => { st.CraftPage = CraftPage.Recipe; st.CraftRecipe = id; })));
+            var (_, word, color) = CallOf(open, m);
+            body.Children.Add(SideGroup("Recette ouverte"));
+            body.Children.Add(SideItem(null, open.Recipe.Output.Name, null, null, word, true, () => { }));
         }
-        if (m.Plans.Count == 0) body.Children.Add(T("Aucune recette notée pour l'instant.", 12, Tok.Muted).WithMargin(14, 6));
         body.Children.Add(SideGroup("Ajouter"));
         body.Children.Add(SideItem(Icons.Card, "Noter une recette", null, null, "depuis une capture de la fenêtre d'artisanat, ou à la main",
             s.CraftPage == CraftPage.New && s.CraftDraft.Replaces is null, () => update(st =>
@@ -464,7 +454,7 @@ sealed partial class ScreenViews
         var blocks = new List<Control?>();
         if (!m.HasStock)
             blocks.Add(T("Ton stock vient du Pet Meter de ce PC (inventory.json, v0.21.0 ou plus, lancé avant d'entrer en jeu). Sans lui, les recettes et leurs " +
-                         "gains restent visibles, sans « tu peux en faire » ni proposition.", 12, Tok.Warn, wrap: true));
+                         "gains restent visibles, sans « tu peux en faire » ni proposition.", 12, Tok.Muted, wrap: true));
 
         var makeable = m.Plans.Count(p => p.CanMake > 0);
         var kpis = new Avalonia.Controls.Primitives.UniformGrid { Columns = 4 };
@@ -498,7 +488,8 @@ sealed partial class ScreenViews
             return Page("Craft · vue d'ensemble", right, blocks.ToArray());
         }
 
-        // Toutes les recettes, une ligne chacune : le verdict en mots et en chiffres ; un clic ouvre la recette (ingrédients et calcul).
+        // Les recettes (choix « C » du 8 novembre) : celles qui rapportent en cartes, les autres en liste rangée par conseil ; la
+        // recherche et les filtres valent pour les deux ; un clic ouvre la recette (ingrédients et calcul).
         var query = new TextBox { Text = s.CraftQuery ?? "", PlaceholderText = "chercher : potion, od, parchemin…", Width = 260 };
         var filter = s.CraftFilter;
         blocks.Add(new StackPanel
@@ -512,39 +503,120 @@ sealed partial class ScreenViews
             },
         });
         var visible = m.Plans.Where(p => filter switch { "make" => p.CanMake > 0, "gain" => p.Gain > 0 || p.Flip > 0, _ => true }).ToList();
-        const string cols = "*,190,170,120";
-        var rows = new List<(Control Row, string Text)>();
-        foreach (var p in visible)
+        var items = new List<(Control Control, string Text)>();
+        static string Search(CraftPlan p) => $"{p.Recipe.Output.Name} {p.Item?.Category} {string.Join(' ', p.Parts.Select(i => i.Part.Name))} {p.Recipe.Note}";
+        string Title(CraftRecipe rc) => rc.Output.Qty > 1 ? $"{rc.Output.Name} ×{rc.Output.Qty}" : rc.Output.Name;
+
+        // Ce qui rapporte : une carte par recette, le gain en gros, ses ingrédients (Od et « fabriqué » marqués).
+        var winners = visible.Where(p => CallOf(p, m).Call == CraftCall.Make).OrderByDescending(p => p.Gain).ToList();
+        if (winners.Count > 0)
         {
-            var rc = p.Recipe;
-            var (call, word, color) = CallOf(p, m);
-            Control result = call switch
+            var grid = new Avalonia.Controls.Primitives.UniformGrid { Columns = 3 };
+            foreach (var p in winners)
             {
-                CraftCall.Make or CraftCall.SellInputs => Tip(T($"{(p.Gain >= 0 ? "+" : "−")}{Fmt.Big(Math.Abs(p.Gain!.Value))}", 13, color, FontWeight.SemiBold, mono: true).AlignRight(),
-                    "Par fabrication : vendre le fabriqué (taxe déduite) moins ce que rapporteraient ses ingrédients vendus tels quels, achats au PNJ et coût de fabrication compris."),
-                CraftCall.ForSelf => Tip(T($"coûte {(p.Complete ? "" : "≥ ")}{Fmt.Big(p.Cost!.Value)}", 12, Tok.Text2, mono: true).AlignRight(),
-                    "Ne se revend pas : ce qu'il te coûte, c'est-à-dire ce que tes ingrédients rapporteraient vendus tels quels, plus les achats au PNJ et le coût de fabrication." +
-                    (p.Complete ? "" : " « ≥ » : des ingrédients n'ont pas de prix, le coût est un minimum.")),
-                CraftCall.BuyNpc => T($"PNJ {Fmt.Big(NpcPriceOf(p, m)!.Value)}", 12, Tok.Text2, mono: true).AlignRight(),
-                _ => T("—", 12, Tok.Faint, mono: true).AlignRight(),
+                var rc = p.Recipe;
+                var chips = new WrapPanel();
+                foreach (var x in p.Parts.Take(5))
+                {
+                    var pc = m.Book.CostOf(rc, x.Part);
+                    var (label, color) = pc.Source switch
+                    {
+                        PartSource.Od => ($"{x.Part.Name} (Od)", Tok.Good),
+                        PartSource.Recipe when m.Book.Made(rc.Id, x.Part) => ($"{x.Part.Name} (fabriqué)", Tok.Good),
+                        PartSource.Npc => ($"{x.Part.Name} (PNJ)", Tok.Muted),
+                        _ => (x.Part.Qty > 1 ? $"{x.Part.Name} ×{x.Part.Qty}" : x.Part.Name, Tok.Text2),
+                    };
+                    chips.Children.Add(Badge(label, color).WithMargin(0, 0, 4, 4));
+                }
+                var body = new StackPanel
+                {
+                    Spacing = 6,
+                    Children =
+                    {
+                        T("FABRIQUE", 10, Tok.Good, FontWeight.SemiBold, mono: true),
+                        MarketItemLine(p.Item, Title(rc), 14),
+                        new StackPanel
+                        {
+                            Orientation = Orientation.Horizontal, Spacing = 8,
+                            Children = { T($"+{Fmt.Big(p.Gain!.Value)}", 22, Tok.Good, FontWeight.SemiBold, mono: true), T("par fabrication", 11, Tok.Muted).WithMargin(0, 9, 0, 0) },
+                        },
+                        T($"vend {Fmt.Big(p.C.Sell!.Value)}, coûte {Fmt.Big(p.Cost!.Value)}" + (p.CanMake is { } n ? $" · tu peux en faire {n}" : ""), 11, Tok.Text2, wrap: true),
+                        chips,
+                    },
+                };
+                var id = rc.Id;
+                var card = Clickable(body, () => OpenRecipe(id), Tok.Panel, Tok.Hover, new Thickness(14, 12));
+                card.BorderBrush = Tok.Good;
+                card.BorderThickness = new Thickness(0, 2, 0, 0);
+                card.CornerRadius = new CornerRadius(4);
+                var cell = Tip(card, "Ouvrir la recette : ses ingrédients et le calcul.").WithMargin(0, 0, 12, 12);
+                grid.Children.Add(cell);
+                items.Add((cell, Search(p)));
+            }
+            blocks.Add(Label($"Ce qui rapporte · {winners.Count}"));
+            blocks.Add(grid);
+        }
+
+        // Le reste, rangé par conseil : pourquoi en trois mots, le chiffre, tu peux en faire.
+        const string cols = "*,200,130,110";
+        var rows = new List<Control>();
+        var groups = new (CraftCall Call, string Name, IBrush Color)[]
+        {
+            (CraftCall.SellInputs, "Vends plutôt les ingrédients", Tok.Warn), (CraftCall.BuyNpc, "Achète-le au PNJ", Tok.Warn),
+            (CraftCall.ForSelf, "Pour toi (ne se revend pas)", Tok.Info), (CraftCall.NoPrice, "Prix manquant", Tok.Muted),
+        };
+        var restCount = 0;
+        foreach (var (call, name, color) in groups)
+        {
+            var members = visible.Where(p => CallOf(p, m).Call == call).ToList();
+            if (members.Count == 0) continue;
+            var head = new Border
+            {
+                Padding = new Thickness(20, 6), Background = Tok.Frame, BorderBrush = Tok.RowLine, BorderThickness = new Thickness(0, 1, 0, 1),
+                Child = T($"{name} · {members.Count}", 12, color, FontWeight.SemiBold),
             };
-            var make = p.CanMake is { } cm ? T(cm.ToString(), 13, cm > 0 ? Tok.Text : Tok.Faint, FontWeight.SemiBold, mono: true).AlignRight() : T("—", 12, Tok.Faint, mono: true).AlignRight();
-            var id = rc.Id;
-            var row = TableRow(Columns(cols, MarketItemLine(p.Item, rc.Output.Qty > 1 ? $"{rc.Output.Name} ×{rc.Output.Qty}" : rc.Output.Name, 13, withKind: true),
-                T(word, 12, color, FontWeight.SemiBold), result, make), false, () => OpenRecipe(id));
-            rows.Add((row, $"{rc.Output.Name} {p.Item?.Category} {string.Join(' ', p.Parts.Select(i => i.Part.Name))} {rc.Note}"));
+            rows.Add(head);
+            foreach (var p in members)
+            {
+                var rc = p.Recipe;
+                var (why, whyColor) = call switch
+                {
+                    CraftCall.SellInputs => ("les ingrédients valent plus", Tok.Text2),
+                    CraftCall.BuyNpc => ("moins cher que le fabriquer", Tok.Text2),
+                    CraftCall.ForSelf when !p.Complete => ($"prix manquants : {string.Join(", ", p.C.Uncounted.Distinct().Take(2))}", Tok.Warn),
+                    CraftCall.ForSelf => (p.Recipe.Bound ? "lié d'âme : son coût pour toi" : "son coût pour toi", Tok.Text2),
+                    _ => ($"manque : {string.Join(", ", p.C.NoPrice.Distinct().Take(2))}", Tok.Muted),
+                };
+                Control result = call switch
+                {
+                    CraftCall.SellInputs => Tip(T($"−{Fmt.Big(-p.Gain!.Value)}", 13, Tok.Bad, FontWeight.SemiBold, mono: true).AlignRight(),
+                        "Par fabrication : vendre le fabriqué (taxe déduite) moins ce que rapporteraient ses ingrédients vendus tels quels."),
+                    CraftCall.ForSelf => Tip(T((p.Complete ? "" : "au moins ") + Short(p.Cost!.Value), 13, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(),
+                        $"Ce qu'il te coûte : {Fmt.Big(p.Cost.Value)} Kinah" + (p.Complete ? "." : " au moins : des ingrédients n'ont pas de prix, comptés 0.")),
+                    CraftCall.BuyNpc => T($"PNJ {Fmt.Big(NpcPriceOf(p, m)!.Value)}", 12, Tok.Text2, mono: true).AlignRight(),
+                    _ => T("?", 12, Tok.Faint, mono: true).AlignRight(),
+                };
+                var make = p.CanMake is { } cm ? T(cm.ToString(), 13, cm > 0 ? Tok.Text : Tok.Faint, FontWeight.SemiBold, mono: true).AlignRight() : T("—", 12, Tok.Faint, mono: true).AlignRight();
+                var id = rc.Id;
+                var row = TableRow(Columns(cols, MarketItemLine(p.Item, Title(rc), 13), T(why, 12, whyColor, wrap: true), result, make), false, () => OpenRecipe(id));
+                rows.Add(row);
+                items.Add((row, Search(p)));
+                restCount++;
+            }
         }
         var none = T("Aucune recette ne correspond.", 12, Tok.Muted).WithMargin(20, 8, 20, 8);
         void Filter()
         {
             var count = 0;
-            foreach (var (row, text) in rows) { row.IsVisible = Market.Matches(query.Text, text); if (row.IsVisible) count++; }
+            foreach (var (control, text) in items) { control.IsVisible = Market.Matches(query.Text, text); if (control.IsVisible) count++; }
             none.IsVisible = count == 0;
         }
         query.TextChanged += (_, _) => { s.CraftQuery = query.Text; Filter(); };
         Filter();
-        blocks.Add(TableCard("Recettes", T((filter is null ? Fmt.Plural(visible.Count, "recette") : $"{visible.Count} sur {m.Plans.Count}") + " · clic : ingrédients et calcul", 11, Tok.Muted, mono: true),
-            TableHeader(cols, "Objet fabriqué", "Conseil", "Par fabrication", "Tu peux en faire"), rows.Select(x => x.Row).Append(none)));
+        if (restCount > 0 || winners.Count == 0)
+            blocks.Add(TableCard(winners.Count > 0 ? "Les autres recettes" : "Recettes",
+                T((filter is null ? Fmt.Plural(restCount, "recette") : $"{restCount} sur {m.Plans.Count}") + " · clic : ingrédients et calcul", 11, Tok.Muted, mono: true),
+                TableHeader(cols, "Objet fabriqué", "Pourquoi", "Par fabrication", "Tu peux en faire"), rows.Append(none)));
         return Page("Craft · vue d'ensemble", right, blocks.ToArray());
     }
 
