@@ -81,6 +81,8 @@ sealed record MarketState(MarketData? Data, bool Linked, string? Status, Func<st
     public Func<int, RecipeSend, Task<string?>> ReplaceRecipe { get; init; } = (_, _) => Task.FromResult<string?>(null);
     /// <summary>Choisir le rang (la couleur) d'un objet noté par les joueurs, par sa clé, pour tous.</summary>
     public Action<string, string?> SetGrade { get; init; } = (_, _) => { };
+    /// <summary>Corriger le nom d'un objet noté par son nom (clé, nouveau nom), pour tous ; null si c'est fait, sinon l'erreur.</summary>
+    public Func<string, string, Task<string?>> RenameItem { get; init; } = (_, _) => Task.FromResult<string?>(null);
     public Action<CraftRecipe> RemoveRecipe { get; init; } = _ => { };
     public Action<int> RestoreRecipe { get; init; } = _ => { };
     /// <summary>Écran Craft : noter ou corriger le prix d'un objet du PNJ (nom, prix, onglet), pour tous ; le retirer.</summary>
@@ -161,6 +163,26 @@ static class Market
     {
         using var http = BugReports.Client(key);
         return await Error(await http.PostAsJsonAsync("/api/sync/market/recipes", recipe));
+    }
+
+    /// <summary>
+    /// Corriger le nom d'un objet noté par son nom : ses prix, recettes et couleur passent sous le bon nom, réunis avec l'objet de
+    /// ce nom s'il existe. Renvoie l'erreur, ou null et la clé de l'objet sous son nouveau nom.
+    /// </summary>
+    public static async Task<(string? Error, string? Key)> Rename(string key, string itemKey, string name)
+    {
+        using var http = BugReports.Client(key);
+        var response = await http.PostAsJsonAsync("/api/sync/market/rename", new { key = itemKey, name });
+        if (!response.IsSuccessStatusCode) return (await Error(response), null);
+        using (response)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                return (null, doc.RootElement.TryGetProperty("key", out var k) ? k.GetString() : null);
+            }
+            catch (JsonException) { return (null, null); }
+        }
     }
 
     /// <summary>Choisir le rang (la couleur) d'un objet noté par les joueurs, pour tous ; null : la couleur lue sur les captures.</summary>
@@ -320,6 +342,39 @@ sealed partial class ScreenViews
             row.Children.Add(Tip(Clickable(dot, () => pick(grade), null, Tok.Hover, new Thickness(3)), def.Name));
         }
         return row;
+    }
+
+    /// <summary>
+    /// Corriger le nom d'un objet noté par son nom (faute de lecture ou de frappe), pour tous ; si le nom corrigé existe déjà, les
+    /// deux objets n'en font plus qu'un. Null pour un objet du jeu (son nom vient du jeu).
+    /// </summary>
+    Control? RenameRow(string key, string name)
+    {
+        if (!key.StartsWith("name:", StringComparison.Ordinal)) return null;
+        var box = new TextBox { Text = name, MinWidth = 0, FontSize = 13 };
+        var note = T("Faute de lecture ou de frappe : corrige-le pour tous. Si ce nom existe déjà, les deux objets n'en font plus qu'un " +
+                     "(prix, recettes, couleur).", 11, Tok.Muted, wrap: true);
+        var busy = false;
+        async void Save()
+        {
+            var text = string.Join(' ', (box.Text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            if (busy || text.Length < 2 || text == name) return;
+            busy = true;
+            note.Text = "Correction en cours…";
+            var error = await market.RenameItem(key, text);
+            busy = false;
+            if (error is not null) { note.Text = error; note.Foreground = Tok.Bad; }
+        }
+        var save = Clickable(T("corriger", 12, Accent.Main, FontWeight.SemiBold, mono: true), Save, null, Tok.Hover, new Thickness(10, 4));
+        save.CornerRadius = new CornerRadius(3);
+        save.BorderBrush = Accent.Main;
+        save.BorderThickness = new Thickness(1);
+        DockPanel.SetDock(save, Dock.Right);
+        return new StackPanel
+        {
+            Spacing = 4,
+            Children = { Label("Nom"), new DockPanel { Children = { save.WithMargin(8, 0, 0, 0), box } }, note },
+        };
     }
 
     /// <summary>Couleur d'un objet noté par les joueurs, à choisir (pour tous) ; null pour un objet dont le rang vient du jeu.</summary>
@@ -887,6 +942,7 @@ sealed partial class ScreenViews
         panel.Children.Add(body);
         body.Children.Add(ItemTitle(selected.Item, list[^1].ItemName));
         if (GradeRow(selected.Item) is { } gradeRow) body.Children.Add(gradeRow);
+        if (RenameRow(selected.Key, list[^1].ItemName) is { } renameRow) body.Children.Add(renameRow);
         body.Children.Add(KeyValue(
         [
             ("dernier prix", $"{Fmt.Big(list[^1].Price)} · {Market.Since(list[^1].At)}", Tok.Text),

@@ -1148,6 +1148,7 @@ public sealed class MainWindow : Window
                 NameItem = NameItemAsync,
                 AddRecipe = AddRecipeAsync,
                 ReplaceRecipe = ReplaceRecipeAsync,
+                RenameItem = RenameItemAsync,
                 SetGrade = (itemKey, grade) => _ = MarketActionAsync(k => Market.SetGrade(k, itemKey, grade),
                     $"couleur changée pour tous : {market?.Items.FirstOrDefault(i => i.Key == itemKey)?.Name ?? "objet"}"),
                 RemoveRecipe = rc => _ = MarketActionAsync(key => Market.RemoveRecipe(key, rc.Id), $"recette retirée : {rc.Output.Name} (rétablissable)"),
@@ -2279,6 +2280,20 @@ public sealed class MainWindow : Window
             await LoadMarketAsync(force: true);
         }
         return error;
+    }
+
+    /// <summary>Prix HdV : corriger le nom d'un objet noté par son nom, pour tous ; l'objet reste choisi sous son nouveau nom.</summary>
+    async Task<string?> RenameItemAsync(string itemKey, string name)
+    {
+        if (AccountKey() is not { } key) return "Il faut ta clé Aion 2 Todo (écran Familiers).";
+        string? error, newKey;
+        try { (error, newKey) = await Market.Rename(key, itemKey, name); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { (error, newKey) = ($"Aion 2 Todo injoignable ({ex.Message}).", null); }
+        if (error is not null) return error;
+        SetStatus($"nom corrigé pour tous : {name}");
+        if (newKey is not null) Update(st => st.MarketItem = newKey);
+        await LoadMarketAsync(force: true);
+        return null;
     }
 
     /// <summary>Écran Craft : corriger une recette pour tous (l'ancienne reste rétablissable) ; les recettes sont relues aussitôt.</summary>

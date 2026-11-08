@@ -130,9 +130,24 @@ public static class MarketShotReader
     /// <summary>Le nom : les mots avec des lettres (le « 1 » de la pile sur l'icône et les signes seuls sont écartés).</summary>
     static string Name(IEnumerable<OcrWord> words) =>
         // L'OCR coupe « d'Yggdrasil » en « d' » + « Yggdrasil » : l'espace après l'apostrophe est retiré.
-        System.Text.RegularExpressions.Regex.Replace(
+        CleanName(System.Text.RegularExpressions.Regex.Replace(
             string.Join(' ', words.Select(w => w.Text.Trim()).Where(t => t.Length > 0 && Letters(t) > 0 || t.Any(char.IsDigit) && t.Length > 1)).Replace('’', '\''),
-            @"'\s+", "'");
+            @"'\s+", "'"));
+
+    /// <summary>
+    /// Nom sans le bruit des icônes : chiffres et signes collés devant (« 01 Orbe d'illusion », « +4 Minerai… », « (9 Cuirasse… » :
+    /// le nombre dessiné sur l'icône), signes seuls derrière. Même règle que le site (MarketCatalog.CleanName).
+    /// </summary>
+    public static string CleanName(string name)
+    {
+        var tokens = name.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+        while (tokens.Count > 1 && (tokens[0].Length == 1 || !tokens[0].Any(char.IsLetter))) tokens.RemoveAt(0);
+        while (tokens.Count > 1 && !tokens[^1].Any(char.IsLetterOrDigit) && !tokens[^1].Any(c => c is '.' or '…')) tokens.RemoveAt(tokens.Count - 1);
+        var text = string.Join(' ', tokens);
+        var start = 0;
+        while (start < text.Length && !char.IsLetter(text[start])) start++;
+        return text[start..].TrimEnd('@', '%', '©', '®', '#', '*', '~', '^', ' ');
+    }
 
     /// <summary>
     /// Un nombre écrit en groupes (« 1 490 000 ») : les chiffres des mots recollés. L'icône des Kinah devant est parfois lue
