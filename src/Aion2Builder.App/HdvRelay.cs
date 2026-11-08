@@ -117,17 +117,17 @@ static class HdvRelay
         var market = known.FirstOrDefault(c => c.Equals(relay.Market, StringComparison.OrdinalIgnoreCase)) ?? data.DefaultMarket ?? "*eu";
         var pending = new List<MarketShotLine>();
         var refused = new List<string>();
-        var done = 0;
+        var found = new List<(MarketShotLine Line, MarketItem Item)>();
         foreach (var line in lines)
-        {
             // Nom inconnu : peut-être mal lu ; il attend dans le Builder plutôt que d'entrer dans la liste de tous sous ce nom.
-            if (data.Items.FirstOrDefault(i => Market.Fold(i.Name) == Market.Fold(line.Name)) is not { } item) { pending.Add(line); continue; }
-            string? e;
-            try { e = await Market.Add(key, item.Key, item.Name, line.Price, market); }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { e = $"Aion 2 Todo injoignable ({ex.Message})"; }
-            if (e is null) done++;
-            else { pending.Add(line); refused.Add($"{item.Name} : {e}"); }
-        }
+            if (data.Items.FirstOrDefault(i => Market.Fold(i.Name) == Market.Fold(line.Name)) is { } item) found.Add((line, item));
+            else pending.Add(line);
+        // Toutes les lignes en un envoi (une par ligne butait sur la limite du site, 60 appels par minute).
+        var results = found.Count == 0 ? [] : await Market.AddMany(key, market, found.Select(f => new PriceLine(f.Item.Key, f.Item.Name, f.Line.Price)).ToList());
+        var done = 0;
+        for (var i = 0; i < found.Count; i++)
+            if (results[i] is not { } e) done++;
+            else { pending.Add(found[i].Line); refused.Add($"{found[i].Item.Name} : {e}"); }
         AddPending(pending);
         return new Sent(done, pending.Count, data.Label(market), null, refused);
     }

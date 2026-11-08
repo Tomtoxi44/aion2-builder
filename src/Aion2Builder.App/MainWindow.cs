@@ -2182,22 +2182,27 @@ public sealed class MainWindow : Window
     {
         if (AccountKey() is not { } key) { marketShotStatus = "Il faut ta clé Aion 2 Todo (écran Familiers)."; Render(); return; }
         var items = market?.Items ?? [];
+        // Un objet pas encore dans la liste entre avec le rang lu à la couleur de son nom (sinon il resterait sans couleur).
+        var send = lines.Select(line => items.FirstOrDefault(i => Market.Fold(i.Name) == Market.Fold(line.Name)) is { } item
+            ? new PriceLine(item.Key, item.Name, line.Price) : new PriceLine(null, line.Name, line.Price, line.Grade)).ToList();
+        marketShotStatus = $"Envoi de {Fmt.Plural(lines.Count, "prix", "prix")} à Aion 2 Todo…";
+        Render();
+        var results = await Market.AddMany(key, marketCode, send);
         var errors = new List<string>();
-        var failed = new List<MarketShotLine>();  // gardées à l'écran pour être corrigées ; les autres sont notées
-        var done = 0;
-        foreach (var line in lines)
+        var failed = new List<MarketShotLine>();  // gardées à l'écran pour être corrigées ou renvoyées ; les autres sont notées
+        for (var i = 0; i < lines.Count; i++)
         {
-            var item = items.FirstOrDefault(i => Market.Fold(i.Name) == Market.Fold(line.Name));
-            string? error;
-            // Un objet pas encore dans la liste entre avec le rang lu à la couleur de son nom (sinon il resterait sans couleur).
-            try { error = await Market.Add(key, item?.Key, item?.Name ?? line.Name, line.Price, marketCode, item is null ? line.Grade : null); }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { error = $"Aion 2 Todo injoignable ({ex.Message})"; }
-            if (error is null) done++;
-            else { errors.Add($"{(line.Name.Length > 0 ? line.Name : "(sans nom)")} : {error}"); failed.Add(line); }
+            if (results[i] is not { } error) continue;
+            errors.Add($"{(lines[i].Name.Length > 0 ? lines[i].Name : "(sans nom)")} : {error}");
+            failed.Add(lines[i]);
         }
+        var done = lines.Count - failed.Count;
         marketShot = failed.Count == 0 ? null : failed;
         KeepShot();
-        marketShotStatus = errors.Count == 0 ? null : string.Join("\n", errors.Take(4));
+        // Tout refusé pour la même raison (site injoignable, clé refusée) : une seule ligne.
+        marketShotStatus = errors.Count == 0 ? null
+            : failed.Count == lines.Count && results.Distinct().Count() == 1 ? $"Aucun prix noté : {results[0]}"
+            : string.Join("\n", errors.Take(4)) + (errors.Count > 4 ? $"\n… et {errors.Count - 4} autres" : "");
         SetStatus($"{Fmt.Plural(done, "prix noté", "prix notés")} depuis la capture (partagés avec la communauté)", errors.Count > 0);
         await LoadMarketAsync(force: true);
         Render();

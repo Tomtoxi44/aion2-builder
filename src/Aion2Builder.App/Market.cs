@@ -35,6 +35,8 @@ sealed record MarketItem(string Key, string Name, int Rank, bool Gathered, strin
 sealed record MarketPrice(int Id, string ItemKey, string ItemName, long Price, DateTime At, string? By, bool Mine, string Market = "*eu");
 /// <summary>Un prix retiré ces 30 derniers jours : qui l'avait noté, qui l'a retiré (rétablissable).</summary>
 sealed record MarketRemoved(int Id, string ItemKey, string ItemName, long Price, DateTime At, string? By, DateTime RemovedAt, string? RemovedBy, string Market = "*eu");
+/// <summary>Un prix à noter : objet de la liste (ItemKey) ou nom libre, avec le rang lu sur la capture pour un objet qui entre dans la liste.</summary>
+sealed record PriceLine(string? ItemKey, string ItemName, long Price, string? Grade = null);
 /// <summary>Un marché proposé par le site : code, nom affiché, nombre de prix, le tien (tes persos du site y jouent).</summary>
 sealed record MarketChoice(string Code, string Label, int Prices, bool Mine);
 
@@ -103,6 +105,44 @@ static class Market
     {
         using var http = BugReports.Client(key);
         return await Error(await http.PostAsJsonAsync("/api/sync/market/prices", new { itemKey, itemName, price, market, grade }));
+    }
+
+    /// <summary>
+    /// Toutes les lignes d'une capture en un envoi : une erreur par ligne, null si elle est notée. Un envoi par ligne butait
+    /// sur la limite du site (60 appels par minute : « erreur 429 » au-delà de 60 lignes).
+    /// </summary>
+    public static async Task<List<string?>> AddMany(string key, string market, IReadOnlyList<PriceLine> lines)
+    {
+        using var http = BugReports.Client(key);
+        var errors = new List<string?>(lines.Count);
+        foreach (var chunk in lines.Chunk(400))
+        {
+            string? failed;
+            try
+            {
+                var response = await http.PostAsJsonAsync("/api/sync/market/prices/batch", new
+                {
+                    market,
+                    prices = chunk.Select(l => new { itemKey = l.ItemKey, itemName = l.ItemName, price = l.Price, grade = l.Grade }),
+                });
+                if (response.IsSuccessStatusCode)
+                {
+                    using (response)
+                    using (var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
+                    {
+                        var list = doc.RootElement.GetProperty("errors").EnumerateArray()
+                            .Select(e => e.ValueKind == JsonValueKind.String ? e.GetString() : null).ToList();
+                        if (list.Count == chunk.Length) { errors.AddRange(list); continue; }
+                    }
+                    failed = "réponse du site incomplète";
+                }
+                else failed = await Error(response);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { failed = $"Aion 2 Todo injoignable ({ex.Message})"; }
+            catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { failed = "réponse du site illisible"; }
+            errors.AddRange(chunk.Select(_ => failed));
+        }
+        return errors;
     }
 
     /// <summary>Nommer un objet de ton sac (vu par ton Pet Meter) : le nom vaut pour tous les joueurs.</summary>
