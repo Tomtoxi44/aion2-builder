@@ -9,7 +9,8 @@ namespace Aion2Builder.Analysis;
 /// Lowest : lu sur la liste des annonces d'un objet (une ligne par annonce) : Price est le prix unitaire le plus bas des
 /// Listings annonces lues. Grade : rang du jeu lu à la couleur du nom (« Rare » pour un nom vert), null si la couleur manque.
 /// </summary>
-public sealed record MarketShotLine(string Name, int? Listings, long Price, bool Lowest = false, string? Grade = null);
+/// <param name="GradeChosen">Rang choisi à la main dans le Builder (la couleur lue se trompe parfois) : il l'emporte, pour tous.</param>
+public sealed record MarketShotLine(string Name, int? Listings, long Price, bool Lowest = false, string? Grade = null, bool GradeChosen = false);
 
 /// <summary>
 /// Lit une capture de la fenêtre Marché du jeu, reconnue par l'OCR de Windows. Deux vues :

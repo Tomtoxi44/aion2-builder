@@ -1148,6 +1148,8 @@ public sealed class MainWindow : Window
                 NameItem = NameItemAsync,
                 AddRecipe = AddRecipeAsync,
                 ReplaceRecipe = ReplaceRecipeAsync,
+                SetGrade = (itemKey, grade) => _ = MarketActionAsync(k => Market.SetGrade(k, itemKey, grade),
+                    $"couleur changée pour tous : {market?.Items.FirstOrDefault(i => i.Key == itemKey)?.Name ?? "objet"}"),
                 RemoveRecipe = rc => _ = MarketActionAsync(key => Market.RemoveRecipe(key, rc.Id), $"recette retirée : {rc.Output.Name} (rétablissable)"),
                 RestoreRecipe = id => _ = MarketActionAsync(key => Market.RestoreRecipe(key, id), "recette rétablie"),
                 AddNpc = AddNpcAsync,
@@ -2198,6 +2200,18 @@ public sealed class MainWindow : Window
             failed.Add(lines[i]);
         }
         var done = lines.Count - failed.Count;
+        // Couleur choisie à la main pour un objet déjà dans la liste (noté par les joueurs) : elle remplace celle lue, pour tous.
+        for (var i = 0; i < lines.Count; i++)
+        {
+            if (results[i] is not null || !lines[i].GradeChosen || lines[i].Grade is not { } chosen) continue;
+            if (items.FirstOrDefault(x => Market.Fold(x.Name) == Market.Fold(lines[i].Name)) is not { } known || !Market.GradeEditable(known) || known.Grade == chosen) continue;
+            try
+            {
+                if (await Market.SetGrade(key, known.Key, chosen) is { } gradeError)
+                    errors.Add($"{known.Name} : couleur non changée ({gradeError})");
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { errors.Add($"{known.Name} : couleur non changée ({ex.Message})"); }
+        }
         marketShot = failed.Count == 0 ? null : failed;
         KeepShot();
         // Tout refusé pour la même raison (site injoignable, clé refusée) : une seule ligne.

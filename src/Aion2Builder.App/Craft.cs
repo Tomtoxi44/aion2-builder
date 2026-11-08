@@ -35,6 +35,8 @@ sealed class CraftDraft
     public bool Bound { get; set; }
     /// <summary>Correction d'une recette notée : son numéro (null : nouvelle recette).</summary>
     public int? Replaces { get; set; }
+    /// <summary>Couleur (rang) de l'objet fabriqué choisie à la main : elle remplace celle lue, pour tous.</summary>
+    public string? Grade { get; set; }
 
     /// <summary>Le formulaire rempli avec une recette notée, pour la corriger.</summary>
     public static CraftDraft From(CraftRecipe rc)
@@ -547,6 +549,17 @@ sealed partial class ScreenViews
                     "Retirer cette recette (fausse ou en double) : pour tous les joueurs, rétablissable 30 jours (« rétablir » sur la vue d'ensemble)."),
             },
         });
+        // Couleur de l'objet fabriqué, si elle vient d'une capture (mal lue parfois) : à choisir, pour tous.
+        if (p.Item is { } made && Market.GradeEditable(made))
+            head.Children.Add(new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(12, 2, 0, 0),
+                Children =
+                {
+                    T(made.Grade is null ? "couleur pas lue :" : "couleur", 11, made.Grade is null ? Tok.Warn : Tok.Muted, mono: true).WithMargin(0, 4, 0, 0),
+                    GradePicker(made.Grade, g => market.SetGrade(made.Key, g)),
+                },
+            });
         blocks.Add(head);
 
         // Les quatre chiffres d'une fabrication.
@@ -800,6 +813,19 @@ sealed partial class ScreenViews
             },
         });
         if (CutHelp(items, draft.Output, name => draft.Output = name) is { } outputHelp) form.Children.Add(outputHelp);
+        // Couleur de l'objet fabriqué (rang) : lue sur la capture, elle se trompe parfois ; celle d'un objet du jeu ne change pas.
+        var outputKnown = data.Items.FirstOrDefault(i => Market.Fold(i.Name) == Market.Fold(draft.Output));
+        if (outputKnown is null || Market.GradeEditable(outputKnown))
+            form.Children.Add(new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 8,
+                Children =
+                {
+                    T("Couleur", 12, Tok.Text2).WithMargin(0, 4, 0, 0),
+                    GradePicker(draft.Grade ?? outputKnown?.Grade, g => update(_ => draft.Grade = g)),
+                    T("de l'objet fabriqué, si elle est fausse ou pas lue (vaut pour tous)", 11, Tok.Muted).WithMargin(0, 4, 0, 0),
+                },
+            });
         for (var i = 0; i < draft.Inputs.Count; i++)
         {
             var line = draft.Inputs[i];
@@ -877,7 +903,15 @@ sealed partial class ScreenViews
             var output = Part(draft.Output, Number(draft.OutputQty, 1));
             var send = new RecipeSend(output, inputs, cost, draft.Note.Trim().Length > 0 ? draft.Note.Trim() : null, draft.Bound);
             var replaces = draft.Replaces;
+            var chosen = draft.Grade;
             var error = replaces is { } id ? await market.ReplaceRecipe(id, send) : await market.AddRecipe(send);
+            // Couleur choisie : sur l'objet de la liste, ou sur celui que la recette vient d'y faire entrer sous son nom.
+            if (error is null && chosen is not null)
+            {
+                var made = data.Items.FirstOrDefault(i => Market.Fold(i.Name) == Market.Fold(output.Name ?? ""));
+                if (made is null || (Market.GradeEditable(made) && made.Grade != chosen))
+                    market.SetGrade(made?.Key ?? "name:" + Market.Fold(output.Name), chosen);
+            }
             update(st =>
             {
                 st.CraftError = error;

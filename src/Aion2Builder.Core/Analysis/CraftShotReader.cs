@@ -167,11 +167,11 @@ public static class CraftShotReader
         // signe ou sans lettre en tête, puis tout ce qui n'est pas une lettre.
         var tokens = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
         while (tokens.Count > 1 && (tokens[0].Length == 1 || !tokens[0].Any(char.IsLetter))) tokens.RemoveAt(0);
-        // Et derrière (« Corne dure de Balaur raffinée @ » : l'icône à droite du titre) : mots sans lettre ni chiffre, sauf les
+        // Et derrière (« Corne dure de Balaur raffinée @ » : l'icône « % » à droite du titre, lue « @ » ou « % ») : mots sans lettre ni chiffre, sauf les
         // « … » d'un nom coupé ; puis les signes d'icône collés au dernier mot.
         while (tokens.Count > 1 && !tokens[^1].Any(char.IsLetterOrDigit) && !tokens[^1].Any(c => c is '.' or '…' or '„' or ','))
             tokens.RemoveAt(tokens.Count - 1);
-        text = string.Join(' ', tokens).TrimEnd('@', '©', '®', '#', '*', '~', '^', ' ');
+        text = string.Join(' ', tokens).TrimEnd('@', '%', '©', '®', '#', '*', '~', '^', ' ');
         var start = 0;
         while (start < text.Length && !char.IsLetter(text[start])) start++;
         text = text[start..];

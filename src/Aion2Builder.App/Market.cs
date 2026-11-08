@@ -6,6 +6,7 @@ using Aion2Builder.Analysis;
 using Aion2Builder.GameData;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -78,6 +79,8 @@ sealed record MarketState(MarketData? Data, bool Linked, string? Status, Func<st
     /// <summary>Écran Craft : noter une recette (null si c'est fait, sinon l'erreur), la retirer, la rétablir.</summary>
     public Func<RecipeSend, Task<string?>> AddRecipe { get; init; } = _ => Task.FromResult<string?>(null);
     public Func<int, RecipeSend, Task<string?>> ReplaceRecipe { get; init; } = (_, _) => Task.FromResult<string?>(null);
+    /// <summary>Choisir le rang (la couleur) d'un objet noté par les joueurs, par sa clé, pour tous.</summary>
+    public Action<string, string?> SetGrade { get; init; } = (_, _) => { };
     public Action<CraftRecipe> RemoveRecipe { get; init; } = _ => { };
     public Action<int> RestoreRecipe { get; init; } = _ => { };
     /// <summary>Écran Craft : noter ou corriger le prix d'un objet du PNJ (nom, prix, onglet), pour tous ; le retirer.</summary>
@@ -159,6 +162,16 @@ static class Market
         using var http = BugReports.Client(key);
         return await Error(await http.PostAsJsonAsync("/api/sync/market/recipes", recipe));
     }
+
+    /// <summary>Choisir le rang (la couleur) d'un objet noté par les joueurs, pour tous ; null : la couleur lue sur les captures.</summary>
+    public static async Task<string?> SetGrade(string key, string itemKey, string? grade)
+    {
+        using var http = BugReports.Client(key);
+        return await Error(await http.PostAsJsonAsync("/api/sync/market/grade", new { key = itemKey, grade }));
+    }
+
+    /// <summary>Objet noté par les joueurs (par son nom, ou nommé depuis un sac) : son rang se choisit à la main ; celui d'un objet du jeu vient du jeu.</summary>
+    public static bool GradeEditable(MarketItem item) => item.Key.StartsWith("name:", StringComparison.Ordinal) || item.Category == "Nommé par un joueur";
 
     /// <summary>Corriger une recette : la nouvelle version est notée par toi, l'ancienne passe dans les retirées (rétablissable).</summary>
     public static async Task<string?> ReplaceRecipe(string key, int id, RecipeSend recipe)
@@ -287,6 +300,51 @@ sealed partial class ScreenViews
 
     /// <summary>Couleur de rareté du jeu (blanc, vert, bleu, jaune…) ; texte normal sans rang connu.</summary>
     IBrush MarketBrush(string? grade) => grade is null ? Tok.Text : Tok.B(db.Grade(grade).Color);
+
+    static readonly string[] ItemGrades = ["Common", "Rare", "Legend", "Unique", "Epic", "Mythic"];
+
+    /// <summary>Pastilles des rangs du jeu (blanc, vert, bleu, jaune, orange, rouge), celle du rang en cours cerclée ; un clic choisit.</summary>
+    Control GradePicker(string? current, Action<string> pick)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var g in ItemGrades)
+        {
+            var def = db.Grade(g);
+            var on = g == current;
+            var dot = new Border
+            {
+                Width = 14, Height = 14, CornerRadius = new CornerRadius(7), Background = Tok.B(def.Color),
+                BorderBrush = Tok.Text, BorderThickness = new Thickness(on ? 2 : 0), Opacity = current is null || on ? 1 : 0.55,
+            };
+            var grade = g;
+            row.Children.Add(Tip(Clickable(dot, () => pick(grade), null, Tok.Hover, new Thickness(3)), def.Name));
+        }
+        return row;
+    }
+
+    /// <summary>Couleur d'un objet noté par les joueurs, à choisir (pour tous) ; null pour un objet dont le rang vient du jeu.</summary>
+    Control? GradeRow(MarketItem? item)
+    {
+        if (item is null || !Market.GradeEditable(item)) return null;
+        return new StackPanel
+        {
+            Spacing = 4,
+            Children =
+            {
+                Label("Couleur (rang)"),
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal, Spacing = 8,
+                    Children =
+                    {
+                        GradePicker(item.Grade, g => market.SetGrade(item.Key, g)),
+                        T(item.Grade is null ? "pas lue : choisis-la" : db.Grade(item.Grade).Name, 11, Tok.Muted).WithMargin(0, 4, 0, 0),
+                    },
+                },
+                T("Lue à la couleur du nom sur les captures, elle se trompe parfois : ton choix vaut pour tous les joueurs.", 11, Tok.Muted, wrap: true),
+            },
+        };
+    }
 
     /// <summary>Un objet comme dans l'hôtel du jeu : barre de la couleur de son rang, nom coloré, puis (facultatif) sa catégorie.</summary>
     Control MarketItemLine(MarketItem? item, string name, double size = 13, bool withKind = false)
@@ -426,9 +484,29 @@ sealed partial class ScreenViews
                 var line = lines[i];
                 var index = i;
                 var item = Known(line.Name);
-                // Objet déjà dans la liste : son rang ; sinon celui lu à la couleur du nom sur la capture.
-                var bar = new Border { Width = 3, CornerRadius = new CornerRadius(1.5), Margin = new Thickness(0, 4, 8, 4),
-                    Background = (item?.GameGrade ?? line.Grade) is { } g ? MarketBrush(g) : Tok.Border };
+                // Rang choisi à la main ; sinon celui de l'objet déjà dans la liste ; sinon celui lu à la couleur du nom sur la capture.
+                IBrush BarOf(MarketShotLine l, MarketItem? known) =>
+                    (l.GradeChosen ? l.Grade : known?.GameGrade ?? l.Grade) is { } g ? MarketBrush(g) : Tok.Border;
+                var bar = new Border { Width = 8, CornerRadius = new CornerRadius(2), Margin = new Thickness(0, 4, 8, 4), Background = BarOf(line, item) };
+                // Un clic sur la barre : choisir la couleur (objet noté par les joueurs ou nouveau ; celle d'un objet du jeu ne change pas).
+                var gradeFlyout = new Flyout { Placement = PlacementMode.BottomEdgeAlignedLeft };
+                gradeFlyout.Opening += (_, _) =>
+                {
+                    var known = Known(line.Name);
+                    gradeFlyout.Content = known is not null && !Market.GradeEditable(known)
+                        ? T("Rang du jeu : il ne se change pas.", 12, Tok.Muted)
+                        : GradePicker(line.GradeChosen ? line.Grade : known?.Grade ?? line.Grade, g =>
+                        {
+                            line = line with { Grade = g, GradeChosen = true };
+                            market.EditShot(index, line);
+                            bar.Background = BarOf(line, Known(line.Name));
+                            gradeFlyout.Hide();
+                        });
+                };
+                FlyoutBase.SetAttachedFlyout(bar, gradeFlyout);
+                bar.Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand);
+                bar.PointerPressed += (_, _) => FlyoutBase.ShowAttachedFlyout(bar);
+                ToolTip.SetTip(bar, "Couleur de l'objet (rang) : clique pour la choisir si elle est mal lue.");
                 var name = new TextBox { Text = item?.Name ?? line.Name, MinWidth = 0, FontSize = 13 };
                 var price = new TextBox { Text = Fmt.Big(line.Price), MinWidth = 0, FontSize = 13, HorizontalContentAlignment = HorizontalAlignment.Right };
                 var hint = T(item is null ? "nouveau" : "", 10, Tok.Warn, mono: true);
@@ -436,10 +514,11 @@ sealed partial class ScreenViews
                 {
                     var text = string.Join(' ', (name.Text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries));
                     var value = long.TryParse(new string((price.Text ?? "").Where(char.IsDigit).ToArray()), out var v) ? v : 0;
-                    market.EditShot(index, line with { Name = text, Price = value });
+                    line = line with { Name = text, Price = value };
+                    market.EditShot(index, line);
                     var known = Known(text);
                     hint.Text = known is null ? "nouveau" : "";
-                    bar.Background = (known?.GameGrade ?? line.Grade) is { } kg ? MarketBrush(kg) : Tok.Border;
+                    bar.Background = BarOf(line, known);
                 }
                 name.TextChanged += (_, _) => Changed();
                 price.TextChanged += (_, _) => Changed();
@@ -807,6 +886,7 @@ sealed partial class ScreenViews
         var body = new StackPanel { Spacing = 14, Margin = new Thickness(14) };
         panel.Children.Add(body);
         body.Children.Add(ItemTitle(selected.Item, list[^1].ItemName));
+        if (GradeRow(selected.Item) is { } gradeRow) body.Children.Add(gradeRow);
         body.Children.Add(KeyValue(
         [
             ("dernier prix", $"{Fmt.Big(list[^1].Price)} · {Market.Since(list[^1].At)}", Tok.Text),
