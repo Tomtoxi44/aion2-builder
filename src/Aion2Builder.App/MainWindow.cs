@@ -1147,6 +1147,7 @@ public sealed class MainWindow : Window
                 EditShot = (i, line) => { if (marketShot is { } l && i < l.Count) l[i] = line; },
                 NameItem = NameItemAsync,
                 AddRecipe = AddRecipeAsync,
+                ReplaceRecipe = ReplaceRecipeAsync,
                 RemoveRecipe = rc => _ = MarketActionAsync(key => Market.RemoveRecipe(key, rc.Id), $"recette retirée : {rc.Output.Name} (rétablissable)"),
                 RestoreRecipe = id => _ = MarketActionAsync(key => Market.RestoreRecipe(key, id), "recette rétablie"),
                 AddNpc = AddNpcAsync,
@@ -2261,6 +2262,21 @@ public sealed class MainWindow : Window
         if (error is null)
         {
             SetStatus($"recette notée : {recipe.Output.Name} (partagée avec la communauté)");
+            await LoadMarketAsync(force: true);
+        }
+        return error;
+    }
+
+    /// <summary>Écran Craft : corriger une recette pour tous (l'ancienne reste rétablissable) ; les recettes sont relues aussitôt.</summary>
+    async Task<string?> ReplaceRecipeAsync(int id, RecipeSend recipe)
+    {
+        if (AccountKey() is not { } key) return "Il faut ta clé Aion 2 Todo (écran Familiers).";
+        string? error;
+        try { error = await Market.ReplaceRecipe(key, id, recipe); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { error = $"Aion 2 Todo injoignable ({ex.Message})."; }
+        if (error is null)
+        {
+            SetStatus($"recette corrigée : {recipe.Output.Name} (l'ancienne version reste dans les retirées 30 jours)");
             await LoadMarketAsync(force: true);
         }
         return error;

@@ -77,6 +77,7 @@ sealed record MarketState(MarketData? Data, bool Linked, string? Status, Func<st
     public Func<long, string, Task<string?>> NameItem { get; init; } = (_, _) => Task.FromResult<string?>(null);
     /// <summary>Écran Craft : noter une recette (null si c'est fait, sinon l'erreur), la retirer, la rétablir.</summary>
     public Func<RecipeSend, Task<string?>> AddRecipe { get; init; } = _ => Task.FromResult<string?>(null);
+    public Func<int, RecipeSend, Task<string?>> ReplaceRecipe { get; init; } = (_, _) => Task.FromResult<string?>(null);
     public Action<CraftRecipe> RemoveRecipe { get; init; } = _ => { };
     public Action<int> RestoreRecipe { get; init; } = _ => { };
     /// <summary>Écran Craft : noter ou corriger le prix d'un objet du PNJ (nom, prix, onglet), pour tous ; le retirer.</summary>
@@ -157,6 +158,13 @@ static class Market
     {
         using var http = BugReports.Client(key);
         return await Error(await http.PostAsJsonAsync("/api/sync/market/recipes", recipe));
+    }
+
+    /// <summary>Corriger une recette : la nouvelle version est notée par toi, l'ancienne passe dans les retirées (rétablissable).</summary>
+    public static async Task<string?> ReplaceRecipe(string key, int id, RecipeSend recipe)
+    {
+        using var http = BugReports.Client(key);
+        return await Error(await http.PutAsJsonAsync($"/api/sync/market/recipes/{id}", recipe));
     }
 
     /// <summary>Noms lus sur une capture de la fenêtre d'artisanat : ils entrent dans la liste des objets, pour tous. Renvoie le nombre ajouté.</summary>

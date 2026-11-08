@@ -33,6 +33,24 @@ sealed class CraftDraft
     public string Note { get; set; } = "";
     /// <summary>L'objet fabriqué sera lié d'âme (lu sur la capture, ou coché).</summary>
     public bool Bound { get; set; }
+    /// <summary>Correction d'une recette notée : son numéro (null : nouvelle recette).</summary>
+    public int? Replaces { get; set; }
+
+    /// <summary>Le formulaire rempli avec une recette notée, pour la corriger.</summary>
+    public static CraftDraft From(CraftRecipe rc)
+    {
+        var draft = new CraftDraft
+        {
+            Output = rc.Output.Name, OutputQty = rc.Output.Qty.ToString(), Kinah = rc.Kinah > 0 ? rc.Kinah.ToString() : "",
+            Note = rc.Note ?? "", Bound = rc.Bound, Replaces = rc.Id,
+        };
+        draft.Inputs.Clear();
+        draft.Inputs.AddRange(rc.Inputs.Select(p => new CraftDraftLine
+        {
+            Name = p.Name, Qty = p.Qty.ToString(), Npc = p.Npc is not null, NpcPrice = p.Npc?.ToString() ?? "",
+        }));
+        return draft;
+    }
 }
 
 sealed class CraftDraftLine
@@ -343,7 +361,11 @@ sealed partial class ScreenViews
         if (m.Plans.Count == 0) body.Children.Add(T("Aucune recette notée pour l'instant.", 12, Tok.Muted).WithMargin(14, 6));
         body.Children.Add(SideGroup("Ajouter"));
         body.Children.Add(SideItem(Icons.Card, "Noter une recette", null, null, "depuis une capture de la fenêtre d'artisanat, ou à la main",
-            s.CraftPage == CraftPage.New, () => update(st => st.CraftPage = CraftPage.New)));
+            s.CraftPage == CraftPage.New && s.CraftDraft.Replaces is null, () => update(st =>
+            {
+                if (st.CraftDraft.Replaces is not null) { st.CraftDraft = new CraftDraft(); st.CraftError = null; }
+                st.CraftPage = CraftPage.New;
+            })));
         var npc = m.Data.Npc?.Count ?? 0;
         body.Children.Add(SideItem(Icons.List, "Prix des PNJ", $"{npc}", Tok.Text2, "objets achetés chez un marchand (catalyseurs…)",
             s.CraftPage == CraftPage.Npc, () => update(st => st.CraftPage = CraftPage.Npc)));
@@ -367,7 +389,7 @@ sealed partial class ScreenViews
         return s.CraftPage switch
         {
             CraftPage.Recipe when m.Plans.FirstOrDefault(p => p.Recipe.Id == s.CraftRecipe) is { } plan => CraftRecipePage(m, plan, right),
-            CraftPage.New => Page("Craft · noter une recette", right, RecipeForm(m.Data)),
+            CraftPage.New => Page(s.CraftDraft.Replaces is null ? "Craft · noter une recette" : "Craft · corriger une recette", right, RecipeForm(m.Data)),
             CraftPage.Npc => Page("Craft · prix des PNJ", right, NpcCard(m.Data)),
             _ => CraftOverview(m, right),
         };
@@ -377,7 +399,7 @@ sealed partial class ScreenViews
     string CraftCrumb() => s.CraftPage switch
     {
         CraftPage.Recipe => Crafting()?.Plans.FirstOrDefault(p => p.Recipe.Id == s.CraftRecipe)?.Recipe.Output.Name ?? "Vue d'ensemble",
-        CraftPage.New => "Noter une recette",
+        CraftPage.New => s.CraftDraft.Replaces is null ? "Noter une recette" : "Corriger une recette",
         CraftPage.Npc => "Prix des PNJ",
         _ => "Vue d'ensemble",
     };
@@ -495,12 +517,36 @@ sealed partial class ScreenViews
             head.Children.Add(Tip(Clickable(T("fiche AION 2 Hub ↗", 11, Accent.Main, mono: true), () => OpenLink($"https://aion2hub.com/database/items/{gameId}"), null, Tok.Hover, new Thickness(6, 2)),
                 "Fiche de l'objet sur AION 2 Hub (site de fans, en anglais) : sa recette pour la vérifier. Rien n'est repris automatiquement."));
         var recipe = rc;
-        head.Children.Add(Tip(Clickable(T("retirer la recette", 11, Tok.Muted, mono: true), () =>
+        Control Button(string text, IBrush color, Action act, string tip)
+        {
+            var b = Clickable(T(text, 12, color, FontWeight.SemiBold, mono: true), act, null, Tok.Hover, new Thickness(12, 4));
+            b.CornerRadius = new CornerRadius(3);
+            b.BorderBrush = color;
+            b.BorderThickness = new Thickness(1);
+            return Tip(b, tip);
+        }
+        head.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 0),
+            Children =
             {
-                market.RemoveRecipe(recipe);
-                update(st => { st.CraftUndo = (recipe.Id, recipe.Output.Name); st.CraftPage = CraftPage.Overview; });
-            }, null, Tok.Hover, new Thickness(6, 2)),
-            "Retirer cette recette (fausse ou en double) : pour tous les joueurs, rétablissable 30 jours."));
+                Button("modifier", Accent.Main, () => update(st =>
+                    {
+                        st.CraftDraft = CraftDraft.From(recipe);
+                        st.CraftError = null;
+                        st.CraftShotStatus = null;
+                        st.CraftPage = CraftPage.New;
+                    }),
+                    "Corriger cette recette (ingrédient, quantité, coût, note…) : la version corrigée est notée avec ton pseudo, " +
+                    "l'ancienne passe dans les retirées et reste rétablissable 30 jours."),
+                Button("retirer", Tok.Bad, () =>
+                    {
+                        market.RemoveRecipe(recipe);
+                        update(st => { st.CraftUndo = (recipe.Id, recipe.Output.Name); st.CraftPage = CraftPage.Overview; });
+                    },
+                    "Retirer cette recette (fausse ou en double) : pour tous les joueurs, rétablissable 30 jours (« rétablir » sur la vue d'ensemble)."),
+            },
+        });
         blocks.Add(head);
 
         // Les quatre chiffres d'une fabrication.
@@ -829,16 +875,37 @@ sealed partial class ScreenViews
             if (inputs.Count == 0) { update(st => st.CraftError = "Ajoute au moins un ingrédient."); return; }
             var cost = long.TryParse(new string(draft.Kinah.Where(char.IsDigit).ToArray()), out var k) ? k : 0;
             var output = Part(draft.Output, Number(draft.OutputQty, 1));
-            var error = await market.AddRecipe(new RecipeSend(output, inputs, cost, draft.Note.Trim().Length > 0 ? draft.Note.Trim() : null, draft.Bound));
+            var send = new RecipeSend(output, inputs, cost, draft.Note.Trim().Length > 0 ? draft.Note.Trim() : null, draft.Bound);
+            var replaces = draft.Replaces;
+            var error = replaces is { } id ? await market.ReplaceRecipe(id, send) : await market.AddRecipe(send);
             update(st =>
             {
                 st.CraftError = error;
-                if (error is null) { st.CraftDraft = new CraftDraft(); st.CraftShotStatus = null; }
+                if (error is not null) return;
+                st.CraftDraft = new CraftDraft();
+                st.CraftShotStatus = null;
+                if (replaces is not null) st.CraftPage = CraftPage.Overview;
             });
         }
-        var save = Clickable(T("noter la recette", 12, Tok.OnAccent, FontWeight.SemiBold, mono: true), Submit, Accent.Main, null, new Thickness(14, 5));
+        var save = Clickable(T(draft.Replaces is null ? "noter la recette" : "enregistrer la correction", 12, Tok.OnAccent, FontWeight.SemiBold, mono: true),
+            Submit, Accent.Main, null, new Thickness(14, 5));
         save.CornerRadius = new CornerRadius(3);
-        form.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { kinah, note, bound, save } });
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { kinah, note, bound, save } };
+        if (draft.Replaces is { } editing)
+        {
+            var cancel = Clickable(T("annuler", 12, Accent.Main, FontWeight.SemiBold, mono: true), () => update(st =>
+            {
+                st.CraftDraft = new CraftDraft();
+                st.CraftError = null;
+                st.CraftPage = CraftPage.Recipe;
+                st.CraftRecipe = editing;
+            }), null, Tok.Hover, new Thickness(12, 5));
+            cancel.CornerRadius = new CornerRadius(3);
+            cancel.BorderBrush = Accent.Main;
+            cancel.BorderThickness = new Thickness(1);
+            actions.Children.Add(cancel);
+        }
+        form.Children.Add(actions);
         if (s.CraftError is { } err) form.Children.Add(T(err, 12, Tok.Bad, wrap: true));
         form.Children.Add(T("Recopie la fenêtre d'artisanat du jeu : les quantités d'UNE fabrication. Un objet de la liste « Objets du PNJ » (plus bas) prend son prix " +
                             "tout seul ; pour un autre objet acheté chez un marchand, coche « PNJ » et note son prix. La recette vaut pour tous les joueurs d'Aion 2 Todo, " +
@@ -847,7 +914,10 @@ sealed partial class ScreenViews
         hub.HorizontalAlignment = HorizontalAlignment.Left;
         form.Children.Add(Tip(hub, "Calculateur d'artisanat d'AION 2 Hub (site de fans, en anglais, recettes tirées du jeu) : pour lire une recette et la recopier ici. " +
                                    "Le Builder ne reprend rien de ce site sans leur accord."));
-        return Card(form, "Noter une recette", null, new Thickness(16, 10, 16, 12));
+        if (draft.Replaces is not null)
+            form.Children.Insert(0, Callout("Correction d'une recette notée : la version corrigée sera notée avec ton pseudo, l'ancienne passera dans les " +
+                                            "retirées (rétablissable 30 jours).", Accent.Main));
+        return Card(form, draft.Replaces is null ? "Noter une recette" : "Corriger la recette", null, new Thickness(16, 10, 16, 12));
     }
 
     /// <summary>Un nom coupé par le jeu (« Épée éclatante du Roi dr… ») sans ses « … », pour chercher les objets qui commencent ainsi.</summary>
