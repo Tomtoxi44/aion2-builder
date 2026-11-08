@@ -69,6 +69,8 @@ sealed class UiState
     public string? MarketQuery { get; set; }
     public string? MarketGrade { get; set; }
     public string? MarketKind { get; set; }
+    /// <summary>HdV, derniers prix : groupes dépliés (Récolte, Équipement, Fabrication, Noté par les joueurs) ; la récolte d'abord.</summary>
+    public HashSet<string> MarketOpen { get; } = ["Récolte"];
     /// <summary>Prix HdV en graphique au lieu de la liste : les objets tracés (une case par couleur, gardée tant que l'objet reste
     /// tracé), la période en jours (0 : tout) et l'évolution en % au lieu du prix.</summary>
     /// <summary>Page ouverte de l'écran HdV (barre de gauche).</summary>

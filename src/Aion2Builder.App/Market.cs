@@ -764,14 +764,9 @@ sealed partial class ScreenViews
                 : "Ce que rapporterait ta récolte du jour au prix de la communauté : aucune ressource récoltée aujourd'hui n'a encore de prix sur ce marché."));
         blocks.Add(kpis);
 
-        // Derniers prix : un objet par ligne, rangés comme l'hôtel du jeu (la récolte par famille, du blanc au jaune, puis
-        // l'équipement) ; filtres par rang et par type ; recherche instantanée ; clic : l'objet dans l'inspecteur.
+        // Derniers prix (choix « A » du 8 novembre) : rangés par type en groupes repliables (la récolte dépliée d'abord), une
+        // seule ligne de filtres (recherche, rang en pastilles) ; au-dessus, ce qui a bougé sur 7 jours (repris de la « B »).
         var byItem = MarketRows(data, here);
-        var present = byItem.Select(x => x.Item?.GameGrade).OfType<string>().Distinct().OrderBy(g => db.Grade(g).Rank).ToList();
-        var kinds = byItem.Select(x => x.Item?.IsGathering == true ? "Récolte" : "Équipement et autres").Distinct().ToList();
-        var filtered = byItem
-            .Where(x => s.MarketGrade is null || x.Item?.GameGrade == s.MarketGrade)
-            .Where(x => s.MarketKind is null || (x.Item?.IsGathering == true ? "Récolte" : "Équipement et autres") == s.MarketKind).ToList();
         var selected = MarketSelected(byItem);
         if (byItem.Count == 0)
         {
@@ -779,51 +774,142 @@ sealed partial class ScreenViews
                 "Derniers prix de la communauté"));
             return Page(pageTitle, null, blocks.ToArray());
         }
-        var query = new TextBox { Text = s.MarketQuery ?? "", PlaceholderText = "filtrer : aria, anneau…", Width = 210 };
-        var filters = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { query } };
-        if (present.Count > 1)
-            filters.Children.Add(Choice(new[] { ("tous les rangs", s.MarketGrade is null, (Action)(() => update(st => st.MarketGrade = null))) }
-                .Concat(present.Select(g => (Market.GradeWord(g), s.MarketGrade == g, (Action)(() => update(st => st.MarketGrade = g)))))));
-        if (kinds.Count > 1)
-            filters.Children.Add(Choice(new[] { ("tout", s.MarketKind is null, (Action)(() => update(st => st.MarketKind = null))) }
-                .Concat(kinds.Select(k => (k == "Récolte" ? "récolte" : "équipement et autres", s.MarketKind == k, (Action)(() => update(st => st.MarketKind = k)))))));
 
-        const string cols = "*,130,110,80,170,96";
-        var rows = new List<(Control Row, string Text)>();
-        foreach (var x in filtered)
+        // Ce qui bouge : le dernier prix face au prix d'il y a 7 jours (le dernier relevé d'avant, sinon le premier de la semaine).
+        var since = DateTime.UtcNow.AddDays(-7);
+        var moves = byItem.Select(x =>
         {
             var last = x.List[^1];
-            var prev = x.List.Count > 1 ? x.List[^2] : null;
-            var d = prev is null ? 0 : last.Price - prev.Price;
-            var pct = prev is null || prev.Price == 0 ? 0 : d * 100.0 / prev.Price;
-            var grade = x.Item?.GameGrade;
-            var spark = x.List.Count > 1
-                ? (Control)new TimeChart(x.List.TakeLast(20).Select(p => new ChartPoint(p.At, p.Price, $"{p.At.ToLocalTime():dd/MM HH:mm} : {Fmt.Big(p.Price)}")).ToList(),
-                    v => Fmt.Big(v), grade is null ? Accent.Main : MarketBrush(grade), 22, compact: true) { Width = 90, HorizontalAlignment = HorizontalAlignment.Left }
-                : T("—", 12, Tok.Faint, mono: true);
-            var evolution = prev is null ? (Control)T("—", 12, Tok.Muted, mono: true).AlignRight()
-                : Tip(T(d == 0 ? "=" : Math.Abs(pct) < 0.05 ? "≈" : $"{(d > 0 ? "+" : "−")}{Math.Abs(pct):0.#} %", 12, d > 0 ? Tok.Good : d < 0 ? Tok.Bad : Tok.Muted, mono: true).AlignRight(),
-                    d == 0 ? $"Même prix qu'au relevé d'avant ({Fmt.Big(prev.Price)})" : $"{(d > 0 ? "+" : "−")}{Fmt.Big(Math.Abs(d))} Kinah depuis le relevé d'avant ({Fmt.Big(prev.Price)}, {prev.At.ToLocalTime():dd/MM})");
-            var when = T($"{Market.Since(last.At)} · {By(last)}", 12, Tok.Muted);
-            var key = x.Key;
-            var row = TableRow(Columns(cols, MarketItemLine(x.Item, last.ItemName),
-                T(x.Item?.Kind ?? "noté par son nom", 11, Tok.Muted),
-                T(Fmt.Big(last.Price), 13, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(),
-                evolution, when, spark), x.Key == selected?.Key, () => update(st => { st.MarketItem = key; st.MarketConfirm = null; }));
-            rows.Add((row, $"{last.ItemName} {x.Item?.Category}"));
+            var before = x.List.LastOrDefault(q => q.At.ToUniversalTime() < since) ?? x.List.FirstOrDefault(q => q.At < last.At);
+            return (x.Key, x.Item, Last: last, Pct: before is { Price: > 0 } bp && bp.At < last.At ? (last.Price - bp.Price) * 100.0 / bp.Price : (double?)null);
+        }).Where(x => x.Pct is { } v && Math.Abs(v) >= 1).ToList();
+        Control MoveList(IEnumerable<(string Key, MarketItem? Item, MarketPrice Last, double? Pct)> list, string empty)
+        {
+            var panel = new StackPanel { Spacing = 2 };
+            foreach (var (key, item, last, pct) in list)
+            {
+                // Plus de ×10 en une semaine : sans doute une faute de frappe (un zéro de trop), signalée pour être vérifiée.
+                var suspect = pct >= 900;
+                var change = suspect ? $"×{Fmt.Big((long)Math.Round(1 + pct!.Value / 100))}" : $"{(pct > 0 ? "+" : "−")}{Math.Abs(pct!.Value):0.#} %";
+                Control line = Clickable(Columns("*,90,90", MarketItemLine(item, last.ItemName, 12),
+                    T(change, 12, suspect ? Tok.Warn : pct > 0 ? Tok.Good : Tok.Bad, FontWeight.SemiBold, mono: true).AlignRight(),
+                    T(Fmt.Big(last.Price), 12, Tok.Text2, mono: true).AlignRight()), () => update(st => { st.MarketItem = key; st.MarketConfirm = null; }), null, Tok.Hover, new Thickness(4, 3));
+                panel.Children.Add(suspect
+                    ? Tip(line, $"Prix suspect : {change} en 7 jours ({Fmt.Big(last.Price)}, noté par {By(last)}). Peut-être une faute de frappe : vérifie-le, et retire-le dans l'inspecteur s'il est faux.")
+                    : line);
+            }
+            if (panel.Children.Count == 0) panel.Children.Add(T(empty, 12, Tok.Muted, wrap: true));
+            return panel;
+        }
+        if (moves.Count > 0)
+            blocks.Add(Columns("*,*",
+                Card(MoveList(moves.Where(x => x.Pct > 0).OrderByDescending(x => x.Pct).Take(4), "Rien n'a monté cette semaine."), "En hausse · 7 jours",
+                    T("clic : l'objet", 11, Tok.Muted, mono: true)).WithMargin(0, 0, 12, 0),
+                Card(MoveList(moves.Where(x => x.Pct < 0).OrderBy(x => x.Pct).Take(4), "Rien n'a baissé cette semaine."), "En baisse · 7 jours",
+                    T("clic : l'objet", 11, Tok.Muted, mono: true))));
+
+        // Une seule ligne de filtres : la recherche, le rang en pastilles de couleur (clic à nouveau : tous).
+        var query = new TextBox { Text = s.MarketQuery ?? "", PlaceholderText = "filtrer : aria, anneau…", Width = 230 };
+        var filters = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14, Children = { query } };
+        var present = byItem.Select(x => x.Item?.GameGrade).OfType<string>().Distinct().OrderBy(g => db.Grade(g).Rank).ToList();
+        if (present.Count > 1)
+        {
+            var dots = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+            dots.Children.Add(T("rang", 11, Tok.Muted, mono: true).WithMargin(0, 3, 6, 0));
+            foreach (var g in present)
+            {
+                var on = s.MarketGrade == g;
+                var dot = new Border
+                {
+                    Width = 14, Height = 14, CornerRadius = new CornerRadius(7), Background = MarketBrush(g), BorderBrush = Tok.Text,
+                    BorderThickness = new Thickness(on ? 2 : 0), Opacity = s.MarketGrade is null || on ? 1 : 0.4,
+                };
+                var grade = g;
+                dots.Children.Add(Tip(Clickable(dot, () => update(st => st.MarketGrade = on ? null : grade), null, Tok.Hover, new Thickness(3)),
+                    on ? "Tous les rangs" : $"Seulement {Market.GradeWord(g)}"));
+            }
+            filters.Children.Add(dots);
+        }
+        blocks.Add(filters);
+
+        // Les groupes : type d'objet, comme les onglets de l'hôtel du jeu.
+        static string GroupOf((string Key, MarketItem? Item, List<MarketPrice> List) x) =>
+            x.Item?.IsGathering == true ? "Récolte"
+            : x.Item?.Category.StartsWith("Fabrication") == true ? "Fabrication"
+            : x.Item is null || x.Key.StartsWith("name:") || x.Item.Category is "Noté par un joueur" or "Nommé par un joueur" ? "Noté par les joueurs"
+            : "Équipement";
+        string[] order = ["Récolte", "Équipement", "Fabrication", "Noté par les joueurs"];
+        var filtered = byItem.Where(x => s.MarketGrade is null || x.Item?.GameGrade == s.MarketGrade).ToList();
+        const string cols = "*,110,80,96";
+        var table = new StackPanel();
+        var header = TableHeader(cols, "Objet", "Prix", "Évolution", "Tendance");
+        var groups = new List<(string Name, Border Head, TextBlock Count, List<(Control Row, string Text)> Rows)>();
+        foreach (var name in order)
+        {
+            var members = filtered.Where(x => GroupOf(x) == name).ToList();
+            if (members.Count == 0) continue;
+            var open = s.MarketOpen.Contains(name);
+            var count = T("", 11, Tok.Muted, mono: true);
+            var head = Clickable(new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 8,
+                Children = { T(open ? "▾" : "▸", 12, Accent.Main, mono: true), T(name, 12, Accent.Main, FontWeight.SemiBold), count },
+            }, () => update(st => { if (!st.MarketOpen.Remove(name)) st.MarketOpen.Add(name); }), Tok.Frame, Tok.Hover, new Thickness(20, 6));
+            head.BorderBrush = Tok.RowLine;
+            head.BorderThickness = new Thickness(0, 1, 0, 1);
+            table.Children.Add(head);
+            var rows = new List<(Control Row, string Text)>();
+            foreach (var x in members)
+            {
+                var last = x.List[^1];
+                var prev = x.List.Count > 1 ? x.List[^2] : null;
+                var d = prev is null ? 0 : last.Price - prev.Price;
+                var pct = prev is null || prev.Price == 0 ? 0 : d * 100.0 / prev.Price;
+                var grade = x.Item?.GameGrade;
+                var spark = x.List.Count > 1
+                    ? (Control)new TimeChart(x.List.TakeLast(20).Select(p => new ChartPoint(p.At, p.Price, $"{p.At.ToLocalTime():dd/MM HH:mm} : {Fmt.Big(p.Price)}")).ToList(),
+                        v => Fmt.Big(v), grade is null ? Accent.Main : MarketBrush(grade), 22, compact: true) { Width = 90, HorizontalAlignment = HorizontalAlignment.Left }
+                    : T("—", 12, Tok.Faint, mono: true);
+                var evolution = prev is null ? (Control)T("—", 12, Tok.Muted, mono: true).AlignRight()
+                    : Tip(T(d == 0 ? "=" : Math.Abs(pct) < 0.05 ? "≈" : $"{(d > 0 ? "+" : "−")}{Math.Abs(pct):0.#} %", 12, d > 0 ? Tok.Good : d < 0 ? Tok.Bad : Tok.Muted, mono: true).AlignRight(),
+                        d == 0 ? $"Même prix qu'au relevé d'avant ({Fmt.Big(prev.Price)})" : $"{(d > 0 ? "+" : "−")}{Fmt.Big(Math.Abs(d))} Kinah depuis le relevé d'avant ({Fmt.Big(prev.Price)}, {prev.At.ToLocalTime():dd/MM})");
+                var key = x.Key;
+                // Qui a noté et quand : dans la bulle du prix et dans l'inspecteur, plus sur chaque ligne.
+                var price = Tip(T(Fmt.Big(last.Price), 13, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(), $"Noté {Market.Since(last.At)} par {By(last)}");
+                var row = TableRow(Columns(cols, MarketItemLine(x.Item, last.ItemName, withKind: name is "Équipement" or "Fabrication"), price, evolution, spark),
+                    x.Key == selected?.Key, () => update(st => { st.MarketItem = key; st.MarketConfirm = null; }));
+                table.Children.Add(row);
+                rows.Add((row, $"{last.ItemName} {x.Item?.Category}"));
+            }
+            groups.Add((name, head, count, rows));
         }
         var none = T("Aucun objet ne correspond à ce filtre.", 12, Tok.Muted).WithMargin(20, 8, 20, 8);
+        table.Children.Add(none);
+        // Recherche instantanée : un groupe replié s'ouvre tant qu'on cherche ; son titre compte ce qui correspond.
         void Filter()
         {
-            var shownRows = 0;
-            foreach (var (row, text) in rows) { row.IsVisible = Market.Matches(query.Text, text); if (row.IsVisible) shownRows++; }
-            none.IsVisible = shownRows == 0;
+            var searching = !string.IsNullOrWhiteSpace(query.Text);
+            var total = 0;
+            foreach (var (name, head, count, rows) in groups)
+            {
+                var open = searching || s.MarketOpen.Contains(name);
+                var matching = 0;
+                foreach (var (row, text) in rows)
+                {
+                    var hit = Market.Matches(query.Text, text);
+                    if (hit) matching++;
+                    row.IsVisible = open && hit;
+                }
+                head.IsVisible = matching > 0;
+                count.Text = $"{matching}";
+                total += matching;
+            }
+            none.IsVisible = total == 0;
         }
         query.TextChanged += (_, _) => { s.MarketQuery = query.Text; Filter(); };
         Filter();
-        blocks.Add(filters);
         blocks.Add(TableCard("Derniers prix de la communauté", T($"{Fmt.Plural(filtered.Count, "objet")} · prix unitaire en Kinah · clic : le détail à droite", 11, Tok.Muted, mono: true),
-            TableHeader(cols, "Objet", "Type", "Prix", "Évolution", "Dernier relevé", "Tendance"), rows.Select(x => x.Row).Append((Control)none)));
+            header, [table]));
         blocks.Add(T("Prix unitaires notés à la main par les joueurs d'Aion 2 Todo (aucune source publique n'existe), avec le pseudo de leur auteur : " +
                      "les mêmes que l'onglet « Prix HdV » du site. Un prix faux se retire par n'importe qui (inspecteur → « retirer ») et se rétablit pendant 30 jours.",
             11, Tok.Muted, wrap: true).WithLineHeight(1.4));
