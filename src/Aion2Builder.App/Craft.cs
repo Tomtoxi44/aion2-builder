@@ -75,15 +75,23 @@ sealed class CraftDraftLine
 sealed record CraftCosting(long? Sell, long? Inputs, long? Buy, long Npc, long Fee, List<string> NoPrice, List<string> Chained, DateTime? Oldest,
     List<string> Uncounted, bool ForSelf);
 
-/// <summary>D'où vient le prix d'un ingrédient : l'hôtel, un PNJ, la recette qui le fabrique, ou rien (compté 0).</summary>
-enum PartSource { Market, Npc, Recipe, None }
+/// <summary>
+/// D'où vient le prix d'un ingrédient : l'hôtel, un PNJ, la recette qui le fabrique, l'Od du même rang transmuté (1 pour 1,
+/// moins cher que la ressource), ou rien (compté 0).
+/// </summary>
+enum PartSource { Market, Npc, Recipe, Od, None }
 
 /// <summary>
 /// Un ingrédient chiffré pour une fabrication : d'où vient son prix ; Unit : prix à l'unité (hôtel, PNJ, ou coût par unité de sa
 /// recette) ; Value : ce qu'il pèse dans le coût (vendu tel quel, taxe déduite ; PNJ : acheté) ; Buy : acheté à l'hôtel ; At : date
 /// du prix (le plus ancien de sa recette) ; Via : la recette qui le chiffre ; Uncounted : ses ingrédients sans prix.
 /// </summary>
-sealed record PartCost(PartSource Source, long? Unit, long Value, long Buy, DateTime? At, CraftRecipe? Via, List<string> Uncounted);
+sealed record PartCost(PartSource Source, long? Unit, long Value, long Buy, DateTime? At, CraftRecipe? Via, List<string> Uncounted)
+{
+    /// <summary>Source Od : l'Od transmuté à sa place, et le prix de la ressource elle-même (null sans prix).</summary>
+    public string? Od { get; init; }
+    public long? Own { get; init; }
+}
 
 /// <summary>
 /// Une recette jugée. Gain : fabriquer avec tes ingrédients plutôt que les vendre tels quels (négatif : vends-les) ; Flip :
@@ -104,11 +112,46 @@ sealed record CraftPlan(CraftRecipe Recipe, MarketItem? Item, CraftCosting C, in
 
 /// <summary>
 /// Chiffrage des recettes : dernier prix du marché (taxe déduite à la vente), prix du PNJ, et, pour un ingrédient sans prix
-/// qu'une autre recette fabrique, le coût de cette recette (la moins chère, 3 niveaux au plus, sans boucle).
+/// qu'une autre recette fabrique, le coût de cette recette (la moins chère, 3 niveaux au plus, sans boucle). Une ressource de
+/// récolte (rangs 1 à 4) prend le prix de l'Od du même rang quand il est moins cher : l'Od se transmute en n'importe quelle
+/// ressource de son rang, 1 pour 1. Make : les ingrédients que tu choisis de fabriquer plutôt que d'acheter (« recette:clé »).
 /// </summary>
-sealed class CraftBook(MarketData data, Dictionary<string, MarketPrice> latest, double tax, List<CraftRecipe> recipes)
+sealed class CraftBook(MarketData data, Dictionary<string, MarketPrice> latest, double tax, List<CraftRecipe> recipes, IReadOnlySet<string>? make = null)
 {
     public double Tax => tax;
+
+    /// <summary>Les Od par rang (gris, vert, bleu, jaune) : numéros du jeu de la liste des ressources.</summary>
+    static readonly string[] OdKeys = ["610610013", "610610014", "610610015", "610610016"];
+
+    /// <summary>L'Od du rang d'une ressource de récolte et son prix ; null pour un autre objet, un Od, ou sans prix d'Od.</summary>
+    public (MarketItem Od, MarketPrice Price)? OdFor(RecipePart p)
+    {
+        if (ItemOf(p) is not { IsGathering: true, Rank: >= 1 and <= 4 } item || OdKeys.Contains(item.Key)) return null;
+        var key = OdKeys[item.Rank - 1];
+        return data.Items.FirstOrDefault(i => i.Key == key) is { } od && latest.TryGetValue(key, out var price) ? (od, price) : null;
+    }
+
+    /// <summary>Ingrédient que tu as choisi de fabriquer (par sa recette) plutôt que de l'acheter, dans cette recette.</summary>
+    public bool Made(int recipe, RecipePart p) => make?.Contains($"{recipe}:{p.Key}") == true;
+
+    /// <summary>
+    /// La recette la moins chère qui fabrique cet ingrédient, et ce qu'elle coûte par unité (ses ingrédients vendus tels quels, PNJ
+    /// et fabrication) ; null s'il ne se fabrique pas.
+    /// </summary>
+    public (CraftRecipe Recipe, CraftCosting C, long Unit)? MadeOf(CraftRecipe parent, RecipePart p) => Sub(p, [parent.Id]);
+
+    (CraftRecipe Recipe, CraftCosting C, long Unit)? Sub(RecipePart p, HashSet<int> path)
+    {
+        if (path.Count > 3) return null;
+        // La plus complète d'abord : une recette dont tout a un prix passe devant une moins chère qui en oublie.
+        var best = recipes.Where(r => !path.Contains(r.Id) && Same(r.Output, p))
+            .Select(r => (R: r, C: Cost(r, path)))
+            .OrderBy(x => x.C.Uncounted.Count)
+            .ThenBy(x => (x.C.Inputs!.Value + x.C.Npc + x.C.Fee) / (double)x.R.Output.Qty)
+            .FirstOrDefault();
+        if (best.R is null) return null;
+        return (best.R, best.C, (long)Math.Round((best.C.Inputs!.Value + best.C.Npc + best.C.Fee) / (double)best.R.Output.Qty));
+    }
 
     public MarketItem? ItemOf(RecipePart p) =>
         data.Items.FirstOrDefault(i => i.Key == p.Key) ?? data.Items.FirstOrDefault(i => Market.Fold(i.Name) == Market.Fold(p.Name));
@@ -121,7 +164,7 @@ sealed class CraftBook(MarketData data, Dictionary<string, MarketPrice> latest, 
     public CraftCosting Cost(CraftRecipe rc) => Cost(rc, []);
 
     /// <summary>Ce qu'un ingrédient pèse dans le coût d'UNE fabrication (pour le tableau des ingrédients d'une recette).</summary>
-    public PartCost CostOf(CraftRecipe rc, RecipePart p) => CostOf(p, [rc.Id]);
+    public PartCost CostOf(CraftRecipe rc, RecipePart p) => CostOf(p, [rc.Id], rc.Id);
 
     CraftCosting Cost(CraftRecipe rc, HashSet<int> path)
     {
@@ -143,7 +186,7 @@ sealed class CraftBook(MarketData data, Dictionary<string, MarketPrice> latest, 
         var uncounted = new List<string>();
         foreach (var p in rc.Inputs)
         {
-            var c = CostOf(p, path);
+            var c = CostOf(p, path, rc.Id);
             switch (c.Source)
             {
                 case PartSource.Npc: npc += c.Value; break;
@@ -166,24 +209,30 @@ sealed class CraftBook(MarketData data, Dictionary<string, MarketPrice> latest, 
     /// <summary>Lié d'âme à la fabrication, ou objet de la liste « Fabrication » : il ne se revend pas.</summary>
     public bool ForSelf(CraftRecipe rc) => rc.Bound || ItemOf(rc.Output)?.Category.StartsWith("Fabrication") == true;
 
-    PartCost CostOf(RecipePart p, HashSet<int> path)
+    PartCost CostOf(RecipePart p, HashSet<int> path, int parent)
     {
         if (p.Npc is { } unit) return new PartCost(PartSource.Npc, unit, unit * p.Qty, unit * p.Qty, null, null, []);
-        if (PriceOf(p) is { } ip)
+        PartCost FromRecipe((CraftRecipe Recipe, CraftCosting C, long Unit) sub)
+        {
+            var (sr, sc, _) = sub;
+            var share = (double)p.Qty / sr.Output.Qty;
+            var value = (long)Math.Round((sc.Inputs!.Value + sc.Npc + sc.Fee) * share);
+            return new PartCost(PartSource.Recipe, (long)Math.Round(value / (double)p.Qty), value,
+                (long)Math.Round((sc.Buy!.Value + sc.Npc + sc.Fee) * share), sc.Oldest, sr, sc.Uncounted);
+        }
+        // Fabriqué plutôt qu'acheté, à ta demande.
+        if (Made(parent, p) && Sub(p, path) is { } chosen) return FromRecipe(chosen);
+        var ip = PriceOf(p);
+        // L'Od du même rang, transmuté 1 pour 1, quand il coûte moins cher que la ressource (ou qu'elle n'a pas de prix).
+        if (OdFor(p) is { } od && (ip is null || od.Price.Price < ip.Price))
+            return new PartCost(PartSource.Od, od.Price.Price, (long)Math.Round(od.Price.Price * p.Qty * (1 - tax)), od.Price.Price * p.Qty, od.Price.At, null, [])
+                { Od = od.Od.Name, Own = ip?.Price };
+        if (ip is not null)
             return new PartCost(PartSource.Market, ip.Price, (long)Math.Round(ip.Price * p.Qty * (1 - tax)), ip.Price * p.Qty, ip.At, null, []);
         // Sans prix : chiffré par la recette qui le fabrique le moins cher (ingrédients vendus tels quels, PNJ, fabrication).
-        // (la plus complète d'abord : une recette dont tout a un prix passe devant une moins chère qui en oublie)
-        var sub = path.Count > 3 ? default : recipes.Where(r => !path.Contains(r.Id) && Same(r.Output, p))
-            .Select(r => (R: (CraftRecipe?)r, C: (CraftCosting?)Cost(r, path)))
-            .OrderBy(x => x.C!.Uncounted.Count)
-            .ThenBy(x => (x.C!.Inputs!.Value + x.C.Npc + x.C.Fee) / (double)x.R!.Output.Qty)
-            .FirstOrDefault();
+        if (Sub(p, path) is { } sub) return FromRecipe(sub);
         // Ni prix ni recette : compté 0 (souvent un objet qui ne se vend pas, comme la pièce de transfert) ; le coût est un minimum.
-        if (sub.R is not { } sr || sub.C is not { } sc) return new PartCost(PartSource.None, null, 0, 0, null, null, [p.Name]);
-        var share = (double)p.Qty / sr.Output.Qty;
-        var value = (long)Math.Round((sc.Inputs!.Value + sc.Npc + sc.Fee) * share);
-        return new PartCost(PartSource.Recipe, (long)Math.Round(value / (double)p.Qty), value,
-            (long)Math.Round((sc.Buy!.Value + sc.Npc + sc.Fee) * share), sc.Oldest, sr, sc.Uncounted);
+        return new PartCost(PartSource.None, null, 0, 0, null, null, [p.Name]);
     }
 
     /// <summary>
@@ -270,7 +319,7 @@ sealed partial class ScreenViews
         // Ingrédients sortis du coût : ni dans le coût, ni dans « tu peux en faire » ; ils restent affichés, barrés, dans la recette.
         var recipes = full.Select(rc => rc with { Inputs = rc.Inputs.Where(p => !CraftSkipped(rc.Id, p)).ToList() }).ToList();
         var taxNote = shown.StartsWith('*') ? $"{tax:P0} (notes coréennes, à vérifier en jeu)" : $"{tax:P0}";
-        var book = new CraftBook(data, latest, tax, recipes);
+        var book = new CraftBook(data, latest, tax, recipes, s.CraftMake);
 
         // Ton stock : le perso choisi (comme l'écran Inventaire), sac + coffre + autres rangements, sans les pièces portées.
         var inv = PetMeterInventory.Load();
@@ -617,9 +666,35 @@ sealed partial class ScreenViews
             {
                 PartSource.Npc => ("acheté au PNJ", Tok.Muted),
                 PartSource.Market => ($"prix de l'hôtel, noté {Market.Since(pc.At!.Value)}", pc.At < stale ? Tok.Warn : Tok.Muted),
+                PartSource.Od => ($"{pc.Od} à {Fmt.Big(pc.Unit!.Value)}, transmuté 1 pour 1 : " +
+                                  (pc.Own is { } own ? $"moins cher que la ressource ({Fmt.Big(own)})" : "la ressource n'a pas de prix"), Tok.Good),
+                PartSource.Recipe when m.Book.Made(rc.Id, part) => ($"fabriqué par toi : sa recette ({pc.Via!.Output.Name})", Tok.Good),
                 PartSource.Recipe => ($"sans prix : chiffré par sa recette ({pc.Via!.Output.Name})", Tok.Muted),
                 _ => ("ni prix ni recette : compté 0", Tok.Warn),
             };
+            // L'ingrédient se fabrique : ce que coûte sa recette par unité, face à son prix, et le choix « fabriquer plutôt ».
+            Control? alt = null;
+            if (!off && part.Npc is null && m.Book.MadeOf(rc, part) is { } sub)
+            {
+                var madeKey = $"{rc.Id}:{part.Key}";
+                var making = m.Book.Made(rc.Id, part);
+                var buyUnit = m.Book.PriceOf(part)?.Price is { } bp ? Math.Min(bp, m.Book.OdFor(part)?.Price.Price ?? bp) : m.Book.OdFor(part)?.Price.Price;
+                var diff = buyUnit is { } b ? sub.Unit - b : (long?)null;
+                var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                line.Children.Add(T(making ? "acheté :" : "fabriqué :", 11, Tok.Muted));
+                line.Children.Add(T(making ? (buyUnit is { } bu ? $"{Fmt.Big(bu)} / unité" : "pas de prix") : $"{Fmt.Big(sub.Unit)} / unité", 11, Tok.Text2, mono: true));
+                if (diff is { } d && d != 0)
+                    line.Children.Add(T(making ? (d < 0 ? $"(+{Fmt.Big(-d)})" : $"(−{Fmt.Big(d)})") : (d < 0 ? $"(−{Fmt.Big(-d)})" : $"(+{Fmt.Big(d)})"),
+                        11, (making ? d > 0 : d < 0) ? Tok.Good : Tok.Warn, mono: true));
+                var subId = sub.Recipe.Id;
+                line.Children.Add(Tip(Clickable(T(sub.Recipe.Output.Name + " ›", 11, Accent.Main), () => OpenRecipe(subId), null, Tok.Hover, new Thickness(2, 0)),
+                    "Ouvrir sa recette : ses ingrédients et le calcul."));
+                line.Children.Add(Tip(Clickable(T(making ? "l'acheter plutôt" : "fabriquer plutôt", 11, Accent.Main, FontWeight.SemiBold, mono: true),
+                        () => update(st => { if (!st.CraftMake.Remove(madeKey)) st.CraftMake.Add(madeKey); }), null, Tok.Hover, new Thickness(4, 0)),
+                    making ? $"Compter {part.Name} à son prix d'achat (hôtel, ou Od transmuté s'il est moins cher)."
+                           : $"Compter {part.Name} au coût de sa recette ({Fmt.Big(sub.Unit)} par unité) plutôt qu'à son prix d'achat. Gardé pour cette recette."));
+                alt = line;
+            }
             Control stock = off ? T("", 12)
                 : part.Npc is not null ? T("au besoin", 11, Tok.Muted).AlignRight()
                 : x.Have is not { } have ? T("—", 12, Tok.Faint, mono: true).AlignRight()
@@ -632,13 +707,15 @@ sealed partial class ScreenViews
                 {
                     PartSource.Market => $"{part.Qty} × {Fmt.Big(pc.Unit!.Value)} vendus tels quels, taxe de {m.TaxNote} déduite : ce que tu « dépenses » en les fabriquant au lieu de les vendre.",
                     PartSource.Npc => $"{part.Qty} × {Fmt.Big(pc.Unit!.Value)} Kinah chez le PNJ.",
+                    PartSource.Od => $"{part.Qty} × {Fmt.Big(pc.Unit!.Value)} ({pc.Od}, transmuté 1 pour 1), taxe de {m.TaxNote} déduite.",
                     _ => $"Coût de sa recette ({pc.Via!.Output.Name}) pour {part.Qty} : ce que ses ingrédients rapporteraient vendus tels quels, PNJ et fabrication compris.",
                 });
             lines.Add(new Border
             {
                 Padding = new Thickness(12, 6, 20, 6),
                 Child = Columns(cols, box,
-                    new StackPanel { Spacing = 1, Children = { name, T(source, 11, sourceColor) } },
+                    alt is null ? new StackPanel { Spacing = 1, Children = { name, T(source, 11, sourceColor, wrap: true) } }
+                        : new StackPanel { Spacing = 1, Children = { name, T(source, 11, sourceColor, wrap: true), alt } },
                     T($"×{part.Qty}", 13, off ? Tok.Faint : Tok.Text2, mono: true).AlignRight(), stock, unit, weight),
             });
         }
@@ -655,7 +732,9 @@ sealed partial class ScreenViews
             TableHeader(cols, "Compté", "Ingrédient", "Qté", "Ton stock", "Prix unitaire", "Dans le coût"), lines));
         blocks.Add(T($"Comment le coût est compté : un ingrédient de l'hôtel vaut ce qu'il te rapporterait vendu tel quel (prix × quantité, taxe de {m.TaxNote} déduite), " +
                      "puisque le fabriquer, c'est renoncer à le vendre ; un objet du PNJ vaut son prix d'achat ; un ingrédient sans prix qu'une autre recette fabrique vaut le " +
-                     $"coût de cette recette. Prix : derniers notés sur {data.Label(m.Shown)} par les joueurs d'Aion 2 Todo.", 11, Tok.Muted, wrap: true).WithLineHeight(1.45));
+                     "coût de cette recette (« fabriquer plutôt » l'impose même quand il a un prix). Une ressource de récolte prend le prix de l'Od du même rang " +
+                     "(Od, d'une grande pureté, pur, éclatant) quand il est moins cher : l'Od se transmute en ressource 1 pour 1. " +
+                     $"Prix : derniers notés sur {data.Label(m.Shown)} par les joueurs d'Aion 2 Todo.", 11, Tok.Muted, wrap: true).WithLineHeight(1.45));
         return Page($"Craft · {rc.Output.Name}", right, blocks.ToArray());
     }
 

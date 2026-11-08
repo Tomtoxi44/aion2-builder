@@ -100,6 +100,8 @@ sealed class UiState
     public string? CraftShotStatus { get; set; }
     /// <summary>Écran Craft : ingrédients sortis du coût (« id de recette:clé »), comme l'arme précédente qu'on a déjà ; gardés dans ui.json.</summary>
     public HashSet<string> CraftSkip { get; } = [];
+    /// <summary>Écran Craft : ingrédients fabriqués par leur recette plutôt qu'achetés (« recette:clé »), gardés dans tes réglages.</summary>
+    public HashSet<string> CraftMake { get; } = [];
     /// <summary>Écran Craft → « Objets du PNJ » : saisie d'un objet (nom, prix, onglet), erreur, liste dépliée.</summary>
     public string NpcName { get; set; } = "";
     public string NpcPrice { get; set; } = "";
@@ -130,6 +132,10 @@ sealed class UiState
     public string? CombatSkill { get; set; }
     /// <summary>Combat : joueur du groupe comparé sur la frise de rotation (null : le meilleur DPS de ta classe, sinon le meilleur DPS).</summary>
     public string? CombatRival { get; set; }
+    /// <summary>Combat : onglet ouvert — null : toi, « * » : le groupe, sinon un joueur du combat (son nom, sinon sa classe et son numéro).</summary>
+    public string? CombatPlayer { get; set; }
+    /// <summary>Détails : conseil choisi (son titre), montré en entier dans l'inspecteur.</summary>
+    public string? DetailsItem { get; set; }
     /// <summary>Combat : boss de la courbe d'apprentissage (null : celui que tu as le plus essayé).</summary>
     public string? CombatBoss { get; set; }
     /// <summary>Progression : la comparaison côte à côte avec un autre perso (fichier enregistré) au lieu des courbes.</summary>
@@ -305,7 +311,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         Screen.Market => (MarketScreen(PetMeterGathering.Merge(accountGather.Days, PetMeterGathering.Load())), MarketInspector()),
         Screen.Inventory => (InventoryScreen(), InventoryInspector()),
         Screen.Craft => (CraftScreen(), null),
-        _ => (Details(), null),
+        _ => (Details(), DetailsInspector()),
     };
 
     string Mode => ModeLabel(r.Mode);
@@ -2402,45 +2408,44 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         body.Children.Add(T(sentence, 13, color, wrap: true));
         body.Children.Add(Tip(Bar(c.Share, color, 6, c.Target), "Barre = ta part des stats ajustables · trait clair = part visée"));
 
-        // Colonnes proportionnelles : la carte occupe toute la largeur, la ligne des joueurs s'étire avec elle.
+        // Une ligne par stat (choix « A » du 8 novembre) : la stat, ta valeur, toi parmi les joueurs sur une barre, le verdict en
+        // mots. La moyenne et la valeur conseillée sont dans la bulle et dans l'inspecteur.
         var players = cmp.Peers is not null;
-        var cols = players ? "1.4*,0.8*,0.7*,1.3*,0.7*,3*,1*" : "1.4*,0.8*,0.7*,1.3*,3*";
+        const string cols = "1.3*,0.8*,3*,1.5*";
         var rows = new StackPanel();
         rows.Children.Add(new Border
         {
             Padding = new Thickness(20, 6), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1),
-            Child = Columns(cols, (players
-                ? new[] { "Stat", "Importance", "Toi", "Conseillé ▾", "Moyenne", "Joueurs ▏ · conseillé ▾ · toi ◆", "Face aux joueurs" }
-                : new[] { "Stat", "Importance", "Toi", "Conseillé ▾", "Conseillé ▾ · toi ◆" }).Select(t => (Control)Label(t)).ToArray()),
+            Child = Columns(cols, Label("Stat"), Label("Toi"), Label(players ? "Parmi les joueurs · ◆ toi · ▏ moyenne · ▾ conseillé" : "◆ toi · ▾ conseillé"), Label("Verdict")),
         });
         var selected = SelectedStat?.Def.Key;
         foreach (var x in f.Stats)
         {
-            var (importance, importanceColor) = StatImportance(x);
+            var (importance, _) = StatImportance(x);
             var (advised, advisedColor, advisedTip) = Advised(x, cmp);
             // Valeurs des guides (en jeu) placées sur l'échelle des joueurs (sans la part cachée), avec tes stats en jeu.
             var targets = cmp.TargetsFor(x).Where(t => !StatComparison.LimitOnly(x, t)).Select(t => t.Value - x.Shift).ToList();
-            var cells = new List<Control>
+            var v = players ? f.Vs(x) : null;
+            var detail = v is null ? advisedTip
+                : $"Toi {StatValue(x, v.Mine)}, moyenne des {v.Values.Count} joueurs {StatValue(x, v.Average)} (de {StatValue(x, v.Values.Min())} à {StatValue(x, v.Values.Max())}). " +
+                  $"Tu en as plus que {v.Below} d'entre eux sur {v.Values.Count}." + (targets.Count > 0 || cmp.TargetsFor(x).Count > 0 ? $"\n{advisedTip}" : "");
+            // Le verdict : un plafond dépassé ou une valeur conseillée pas atteinte d'abord, puis « peu utile », puis face aux joueurs.
+            var (verdict, verdictColor) =
+                cmp.CapExceeded(x) is not null ? (advised, advisedColor)
+                : cmp.NextTarget(x) is { } next ? ($"à monter · vise {StatValue(x, next.Value)}", x.Weight >= 0.6 ? Tok.Bad : Tok.Warn)
+                : x.Weight < 0.5 ? ("peu utile pour toi", Tok.Muted)
+                : v is not null ? VsWords(v)
+                : (advised, advisedColor);
+            Control strip = v is not null ? new StatStrip(v.Mine, v.Values, v.Average, targets)
+                : targets.Count > 0 ? new StatStrip(x.BenchValue, [], null, targets) : new Border();
+            var cells = new Control[]
             {
-                T(x.Def.Name, 13), T(importance, 12, importanceColor),
-                Tip(T(CompactTotal(x), 13, mono: true), x.Display + (x.Hidden is null ? "" : $"\nEn jeu : {StatValue(x, x.GameValue)}")),
-                Tip(T(advised, 12, advisedColor), advisedTip),
+                Tip(T(x.Def.Name, 13, x.Weight < 0.5 ? Tok.Muted : null), $"{x.Def.Name} : {importance} pour un {r.Profile.Class.Name} en {GameDatabase.ModeName(r.Mode)}."),
+                Tip(T(CompactTotal(x), 13, x.Weight < 0.5 ? Tok.Muted : null, mono: true), x.Display + (x.Hidden is null ? "" : $"\nEn jeu : {StatValue(x, x.GameValue)}")),
+                Tip(strip, detail),
+                Tip(T(verdict, 12, verdictColor, wrap: true), detail),
             };
-            if (players)
-            {
-                if (f.Vs(x) is { } v)
-                {
-                    var (words, wordsColor) = VsWords(v);
-                    var detail = $"Toi {StatValue(x, v.Mine)}, moyenne des {v.Values.Count} joueurs {StatValue(x, v.Average)} (de {StatValue(x, v.Values.Min())} à {StatValue(x, v.Values.Max())}). " +
-                                 $"Tu en as plus que {v.Below} d'entre eux sur {v.Values.Count}." + (targets.Count > 0 ? $"\n{advisedTip}" : "");
-                    cells.Add(T(StatValue(x, v.Average), 13, Tok.Text2, mono: true));
-                    cells.Add(Tip(new StatStrip(v.Mine, v.Values, v.Average, targets), detail));
-                    cells.Add(Tip(T(words, 12, wordsColor), detail));
-                }
-                else cells.AddRange([T("—", 13, Tok.Faint), new Border(), new Border()]);
-            }
-            else cells.Add(targets.Count > 0 ? Tip(new StatStrip(x.BenchValue, [], null, targets), advisedTip) : new Border());
-            rows.Children.Add(TableRow(Columns(cols, cells.ToArray()), x.Def.Key == selected, () => update(st => st.Stat = x.Def.Key)));
+            rows.Children.Add(TableRow(Columns(cols, cells), x.Def.Key == selected, () => update(st => st.Stat = x.Def.Key)));
         }
         body.Children.Add(new Border { Margin = new Thickness(-14, 0), Child = rows });
 
@@ -2737,6 +2742,9 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
                 $"tu en as plus que {StatAnalyzer.Ahead(Peers!, x)} sur {sample.Count}. " +
                 $"Joueurs : {StatAnalyzer.PeersText(r.Profile, r.Character, Peers!)} (même calcul, {GameDatabase.ModeName(r.Mode)}).",
                 PlayersRank(x).Color));
+        // La valeur des guides, sortie du tableau de la page (une ligne par stat depuis le 8 novembre).
+        var (advised, advisedColor, advisedTip) = Advised(x, r.Stats.Comparison);
+        body.Children.Add(Field($"Conseillé : {advised}", advisedTip, advisedColor));
         body.Children.Add(Field("Où la trouver", x.Def.Where.Count > 0 ? string.Join(", ", x.Def.Where) : "—", Tok.Text2));
         var sources = x.Sources.GroupBy(z => z.Source)
             .Select(g => (Source: g.Key, Flat: g.Where(z => !z.Effect.IsPercent).Sum(z => z.Effect.Value), Pct: g.Where(z => z.Effect.IsPercent).Sum(z => z.Effect.Value)))
@@ -3817,9 +3825,16 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
     {
         var log = cr.Log;
         var page = new StackPanel { Spacing = 14, Margin = new Thickness(20, 14, 20, 24) };
-        void Select(string name) => update(st => st.CombatSkill = name);
         page.Children.Add(Clickable(T(s.CombatGroup is not null ? $"‹ tous les combats · global de la séance ({log.Target})" : "‹ tous les combats", 13, Accent.Main),
             () => update(st => { st.CombatIndex = null; st.CombatGroup = null; st.CombatSkill = null; st.CombatList = true; }), hover: Tok.Hover, padding: new Thickness(0, 2)));
+
+        // 0. Un onglet par joueur du combat (en groupe) : le groupe, toi, chaque allié avec la même page que la tienne.
+        if (log.Players?.Where(p => !p.Me).ToList() is { Count: > 0 } others)
+        {
+            page.Children.Add(PlayerTabs(cr, others));
+            if (GroupOpen(log)) { page.Children.Add(GroupView(log)); return page; }
+            if (OpenAlly(log) is { } ally) { page.Children.Add(AllyView(log, ally)); return page; }
+        }
 
         // 1. Résumé : le DPS, deux badges, quatre chiffres.
         var todo = cr.Findings.Where(f => f.Severity <= Severity.Advice).ToList();
@@ -3857,7 +3872,6 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         foreach (var k in kpis) kpiGrid.Children.Add(k.WithMargin(0, 0, 10, 10));
         page.Children.Add(Columns("*,*", hero, kpiGrid));
         if (log.Timeline is { Count: > 1 }) page.Children.Add(TargetTimeline(log));
-        if (log.Players?.Any(p => !p.Me) == true) page.Children.Add(CombatPlayers(log));
         if (AggroAnalyzer.Analyze(log, db.Resolve(r.Character.ClassCode, log.Kind == "pvp" ? GameMode.PvP : GameMode.PvE), db) is { } aggro)
             page.Children.Add(AggroCard(log, aggro));
         else if (log.Kind == "boss")
@@ -3891,30 +3905,8 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         }
 
         // 3. Où vont les dégâts, et les sorts à recharge en cases.
-        var max = cr.Skills.Select(x => x.Skill.Share).DefaultIfEmpty(1).Max();
-        var damage = new StackPanel { Spacing = 8 };
-        foreach (var x in cr.Skills.OrderByDescending(x => x.Skill.Share).Take(8))
-            damage.Children.Add(BarRow(x.Skill.Name, x.Skill.Share / Math.Max(0.0001, max), Fmt.Pct(x.Skill.Share), Accent.Main, onClick: () => Select(x.Skill.Name),
-                tip: x.Verdict, selected: x.Skill.Name == s.CombatSkill, icon: SkillIcon(x.Skill.Name)));
-        var rest = cr.Skills.OrderByDescending(x => x.Skill.Share).Skip(8).ToList();
-        if (rest.Count > 0) damage.Children.Add(T($"{rest.Count} autre{(rest.Count > 1 ? "s" : "")} sort{(rest.Count > 1 ? "s" : "")} : {Fmt.Pct(rest.Sum(x => x.Skill.Share))} · clic sur un sort = son détail à droite", 12, Tok.Muted));
+        page.Children.Add(DamageAndRecharge(cr, r.Character.ClassCode, true));
         var timed = cr.Skills.Where(x => x.Possible is not null).OrderByDescending(x => x.Spell?.Cooldown ?? 0).ToList();
-        var recharge = new StackPanel { Spacing = 8 };
-        foreach (var x in timed)
-        {
-            var done = x.Skill.Uses;
-            var possible = x.Possible!.Value;
-            var color = done >= possible ? Tok.Good : done >= 0.8 * possible || x.Situational ? Tok.Text2 : Tok.Warn;
-            var row = ColumnsSpaced("190,*,58", 10, WithIcon(SkillIcon(x.Skill.Name), T(x.Skill.Name, 13, x.Skill.Name == s.CombatSkill ? Accent.Main : null)), Pips(done, possible),
-                T($"{done} / {possible}", 12, color, mono: true).AlignRight());
-            recharge.Children.Add(Tip(Clickable(row, () => Select(x.Skill.Name), hover: Tok.Hover, padding: new Thickness(0, 2)), x.Verdict));
-        }
-        if (timed.Count == 0) recharge.Children.Add(T("Aucun sort à recharge reconnu dans ce combat.", 13, Tok.Muted));
-        recharge.Children.Add(T("vert = lancé · orange = occasion perdue · vert pâle = au-delà de la recharge (réinitialisations) ; " +
-                                "chiffre gris : sort de situation (provocation, protection, soin, déplacement), pas jugé sur ses lancers", 12, Tok.Muted, wrap: true));
-        page.Children.Add(Columns("*,*",
-            Card(damage, "Où vont tes dégâts", T(log.Source == "Pet Meter" || log.Pages > 0 ? "mesuré sur ce combat" : "", 12, Tok.Muted)),
-            Card(recharge, "Tes sorts à recharge", T("lancés / possibles", 12, Tok.Muted))));
 
         // 4. Frise de rotation (tes lancers, et ceux d'un joueur du groupe), puis chaque lancer des sorts à recharge et les pauses.
         if (log.Casts is { Count: > 2 } && log.Duration > 0) page.Children.Add(RotationStrip(log));
@@ -4165,61 +4157,6 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         }
     }
 
-    /// <summary>
-    /// Les joueurs du combat (Pet Meter v0.19.0), toi compris : classe, puissance, DPS et part sur le combat du groupe ; le
-    /// survol donne leurs sorts principaux. « ouvrir sa fiche » importe le joueur depuis le site officiel dans un onglet, avec
-    /// toute l'analyse du Builder (stats, équipement, compétences, conseils).
-    /// </summary>
-    Control CombatPlayers(CombatLog log)
-    {
-        var players = log.Players!;
-        const string cols = "*,110,90,80,56,130";
-        var table = new StackPanel();
-        table.Children.Add(TableHeader(cols, "Joueur", "Classe", "Puissance", "DPS", "Part", ""));
-        foreach (var p in players.OrderByDescending(p => p.Damage))
-        {
-            var cls = p.ClassCode is { } code ? db.FindClass(code)?.Name : null;
-            var name = PlayerName(p);
-            Control action;
-            if (p.Me) action = T("toi", 12, Tok.Muted);
-            else if (p.Name is { } known)
-            {
-                var link = T("ouvrir sa fiche ›", 12, Accent.Main, FontWeight.SemiBold);
-                Border? button = null;
-                button = Clickable(link, () => openPlayer(known, p.ClassCode, button!), hover: Tok.HoverStrong, padding: new Thickness(6, 1));
-                action = Tip(button, $"Importer {known} depuis le site officiel (région de ton perso) et l'ouvrir dans un onglet : stats, équipement, compétences, conseils.");
-            }
-            else action = Tip(T("nom inconnu", 12, Tok.Muted), "Ce joueur n'est pas apparu près de toi pendant l'enregistrement : le Pet Meter n'a pas lu son nom.");
-            var tip = $"{name}{(cls is null ? "" : $" · {cls}")} : {Fmt.Big(p.Damage)} dégâts" + (p.Crit is { } c ? $", {Fmt.Pct(c)} de critiques" : "");
-            // Survol du nom : ses sorts principaux, chacun avec son icône.
-            var nameBlock = Tip(T(name, 13, p.Me ? Accent.Main : p.Name is null ? Tok.Text2 : null, p.Me ? FontWeight.SemiBold : FontWeight.Normal), tip);
-            ToolTip.SetTip(nameBlock, PlayerTip(p, tip));
-            action.HorizontalAlignment = HorizontalAlignment.Right;
-            var row = Columns(cols,
-                nameBlock,
-                T(cls ?? "—", 12, Tok.Text2), T(p.Power is { } pw ? Fmt.Big(pw) : "—", 12, Tok.Muted, mono: true),
-                T(Fmt.Big(p.Dps), 12, p.Me ? Accent.Main : null, mono: true), T(Fmt.Pct(p.Share), 12, Tok.Text, FontWeight.SemiBold, mono: true),
-                action);
-            table.Children.Add(new Border { Padding = new Thickness(20, 6), Background = p.Me ? Accent.Dim : null, Child = row });
-            // Sa rotation, analysée comme la tienne (lancers face aux recharges, sorts jamais lancés, combos, temps morts) :
-            // pour lui dire ce qu'il a fait de mal. Pet Meter v0.21.1 et plus (ses lancers datés).
-            if (!p.Me && CombatAnalyzer.PlayerLog(log, p) is { } theirs)
-                table.Children.Add(PlayerRotation(theirs, p, name, log.Kind == "pvp" ? GameMode.PvP : GameMode.PvE));
-        }
-        var note = log.GroupDuration is { } group
-            ? $"DPS et part sur le combat du groupe ({Duration(group)}, du premier au dernier coup de quiconque sur {Who(log)}) ; ton DPS en haut ne compte que de ton premier à ton dernier coup."
-            : "DPS et part sur le combat du groupe.";
-        return Card(new StackPanel
-        {
-            Spacing = 8,
-            Children =
-            {
-                new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), ClipToBounds = true, Child = table },
-                T(note + " Survol d'un nom : ses sorts principaux.", 12, Tok.Muted, wrap: true).WithLineHeight(1.4),
-            },
-        }, "Joueurs du combat", T(Fmt.Plural(players.Count, "joueur"), 12, Tok.Muted));
-    }
-
     /// <summary>Nom d'un joueur du combat : son nom, sinon « Templier 2 » (classe et numéro dans sa classe).</summary>
     string PlayerName(CombatPlayer p) =>
         p.Name ?? (p.ClassCode is { } code && db.FindClass(code)?.Name is { } cls && p.Number is { } n ? $"{cls} {n}" : "joueur inconnu");
@@ -4233,10 +4170,10 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
     /// l'instant. Un même sort a la même couleur sur les deux lignes ; en mots, le rythme de chacun et, entre joueurs de la
     /// même classe, les sorts que l'un lance plus souvent que l'autre.
     /// </summary>
-    Control RotationStrip(CombatLog log)
+    Control RotationStrip(CombatLog log, CombatPlayer? forced = null)
     {
         var others = log.Players?.Where(p => !p.Me && p.Casts is { Count: > 2 }).ToList() ?? [];
-        var rival = others.FirstOrDefault(p => PlayerKey(p) == s.CombatRival)
+        var rival = (forced is { Casts.Count: > 2 } ? forced : null) ?? others.FirstOrDefault(p => PlayerKey(p) == s.CombatRival)
                     ?? others.Where(p => p.ClassCode == r.Character.ClassCode).MaxBy(p => p.Dps) ?? others.MaxBy(p => p.Dps);
         // Face à un autre joueur, tes lancers tels que le Pet Meter les date pour le groupe (même départ : le premier coup de
         // quiconque sur la cible) ; seul, ceux de ton combat (départ : ton premier coup).
@@ -4256,7 +4193,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
                 $"{c.Name}\n{name} · à {Clock(c.T)}" + (i > 0 ? $" · {Clock(c.T - casts[i - 1].T)} après le lancer d'avant" : ""))));
 
         var body = new StackPanel { Spacing = 10 };
-        if (others.Count > 1)
+        if (others.Count > 1 && forced is null)
         {
             var pick = new WrapPanel();
             pick.Children.Add(T("Comparer à", 12, Tok.Muted).WithMargin(0, 0, 8, 4));
@@ -4623,47 +4560,6 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         return Card(body, "Mécaniques du boss · chronologie", T(Fmt.Plural(m.Casts.Count, "lancer"), 12, Tok.Muted, mono: true));
     }
 
-    /// <summary>
-    /// Sous un joueur du combat : sa rotation analysée comme la tienne, repliée (« ▸ sa rotation : N points à corriger ») ;
-    /// dépliée, chaque point avec ce qu'il doit faire, à lui transmettre.
-    /// </summary>
-    Control PlayerRotation(CombatLog theirs, CombatPlayer p, string name, GameMode mode)
-    {
-        var key = $"rot:{p.Name ?? $"{p.ClassCode}{p.Number}"}";
-        CombatReport report;
-        try { report = new CombatAnalyzer(db).Analyze(theirs, db.Resolve(p.ClassCode!, mode)); }
-        catch (InvalidOperationException) { return new Border(); }  // classe inconnue des données
-        var fixes = report.Findings.Where(f => f.Severity <= Severity.Advice).OrderBy(f => f.Severity).ThenByDescending(f => f.Priority).ToList();
-        var open = IsOpen(key);
-        var label = fixes.Count == 0 ? $"sa rotation : rien à corriger ({Fmt.Plural(theirs.Casts!.Count, "lancer")})"
-            : $"{(open ? "▾" : "▸")} sa rotation : {Fmt.Plural(fixes.Count, "point")} à corriger";
-        var box = new StackPanel { Spacing = 6, Margin = new Thickness(20, 0, 20, 8) };
-        box.Children.Add(Tip(Clickable(T(label, 12, fixes.Count == 0 ? Tok.Good : Tok.Warn, FontWeight.SemiBold), () => Toggle(key),
-                hover: Tok.HoverStrong, padding: new Thickness(6, 1)),
-            $"La rotation de {name} analysée comme la tienne, d'après ses lancers vus par le Pet Meter : lancers face aux recharges, sorts jamais lancés, combos, temps morts."));
-        if (open)
-        {
-            foreach (var f in fixes)
-                box.Children.Add(new Border
-                {
-                    BorderBrush = f.Severity == Severity.Important ? Tok.Warn : Tok.Border, BorderThickness = new Thickness(2, 0, 0, 0), Padding = new Thickness(10, 2),
-                    Child = new StackPanel
-                    {
-                        Spacing = 2,
-                        Children =
-                        {
-                            WithIcon(FindingIcon(f.Title, p.ClassCode), T(f.Title, 13, null, FontWeight.SemiBold, wrap: true), 6),
-                            T(f.Detail, 12, Tok.Text2, wrap: true).WithLineHeight(1.4),
-                            f.Action is { } act ? T("→ " + act.Replace("écran Build", "Aion 2 Builder, écran Build"), 12, Accent.Main, wrap: true) : new Border(),
-                        },
-                    },
-                });
-            box.Children.Add(T($"D'après {Fmt.Plural(theirs.Casts!.Count, "lancer")} sur {Duration(theirs.Duration)} ; les buffs des autres joueurs ne sont pas lus. " +
-                               "Pour ses stats et son équipement : « ouvrir sa fiche ».", 11, Tok.Muted, wrap: true));
-        }
-        return box;
-    }
-
     /// <summary>Carte « à corriger » : pastille, gain estimé, titre, cases lancés / possibles, ce qu'il faut faire ; « Pourquoi » déplie la raison.</summary>
     Control FixCard(CombatReport cr, Finding f, int index)
     {
@@ -4736,8 +4632,13 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
     Control CombatInspector()
     {
         var panel = new StackPanel { Children = { SectionHeader("Inspecteur · combat") } };
-        var body = new StackPanel { Spacing = 14, Margin = new Thickness(14) };
         var cr = Combat;
+        if (cr is not null && (GroupOpen(cr.Log) || OpenAlly(cr.Log) is not null))
+        {
+            panel.Children.Add(PlayerInspector(cr.Log, OpenAlly(cr.Log)));
+            return panel;
+        }
+        var body = new StackPanel { Spacing = 14, Margin = new Thickness(14) };
         var name = s.CombatSkill ?? cr?.Skills.Where(x => x.Level <= Severity.Advice).Select(x => x.Skill.Name).FirstOrDefault() ?? cr?.Skills.FirstOrDefault()?.Skill.Name;
         if (cr?.Skills.FirstOrDefault(x => x.Skill.Name == name) is { } x)
         {
@@ -5560,81 +5461,72 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         var reset = Clickable(T("tout remettre", 11, Accent.Main), () => Sim(_ => new SimulationOptions()), hover: Tok.HoverStrong, padding: new Thickness(4, 0));
         var title = $"Simulation « et si » · {Mode} · sur une copie de ton personnage";
 
-        // Options : ce qu'on change.
+        // Ce qu'on change (choix « A » du 8 novembre) : une case par changement, en phrase ; les variantes d'un même sujet
+        // (Daevanion, arcanes) s'excluent. Le tableau avant / après est à côté dès l'ouverture.
         var designedNow = inputs.UsesDesigned;
-        var options = new StackPanel { Spacing = 12 };
-        var daeva = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
-        daeva.Children.Add(Choice([
-            ("rien", o.Daevanion == DaevanionChoice.None, () => Sim(x => x with { Daevanion = DaevanionChoice.None })),
-            ("prochaines cases", o.Daevanion == DaevanionChoice.Next, () => Sim(x => x with { Daevanion = DaevanionChoice.Next })),
-            ("réorganisation", o.Daevanion == DaevanionChoice.Respec, () => Sim(x => x with { Daevanion = DaevanionChoice.Respec })),
-            ("route conçue", o.Daevanion == DaevanionChoice.Route, () => Sim(x => x with { Daevanion = DaevanionChoice.Route })),
-        ]));
-        if (o.Daevanion == DaevanionChoice.Next)
-            daeva.Children.Add(new StackPanel
-            {
-                Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center,
-                Children = { Stepper(o.NextNodes, v => Sim(x => x with { NextNodes = Math.Clamp(v, 1, 200) })), T("cases par réserve", 12, Tok.Muted, mono: true) },
-            });
-        options.Children.Add(ColumnsSpaced("110,*", 12, T("Daevanion", 13, weight: FontWeight.Medium), daeva));
-        options.Children.Add(ColumnsSpaced("110,*", 12, T("Compétences", 13, weight: FontWeight.Medium), Choice([
-            ("telles quelles", !o.Skills, () => Sim(x => x with { Skills = false })),
-            ("répartition conseillée", o.Skills, () => Sim(x => x with { Skills = true })),
-        ])));
-        options.Children.Add(ColumnsSpaced("110,*", 12, T("Build suivi", 13, weight: FontWeight.Medium), Choice([
-            ($"joueurs{(designedNow ? "" : " (actuel)")}", (o.Designed ?? designedNow) == false, () => Sim(x => x with { Designed = designedNow ? false : null })),
-            ($"conçu{(designedNow ? " (actuel)" : "")}", (o.Designed ?? designedNow), () => Sim(x => x with { Designed = designedNow ? null : true })),
-        ])));
-        options.Children.Add(ColumnsSpaced("110,*", 12, T("Équipement", 13, weight: FontWeight.Medium), Choice([
-            ("tel quel", !o.GearAtStage, () => Sim(x => x with { GearAtStage = false })),
-            ("pièces en retard remises à niveau", o.GearAtStage, () => Sim(x => x with { GearAtStage = true })),
-        ])));
-        var arcana = ArcanaWhatIfs();
-        if (arcana.Count > 0)
-            options.Children.Add(ColumnsSpaced("110,*", 12, T("Arcanes", 13, weight: FontWeight.Medium), Choice([
-                ("telles quelles", o.ArcanaGrade is null, () => Sim(x => x with { ArcanaGrade = null, ArcanaSlot = null })),
-                .. arcana.Select(a => (a.Label, o.ArcanaGrade == a.Options.ArcanaGrade && o.ArcanaSlot == a.Options.ArcanaSlot,
-                    (Action)(() => Sim(x => x with { ArcanaGrade = a.Options.ArcanaGrade, ArcanaSlot = a.Options.ArcanaSlot })))),
-            ])));
-        var choices = Card(options, "Ce que tu changes", o.Any ? reset : null);
-
-        if (!o.Any)
-            return Page(title, null, choices,
-                T("Choisis un ou plusieurs changements : les notes, la répartition des familles et les stats sont recalculées sur une copie de ton personnage, rien n'est enregistré.",
-                    13, Tok.Muted, wrap: true).WithLineHeight(1.5));
-
-        var after = simulate(o);
-        // Notes avant → après.
-        var tiles = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*,*"), ColumnSpacing = 8 };
-        var scores = new[]
+        var options = new StackPanel { Spacing = 4 };
+        void Option(bool on, string text, Action toggle, Control? extra = null, string? tip = null)
         {
-            ("Global", r.Scores.Overall, after.Scores.Overall), ("Stats", r.Scores.Stats, after.Scores.Stats), ("Équip.", r.Scores.Gear, after.Scores.Gear),
-            ("Compét.", r.Scores.Skills, after.Scores.Skills), ("Daeva.", r.Scores.Daevanion, after.Scores.Daevanion),
-        };
-        for (var i = 0; i < scores.Length; i++)
-        {
-            var (label, before, now) = scores[i];
-            var delta = now - before;
-            var tile = new Border
-            {
-                Padding = new Thickness(12, 8), Background = Tok.Panel, BorderBrush = i == 0 ? Accent.Main : Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
-                Child = new StackPanel
-                {
-                    Spacing = 2,
-                    Children =
-                    {
-                        new StackPanel
-                        {
-                            Orientation = Orientation.Horizontal, Spacing = 6,
-                            Children = { T(before.ToString(), 13, Tok.Muted, mono: true), T("→", 13, Tok.Muted), T(now.ToString(), 20, Tok.Score(now), FontWeight.SemiBold, mono: true) },
-                        },
-                        T($"{label}  {(delta > 0 ? "+" : "")}{(delta == 0 ? "=" : delta.ToString())}", 11, delta > 0 ? Tok.Good : delta < 0 ? Tok.Bad : Tok.Muted, mono: true),
-                    },
-                },
-            };
-            Grid.SetColumn(tile, i);
-            tiles.Children.Add(tile);
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { Tick(on), T(text, 13, on ? Tok.Text : Tok.Text2, wrap: true) } };
+            var row = Clickable(line, toggle, on ? Accent.Dim : null, Tok.Hover, new Thickness(10, 6));
+            row.CornerRadius = new CornerRadius(3);
+            Control item = extra is null ? row : new StackPanel { Spacing = 2, Children = { row, extra.WithMargin(36, 0, 0, 4) } };
+            options.Children.Add(tip is null ? item : Tip(item, tip));
         }
+        void Group(string name) => options.Children.Add(Label(name).WithMargin(10, options.Children.Count == 0 ? 2 : 10, 0, 2));
+        Group("Équipement");
+        Option(o.GearAtStage, "Remettre à niveau tes pièces en retard", () => Sim(x => x with { GearAtStage = !x.GearAtStage }),
+            tip: "Ne change que la note d'équipement : les stats des futures pièces ne sont pas connues.");
+        var arcana = ArcanaWhatIfs();
+        foreach (var w in arcana)
+        {
+            var on = o.ArcanaGrade == w.Options.ArcanaGrade && o.ArcanaSlot == w.Options.ArcanaSlot;
+            Option(on, $"Arcanes : {w.Label}", () => Sim(x => on ? x with { ArcanaGrade = null, ArcanaSlot = null } : x with { ArcanaGrade = w.Options.ArcanaGrade, ArcanaSlot = w.Options.ArcanaSlot }));
+        }
+        Group("Daevanion");
+        Option(o.Daevanion == DaevanionChoice.Next, $"Prendre les {o.NextNodes} prochaines cases de chaque réserve",
+            () => Sim(x => x with { Daevanion = x.Daevanion == DaevanionChoice.Next ? DaevanionChoice.None : DaevanionChoice.Next }),
+            o.Daevanion == DaevanionChoice.Next
+                ? new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { Stepper(o.NextNodes, v => Sim(x => x with { NextNodes = Math.Clamp(v, 1, 200) })), T("cases par réserve", 12, Tok.Muted, mono: true) } }
+                : null);
+        Option(o.Daevanion == DaevanionChoice.Respec, "Réorganiser tes plateaux (retirer des cases pour de meilleures)",
+            () => Sim(x => x with { Daevanion = x.Daevanion == DaevanionChoice.Respec ? DaevanionChoice.None : DaevanionChoice.Respec }));
+        Option(o.Daevanion == DaevanionChoice.Route, "Suivre la route conçue depuis le centre (réinitialisation)",
+            () => Sim(x => x with { Daevanion = x.Daevanion == DaevanionChoice.Route ? DaevanionChoice.None : DaevanionChoice.Route }));
+        Group("Compétences et build");
+        Option(o.Skills, "Refaire la répartition conseillée des compétences (gratuit)", () => Sim(x => x with { Skills = !x.Skills }));
+        var designedAfter = o.Designed ?? designedNow;
+        Option(designedAfter != designedNow, designedNow ? "Suivre le build des joueurs au lieu du conçu" : "Suivre le build conçu au lieu de celui des joueurs",
+            () => Sim(x => x with { Designed = x.Designed is null ? !designedNow : null }));
+        var choices = Card(options, "Ce que tu changes", o.Any ? reset : T("rien pour l'instant", 11, Tok.Muted, mono: true));
+
+        var after = o.Any ? simulate(o) : r;
+        // Notes aujourd'hui → après, à côté des cases, dès l'ouverture (« = » partout tant que rien n'est coché).
+        const string sc = "*,90,90,64";
+        var scoreRows = new StackPanel();
+        scoreRows.Children.Add(new Border { Padding = new Thickness(14, 6), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = Columns(sc, Label("Note"), Label("Aujourd'hui"), Label("Après"), Label("Écart")) });
+        foreach (var (label, before, now, main) in new[]
+                 {
+                     ("Globale", r.Scores.Overall, after.Scores.Overall, true), ("Stats", r.Scores.Stats, after.Scores.Stats, false),
+                     ("Équipement", r.Scores.Gear, after.Scores.Gear, false), ("Compétences", r.Scores.Skills, after.Scores.Skills, false),
+                     ("Daevanion", r.Scores.Daevanion, after.Scores.Daevanion, false),
+                 })
+        {
+            var delta = now - before;
+            scoreRows.Children.Add(new Border
+            {
+                Padding = new Thickness(14, main ? 9 : 6), Background = main ? Accent.Dim : null, BorderBrush = Tok.RowLine, BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = Columns(sc, T(label, main ? 14 : 13, null, main ? FontWeight.SemiBold : FontWeight.Normal),
+                    T(before.ToString(), main ? 16 : 13, Tok.Muted, mono: true), T(now.ToString(), main ? 20 : 14, Tok.Score(now), FontWeight.SemiBold, mono: true),
+                    T(delta == 0 ? "=" : $"{(delta > 0 ? "+" : "")}{delta}", main ? 15 : 13, delta > 0 ? Tok.Good : delta < 0 ? Tok.Bad : Tok.Muted, FontWeight.SemiBold, mono: true)),
+            });
+        }
+        var scoreCard = Card(new StackPanel { Children = { scoreRows,
+            T(o.Any ? "Recalculé sur une copie de ton personnage : rien n'est enregistré." : "Coche un ou plusieurs changements : les notes se recalculent ici, sur une copie de ton personnage.",
+                12, Tok.Muted, wrap: true).WithMargin(14, 10, 14, 4) } }, "Avant / après", null, new Thickness(0));
+        var top = Columns("*,*", choices.WithMargin(0, 0, 12, 0), scoreCard);
+        if (!o.Any) return Page(title, null, top);
 
         // Ce que ça demande en jeu.
         var cost = new StackPanel { Spacing = 4 };
@@ -5698,7 +5590,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
                         T(a.Weight.ToString("0.00"), 12, Tok.Muted, mono: true)),
                 };
             }));
-        return Page(title, null, choices, tiles, Card(cost, "Ce que ça demande en jeu"),
+        return Page(title, null, top, Card(cost, "Ce que ça demande en jeu"),
             Card(families, "Familles de stats", T("gris = avant · couleur = après", 11, Tok.Muted, mono: true)), statChanges);
     }
 
@@ -6480,21 +6372,25 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
             }
             foreach (var f in group.OrderBy(IsDone).ThenBy(f => f.Severity))
             {
-                // Titre et action ; le détail chiffré tient sur deux lignes et s'affiche en entier au survol. Fait = grisé, en bas.
+                // Une ligne par conseil (choix « A » du 8 novembre) : son titre, ce qu'il demande ; le reste dans l'inspecteur. Fait = grisé, en bas.
                 var (icon, color) = Sev(f.Severity);
                 var done = IsDone(f);
-                var iconText = T(icon, 13, color, FontWeight.SemiBold, mono: true);
-                iconText.VerticalAlignment = VerticalAlignment.Top;
-                var title = T(f.Title, 13, done ? Tok.Muted : null, FontWeight.Medium, wrap: true);
+                var title = new TextBlock
+                {
+                    Text = f.Title, FontSize = 13, FontWeight = FontWeight.Medium, Foreground = done ? Tok.Muted : Tok.Text,
+                    TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
+                };
                 if (done) title.TextDecorations = TextDecorations.Strikethrough;
-                var text = new StackPanel { Spacing = 3, Children = { title } };
-                if (f.Action is not null && !done) text.Children.Add(T($"→ {f.Action}", 12, Tok.Text2, wrap: true).WithLineHeight(1.45));
-                if (!done) text.Children.Add(new TextBlock { Text = f.Detail.Replace('\n', ' '), FontSize = 12, Foreground = Tok.Muted, TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis });
+                var tag = s.ByNeed ? Fmt.Area(f.Area) : NeedWord(f);
+                var chip = tag is null ? (Control)new Border() : Badge(tag, f.Need == Need.Free && !s.ByNeed ? Tok.Good : Tok.Text2);
                 var lead = f.Severity == Severity.Info ? (Control)new Border() : Check(f);
-                var row = Clickable(ColumnsSpaced("22,22,*", 6, lead, iconText, text), () => Go(f), hover: Tok.Hover, padding: new Thickness(14, 8));
+                var on = f.Title == SelectedFinding?.Title;
+                var row = Clickable(ColumnsSpaced("22,18,*,Auto", 6, lead, T(icon, 13, color, FontWeight.SemiBold, mono: true), title, chip),
+                    () => update(st => st.DetailsItem = f.Title), on ? Accent.Dim : null, Tok.Hover, new Thickness(14, 6));
                 row.BorderBrush = Tok.RowLine;
-                row.BorderThickness = new Thickness(0, 0, 0, 1);
-                list.Children.Add(Tip(row, f.Detail));
+                row.BorderThickness = on ? new Thickness(2, 0, 0, 1) : new Thickness(0, 0, 0, 1);
+                if (on) row.BorderBrush = Accent.Main;
+                list.Children.Add(Tip(row, f.Action is { } act ? $"→ {act}" : f.Detail));
             }
         }
         // Réalisés depuis l'import précédent : repliés en tête, la liste montre d'abord ce qu'il reste à faire.
@@ -6513,6 +6409,49 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
                     return list;
                 }));
         return Page($"À faire · {Mode} · {Fmt.CountsText(r.Findings)}", bySeverity, groups.ToArray());
+    }
+
+    /// <summary>Le conseil choisi dans Détails ; à défaut, le premier qui reste à faire.</summary>
+    Finding? SelectedFinding => r.Findings.FirstOrDefault(f => f.Title == s.DetailsItem)
+        ?? r.Findings.Where(f => f.Severity != Severity.Info && !IsDone(f)).OrderBy(f => f.Severity).FirstOrDefault();
+
+    /// <summary>Ce qu'un conseil demande, en un ou deux mots (pastille de Détails rangé par écran).</summary>
+    static string? NeedWord(Finding f) => f.Need switch
+    {
+        Need.Free => "gratuit", Need.Combat => "prochaine sortie", Need.Rolls => "relances", Need.Engraving => "gravures",
+        Need.Stones => "pierres", Need.Enchant => "enchantement", Need.Points => "points à gagner", Need.Farm => "donjon",
+        Need.Pets => "familiers", _ => null,
+    };
+
+    /// <summary>Inspecteur de Détails : le conseil choisi en entier — quoi faire, le détail chiffré, ce qu'il demande, l'écran où agir.</summary>
+    Control DetailsInspector()
+    {
+        var panel = new StackPanel { Children = { SectionHeader("Inspecteur · conseil") } };
+        if (SelectedFinding is not { } f) return panel;
+        var (icon, color) = Sev(f.Severity);
+        var body = new StackPanel { Spacing = 14, Margin = new Thickness(14) };
+        body.Children.Add(ColumnsSpaced("18,*", 6, T(icon, 15, color, FontWeight.SemiBold, mono: true), T(f.Title, 16, weight: FontWeight.SemiBold, wrap: true)));
+        if (f.Action is { } act) body.Children.Add(Field("Quoi faire", act, Tok.Text));
+        body.Children.Add(Field("Le détail", f.Detail.Replace('\n', ' '), Tok.Text2));
+        if (f.Need is { } need && need != Need.Info)
+        {
+            var (needTitle, needHint) = Fmt.NeedLabel(need);
+            body.Children.Add(Field($"Ce que ça demande : {needTitle.ToLowerInvariant()}", needHint, Tok.Text2));
+        }
+        body.Children.Add(KeyValue([("écran", Fmt.Area(f.Area), null), ("importance", f.Severity switch
+        {
+            Severity.Critical => "critique", Severity.Important => "important", Severity.Advice => "à suivre", _ => "pour info",
+        }, color)]));
+        var go = Clickable(T($"ouvrir l'écran {Fmt.Area(f.Area)} ›", 12, Accent.Main, FontWeight.SemiBold, mono: true), () => Go(f), hover: Tok.HoverStrong, padding: new Thickness(8, 4));
+        go.BorderBrush = Accent.Main;
+        go.BorderThickness = new Thickness(1);
+        go.CornerRadius = new CornerRadius(3);
+        go.HorizontalAlignment = HorizontalAlignment.Left;
+        body.Children.Add(go);
+        if (f.Severity != Severity.Info)
+            body.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { Check(f), T(IsDone(f) ? "fait" : "marquer comme fait", 12, Tok.Text2).WithMargin(0, 2, 0, 0) } });
+        panel.Children.Add(body);
+        return panel;
     }
 
     /// <summary>« rangés par écran · par ressource » : le choix de rangement de Détails.</summary>

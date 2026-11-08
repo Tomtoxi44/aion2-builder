@@ -112,9 +112,9 @@ L'interface est organisée comme un éditeur :
   aussi par pièce dans l'écran Équipement), sa progression d'un import à l'autre (niveau d'objet, puissance) et sa
   position parmi des joueurs niveau 45 de sa classe (« devant 30 % d'entre eux »).
 - **Rail à gauche** : Accueil, Stats, Équipement, Compétences, Daevanion, Familiers (chacun avec sa note), puis Build, Combat, Et si, Progression, Détails avec une icône (Progression : la courbe de ta note globale). Maintiens et glisse une entrée pour changer l'ordre (gardé, Ctrl+1…9 le suit).
-- **Et si** : simulation sur une copie du personnage ; tu choisis les changements (prochaines cases Daevanion, réorganisation
+- **Et si** : simulation sur une copie du personnage ; tu coches les changements (prochaines cases Daevanion, réorganisation
   ou route conçue, répartition des compétences conseillée, build joueurs ou conçu, pièces en retard au niveau du palier) et
-  l'analyse est refaite : notes avant → après, familles de stats et stats qui changent (calculées à partir des effets réels
+  l'analyse est refaite : le tableau avant / après des notes (visible dès l'ouverture), familles de stats et stats qui changent (calculées à partir des effets réels
   des cases), et ce que ça demande en jeu. Une pièce « au niveau du palier » ne change que la note (ses stats sont inconnues).
   Arcanes : ta carte la plus basse au grade suivant, ou toutes au grade Unique ; une carte prend le niveau d'objet et les
   points de stat divine de son grade (`progression.json` → `arcana`, relevés sur des joueurs : 20/40/60/80 de niveau,
@@ -234,11 +234,11 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    conditions de `spells.json`, temps morts de plus de 2,5 s) et les **dégâts subis face aux soins**. Le jeu ne donne
    qu'un code de créature : un boss s'affiche « Boss (code 2300371) ». En tête de l'historique, **par boss** : tes essais sur une même cible, ton meilleur DPS, le dernier face à lui et la
    suite de tes DPS (le plus ancien à gauche), pour voir si tu progresses. Avec le Pet Meter v0.19.0 ou plus, le
-   détail d'un combat montre aussi les **joueurs du combat** (toi compris) : classe, puissance de combat, DPS et part
-   des dégâts du groupe, et leurs sorts principaux au survol du nom. **« ouvrir sa fiche »** importe le joueur depuis
-   le site officiel (région de ton perso, recherche par nom parmi sa classe ; un menu si plusieurs serveurs répondent)
-   et l'ouvre dans un onglet, avec toute l'analyse du Builder : pratique pour conseiller un ami. Un joueur qui n'est pas
-   apparu près de toi garde « Templier 2 » au lieu de son nom. Les combats
+   détail d'un combat de groupe a **un onglet par joueur** : Groupe (tout le monde côte à côte : DPS, part des dégâts,
+   points à corriger), Toi, puis chaque allié avec la même page que la tienne : son DPS, ce qu'il a bien fait, ce qu'il
+   a mal fait, où vont ses dégâts, ses sorts à recharge (lancés / possibles) et sa frise face à la tienne (Pet Meter
+   v0.21.1 ou plus pour ses lancers). Sa fiche (stats, équipement) s'ouvre depuis l'inspecteur, en import depuis le
+   site officiel. Un joueur qui n'est pas apparu près de toi garde « Templier 2 » au lieu de son nom. Les combats
    enregistrés par NotMeter, eux, sont chiffrés : ils ne se lisent pas. À la place, l'écran lit les captures de sa
    fenêtre « Détails du combat » ([NotMeter](https://notmeter.com), en français) : une capture par écran de la liste
    des compétences, importées ensemble. Le texte est lu sur le PC par la reconnaissance de texte de Windows (rien n'est envoyé). Pour chaque sort :
@@ -267,7 +267,9 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    **Inventaire** : ton sac et ton coffre lus par le Pet Meter, par famille (barre de gauche), à la valeur des derniers
    prix ; l'inspecteur dit où est rangé l'objet choisi et les recettes qui l'utilisent. **Craft** : les recettes notées par
    les joueurs ; la vue d'ensemble dit quoi fabriquer avec ton stock, et chaque recette (barre de gauche) a sa page : coût,
-   vente, gain, et le tableau de ses ingrédients (décoche ce que tu as déjà : il sort du coût).
+   vente, gain, et le tableau de ses ingrédients (décoche ce que tu as déjà : il sort du coût). Une ressource de récolte
+   est comptée au prix de l'Od du même rang quand il est moins cher (l'Od se transmute en ressource, 1 pour 1), et un
+   ingrédient qui se fabrique montre ce que coûte sa recette, avec « fabriquer plutôt » pour le compter ainsi.
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par
