@@ -501,6 +501,8 @@ sealed partial class ScreenViews
         kpis.Children.Add(Kpi("Taxe du Marché", $"{m.Tax:P0}", size: 20, note: $"déduite à chaque vente ; prix de {data.Label(m.Shown)}" +
                                                                          (m.Shown.StartsWith('*') ? " ; inter-serveurs : à vérifier en jeu" : "")));
         blocks.Add(kpis);
+        // Les crafts épinglés (page d'une recette → « épingler ») : leur prix et leurs courbes sur 3 jours.
+        blocks.AddRange(CraftPinBlocks(m));
 
         if (m.Proposal.Count > 0) blocks.Add(CraftProposalCard(m.Proposal, m.Kinah));
         else if (m.HasStock && m.Plans.Any(p => p.Gain is not null))
@@ -729,6 +731,11 @@ sealed partial class ScreenViews
                     "Retirer cette recette (fausse ou en double) : pour tous les joueurs, rétablissable 30 jours (« rétablir » sur la vue d'ensemble)."),
             },
         });
+        var pinned = CraftPinned(rc.Id);
+        head.Children.Add(Button(pinned ? "épinglé ✓" : "épingler", pinned ? Tok.Good : Accent.Main, () => ToggleCraftPin(recipe.Id),
+            pinned ? "Désépingler ce craft (sa carte quitte la vue d'ensemble)."
+                   : "Épingler ce craft : une carte en haut de la vue d'ensemble suit son prix de vente, son coût et ses ingrédients sur 3 jours.")
+            .WithMargin(rc.Official ? 0 : 8, 0, 0, 0));
         // Couleur de l'objet fabriqué, si elle vient d'une capture (mal lue parfois) : à choisir, pour tous.
         if (p.Item is { } made && Market.GradeEditable(made))
             head.Children.Add(new StackPanel

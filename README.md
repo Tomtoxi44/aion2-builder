@@ -269,7 +269,9 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    les joueurs ; la vue d'ensemble dit quoi fabriquer avec ton stock, et chaque recette (barre de gauche) a sa page : coût,
    vente, gain, et le tableau de ses ingrédients (décoche ce que tu as déjà : il sort du coût). Une ressource de récolte
    est comptée au prix de l'Od du même rang quand il est moins cher (l'Od se transmute en ressource, 1 pour 1), et un
-   ingrédient qui se fabrique montre ce que coûte sa recette, avec « fabriquer plutôt » pour le compter ainsi.
+   ingrédient qui se fabrique montre ce que coûte sa recette, avec « fabriquer plutôt » pour le compter ainsi. « Épingler »
+   (page d'une recette) met le craft en haut de la vue d'ensemble : sa vente, son coût en achetant tout et leurs courbes sur
+   3 jours, avec une case par ingrédient pour ajouter sa courbe.
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par

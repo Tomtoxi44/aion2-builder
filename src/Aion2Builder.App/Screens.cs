@@ -108,6 +108,10 @@ sealed class UiState
     public HashSet<string> CraftSkip { get; } = [];
     /// <summary>Écran Craft : ingrédients fabriqués par leur recette plutôt qu'achetés (« recette:clé »), gardés dans tes réglages.</summary>
     public HashSet<string> CraftMake { get; } = [];
+    /// <summary>Écran Craft : recettes épinglées (une carte chacune en haut de la vue d'ensemble), gardées dans tes réglages.</summary>
+    public HashSet<int> CraftPins { get; } = [];
+    /// <summary>Courbes des cartes épinglées dont l'affichage est inversé (« recette:sell », « recette:cost », « recette:clé », « recette:% »).</summary>
+    public HashSet<string> CraftPinLines { get; } = [];
     /// <summary>Écran Craft → « Objets du PNJ » : saisie d'un objet (nom, prix, onglet), erreur, liste dépliée.</summary>
     public string NpcName { get; set; } = "";
     public string NpcPrice { get; set; } = "";
