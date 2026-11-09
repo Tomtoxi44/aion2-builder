@@ -18,7 +18,8 @@ namespace Aion2Builder.App;
 /// Objet de la liste du site : ressource de récolte ou pièce d'équipement (numéro du jeu, en texte), ou objet libre (« name:… »).
 /// Category : « Récolte », ou la catégorie et le rang d'une pièce (« Épées · jaune ») ; Grade : rang du jeu (Common, Rare, Legend…).
 /// </summary>
-sealed record MarketItem(string Key, string Name, int Rank, bool Gathered, string Category = "", string? Grade = null)
+/// <param name="Source">Page MetaBot.GG de l'objet quand son nom officiel et son rang viennent de leur base : lien à montrer avec lui.</param>
+sealed record MarketItem(string Key, string Name, int Rank, bool Gathered, string Category = "", string? Grade = null, string? Source = null)
 {
     /// <summary>Texte des listes et de la recherche : le nom seul.</summary>
     public override string ToString() => Name;
@@ -270,10 +271,12 @@ static class Market
     {
         // Apostrophes : ’ ‘ ` valent ', et l'espace qui suit est ignoré (« d' Yggdrasil » lu sur une capture = « d'Yggdrasil »).
         s = System.Text.RegularExpressions.Regex.Replace((s ?? "").Replace('’', '\'').Replace('‘', '\'').Replace('`', '\''), @"'\s+", "'");
+        // « : » et « ◆ » ignorés, « œ » = « oe » : même règle que le site (MarketCatalog.Fold).
+        s = s.Replace(':', ' ').Replace('◆', ' ');
         var d = s.Normalize(NormalizationForm.FormD);
         var sb = new StringBuilder(d.Length);
         foreach (var c in d) if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark) sb.Append(char.ToLowerInvariant(c));
-        return string.Join(' ', sb.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        return string.Join(' ', sb.ToString().Replace("œ", "oe").Replace("æ", "ae").Split(' ', StringSplitOptions.RemoveEmptyEntries));
     }
 
     /// <summary>Tous les mots cherchés sont dans le texte (sans accents ni majuscules).</summary>
@@ -910,6 +913,13 @@ sealed partial class ScreenViews
         Filter();
         blocks.Add(TableCard("Derniers prix de la communauté", T($"{Fmt.Plural(filtered.Count, "objet")} · prix unitaire en Kinah · clic : le détail à droite", 11, Tok.Muted, mono: true),
             header, [table]));
+        if (data.Items.Any(i => i.Source is not null))
+        {
+            var credit = Clickable(T("Noms officiels et rangs des objets reconnus : base d'objets AION 2 de MetaBot.GG ↗", 11, Tok.Muted), () => OpenLink("https://metabot.gg/fr_FR/aion-2/items"),
+                null, Tok.Hover, new Thickness(0, 2));
+            credit.HorizontalAlignment = HorizontalAlignment.Left;
+            blocks.Add(credit);
+        }
         blocks.Add(T("Prix unitaires notés à la main par les joueurs d'Aion 2 Todo (aucune source publique n'existe), avec le pseudo de leur auteur : " +
                      "les mêmes que l'onglet « Prix HdV » du site. Un prix faux se retire par n'importe qui (inspecteur → « retirer ») et se rétablit pendant 30 jours.",
             11, Tok.Muted, wrap: true).WithLineHeight(1.4));
@@ -1027,6 +1037,13 @@ sealed partial class ScreenViews
         var body = new StackPanel { Spacing = 14, Margin = new Thickness(14) };
         panel.Children.Add(body);
         body.Children.Add(ItemTitle(selected.Item, list[^1].ItemName));
+        // Nom officiel et rang tirés de la base de MetaBot.GG : le lien vers sa fiche (leurs conditions le demandent).
+        if (selected.Item?.Source is { } source)
+        {
+            var link = Clickable(T("fiche de l'objet sur MetaBot.GG ↗", 12, Accent.Main), () => OpenLink(source), null, Tok.Hover, new Thickness(0, 2));
+            link.HorizontalAlignment = HorizontalAlignment.Left;
+            body.Children.Add(Tip(link, "Nom officiel, rang et catégorie relevés dans la base d'objets AION 2 de MetaBot.GG (site de fans). Ouvre la fiche de l'objet."));
+        }
         if (GradeRow(selected.Item) is { } gradeRow) body.Children.Add(gradeRow);
         if (RenameRow(selected.Key, list[^1].ItemName) is { } renameRow) body.Children.Add(renameRow);
         body.Children.Add(KeyValue(
