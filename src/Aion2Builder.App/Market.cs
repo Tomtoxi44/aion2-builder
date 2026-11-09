@@ -205,6 +205,52 @@ static class Market
     static Dictionary<string, MarketItem> referenceByFold = [];
     static List<(MarketItem Item, string Fold, HashSet<string> Pairs)>? referencePairs;
 
+    /// <summary>Recettes officielles du jeu (site /api/content/recipes, tirées de MetaBot.GG) : gardées un jour ; vides tant qu'elles ne sont pas lues.</summary>
+    public static IReadOnlyList<CraftRecipe> OfficialRecipes { get; private set; } = [];
+
+    public static async Task<bool> LoadOfficialRecipes()
+    {
+        var file = Path.Combine(AppPaths.Root, "official-recipes.json");
+        string? json = null;
+        try { if (File.Exists(file) && DateTime.UtcNow - File.GetLastWriteTimeUtc(file) < TimeSpan.FromDays(1)) json = File.ReadAllText(file); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        if (json is null)
+        {
+            try
+            {
+                using var http = new HttpClient { BaseAddress = new Uri(Aion2Builder.Import.PetSyncClient.Site), Timeout = TimeSpan.FromSeconds(90) };
+                json = await http.GetStringAsync("/api/content/recipes");
+                Directory.CreateDirectory(AppPaths.Root);
+                File.WriteAllText(file, json);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException)
+            {
+                try { json = File.Exists(file) ? File.ReadAllText(file) : null; } catch (IOException) { json = null; }
+                if (json is null) return false;
+            }
+        }
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var at = File.Exists(file) ? File.GetLastWriteTimeUtc(file) : DateTime.UtcNow;
+            static RecipePart Part(JsonElement e) => new(e.GetProperty("key").GetString() ?? "", e.GetProperty("name").GetString() ?? "", e.GetProperty("qty").GetInt32());
+            var list = new List<CraftRecipe>();
+            foreach (var r in doc.RootElement.GetProperty("recipes").EnumerateArray())
+            {
+                var profession = r.GetProperty("profession").GetString();
+                int? mastery = r.TryGetProperty("mastery", out var ms) && ms.ValueKind == JsonValueKind.Number ? ms.GetInt32() : null;
+                list.Add(new CraftRecipe(r.GetProperty("id").GetInt32(), Part(r.GetProperty("output")), r.GetProperty("inputs").EnumerateArray().Select(Part).ToList(),
+                    0, null, at, "MetaBot.GG", false, r.TryGetProperty("bound", out var b) && b.GetBoolean())
+                {
+                    Official = true, Source = r.TryGetProperty("source", out var src) ? src.GetString() : null, Profession = profession, Mastery = mastery,
+                });
+            }
+            OfficialRecipes = list;
+            return true;
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { return false; }
+    }
+
     /// <summary>L'objet officiel de ce nom (accents, majuscules, « : », « ◆ » ignorés) ; null s'il n'est pas dans la base.</summary>
     public static MarketItem? ReferenceOf(string? name) => name is null ? null : referenceByFold.GetValueOrDefault(Fold(name));
 
@@ -1110,7 +1156,7 @@ sealed partial class ScreenViews
     /// <summary>Recettes notées qui utilisent cet objet (clic : la recette dans l'écran Craft).</summary>
     Control? UsedInRecipes(MarketData data, string key, string name)
     {
-        var uses = (data.Recipes ?? []).Where(rc => rc.Inputs.Any(p => p.Key == key || Market.Fold(p.Name) == Market.Fold(name))).ToList();
+        var uses = MergeRecipes(data.Recipes ?? [], Market.OfficialRecipes).Where(rc => rc.Inputs.Any(p => p.Key == key || Market.Fold(p.Name) == Market.Fold(name))).ToList();
         if (uses.Count == 0) return null;
         var list = new StackPanel { Spacing = 2, Children = { Label("Sert à fabriquer") } };
         foreach (var rc in uses.Take(8))
@@ -1121,6 +1167,7 @@ sealed partial class ScreenViews
             link.HorizontalAlignment = HorizontalAlignment.Left;
             list.Children.Add(Tip(link, "Ouvrir la recette dans l'écran Craft"));
         }
+        if (uses.Count > 8) list.Children.Add(T($"et {Fmt.Plural(uses.Count - 8, "autre recette", "autres recettes")} (écran Craft, recherche par ingrédient)", 11, Tok.Muted, wrap: true).WithMargin(4, 2, 0, 0));
         return list;
     }
 

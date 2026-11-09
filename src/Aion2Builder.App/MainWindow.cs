@@ -2233,7 +2233,13 @@ public sealed class MainWindow : Window
     async Task LoadMarketAsync(bool force = false)
     {
         // La base de référence des objets (noms officiels, rangs : site, tirée de MetaBot.GG), une fois par lancement (gardée un jour).
-        if (!referenceAsked) { referenceAsked = true; if (await Market.LoadReference()) Render(); }
+        if (!referenceAsked)
+        {
+            referenceAsked = true;
+            var gotItems = await Market.LoadReference();
+            var gotRecipes = await Market.LoadOfficialRecipes();  // recettes officielles du jeu (écran Craft)
+            if (gotItems || gotRecipes) Render();
+        }
         if (marketLoading || (!force && DateTime.UtcNow - marketAt < TimeSpan.FromMinutes(1)) || AccountKey() is not { } key) return;
         marketLoading = true;
         marketAt = DateTime.UtcNow;

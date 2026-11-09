@@ -92,6 +92,10 @@ sealed class UiState
     /// dernière erreur, et la recette qu'on vient de retirer (rétablissable).</summary>
     public string? CraftQuery { get; set; }
     public string? CraftFilter { get; set; }
+    /// <summary>Craft : métier montré (Forge, Armure…, « Notées par les joueurs ») ; null : tous.</summary>
+    public string? CraftProfession { get; set; }
+    /// <summary>Craft : groupes de la liste dépliés (ceux de plus de 8 recettes sont repliés au départ).</summary>
+    public HashSet<string> CraftOpen { get; } = [];
     /// <summary>Page ouverte de l'écran Craft, et la recette ouverte (son numéro).</summary>
     public CraftPage CraftPage { get; set; }
     public int? CraftRecipe { get; set; }

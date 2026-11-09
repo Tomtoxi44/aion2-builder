@@ -17,7 +17,15 @@ sealed record RecipePart(string Key, string Name, int Qty, long? Npc = null);
 
 /// <summary>Une recette notée sur Aion 2 Todo : objet fabriqué (Qty par fabrication), ingrédients, coût en Kinah, note, auteur.</summary>
 /// <param name="Bound">L'objet fabriqué est lié d'âme à qui le fabrique : il ne se revend pas, on ne juge que ce qu'il coûte.</param>
-sealed record CraftRecipe(int Id, RecipePart Output, List<RecipePart> Inputs, long Kinah, string? Note, DateTime At, string? By, bool Mine, bool Bound = false);
+sealed record CraftRecipe(int Id, RecipePart Output, List<RecipePart> Inputs, long Kinah, string? Note, DateTime At, string? By, bool Mine, bool Bound = false)
+{
+    /// <summary>Recette officielle du jeu (base de MetaBot.GG, servie par le site) : ni modifiable ni retirable ; Source = sa page.</summary>
+    public bool Official { get; init; }
+    public string? Source { get; init; }
+    /// <summary>Métier (Forge, Armure, Artisanat, Alchimie, Cuisine) et maîtrise demandée, pour une recette officielle.</summary>
+    public string? Profession { get; init; }
+    public int? Mastery { get; init; }
+}
 
 /// <summary>Recette envoyée à Aion 2 Todo : chaque objet par sa clé de la liste, sinon par son nom ; Npc = prix chez le PNJ.</summary>
 sealed record RecipePartSend(string? Key, string? Name, int Qty, long? Npc = null);
@@ -293,6 +301,20 @@ sealed partial class ScreenViews
     CraftModel? craftModel;
     bool craftModelDone;
 
+    /// <summary>
+    /// Les recettes officielles (toutes celles du jeu, base de MetaBot.GG) et celles notées par les joueurs pour un objet que les
+    /// officielles ne fabriquent pas. Pour un même objet fabriqué, l'officielle l'emporte et reprend le coût en Kinah noté par un
+    /// joueur (la base ne le donne pas).
+    /// </summary>
+    static List<CraftRecipe> MergeRecipes(IReadOnlyList<CraftRecipe> players, IReadOnlyList<CraftRecipe> official)
+    {
+        if (official.Count == 0) return players.ToList();
+        var noted = players.GroupBy(r => Market.Fold(r.Output.Name)).ToDictionary(g => g.Key, g => g.ToList());
+        var made = official.Select(r => Market.Fold(r.Output.Name)).ToHashSet();
+        return official.Select(r => noted.TryGetValue(Market.Fold(r.Output.Name), out var mine) && mine.Max(x => x.Kinah) is > 0 and var kinah ? r with { Kinah = kinah } : r)
+            .Concat(players.Where(r => !made.Contains(Market.Fold(r.Output.Name)))).ToList();
+    }
+
     /// <summary>Ingrédient sorti du coût d'une recette par un clic (tu l'as déjà, comme l'arme précédente).</summary>
     bool CraftSkipped(int recipe, RecipePart p) => s.CraftSkip.Contains($"{recipe}:{p.Key}");
 
@@ -315,7 +337,8 @@ sealed partial class ScreenViews
             if (p.Npc is null && hdvPrices.PriceOf(p)?.Price is { } h && h < n.Price) return p;
             return p with { Npc = n.Price };
         }
-        var full = (data.Recipes ?? []).Select(rc => rc with { Inputs = rc.Inputs.Select(Priced).ToList() }).ToList();
+        var full = MergeRecipes(data.Recipes ?? [], Market.OfficialRecipes)
+            .Select(rc => rc with { Inputs = rc.Inputs.Select(Priced).ToList() }).ToList();
         // Ingrédients sortis du coût : ni dans le coût, ni dans « tu peux en faire » ; ils restent affichés, barrés, dans la recette.
         var recipes = full.Select(rc => rc with { Inputs = rc.Inputs.Where(p => !CraftSkipped(rc.Id, p)).ToList() }).ToList();
         var taxNote = shown.StartsWith('*') ? $"{tax:P0} (notes coréennes, à vérifier en jeu)" : $"{tax:P0}";
@@ -502,8 +525,16 @@ sealed partial class ScreenViews
                     .Select(x => (x.Item1, filter == x.Item2, (Action)(() => update(st => st.CraftFilter = x.Item2))))),
             },
         });
-        var visible = m.Plans.Where(p => filter switch { "make" => p.CanMake > 0, "gain" => p.Gain > 0 || p.Flip > 0, _ => true }).ToList();
+        // Le métier (recettes officielles), « Notées par les joueurs » pour les autres.
+        var professions = MergeRecipes(m.Data.Recipes ?? [], Market.OfficialRecipes).Select(r => r.Profession ?? "Notées par les joueurs").Distinct()
+            .OrderBy(p => p == "Notées par les joueurs").ThenBy(p => p, French).ToList();
+        if (professions.Count > 1)
+            blocks.Add(Choice(new[] { ("tous les métiers", s.CraftProfession is null, (Action)(() => update(st => st.CraftProfession = null))) }
+                .Concat(professions.Select(p => (p, s.CraftProfession == p, (Action)(() => update(st => st.CraftProfession = p)))))));
+        var visible = m.Plans.Where(p => filter switch { "make" => p.CanMake > 0, "gain" => p.Gain > 0 || p.Flip > 0, _ => true })
+            .Where(p => s.CraftProfession is null || (p.Recipe.Profession ?? "Notées par les joueurs") == s.CraftProfession).ToList();
         var items = new List<(Control Control, string Text)>();
+        var folded = new List<(string Group, Control Control)>();
         static string Search(CraftPlan p) => $"{p.Recipe.Output.Name} {p.Item?.Category} {string.Join(' ', p.Parts.Select(i => i.Part.Name))} {p.Recipe.Note}";
         string Title(CraftRecipe rc) => rc.Output.Qty > 1 ? $"{rc.Output.Name} ×{rc.Output.Qty}" : rc.Output.Name;
 
@@ -570,11 +601,14 @@ sealed partial class ScreenViews
         {
             var members = visible.Where(p => CallOf(p, m).Call == call).ToList();
             if (members.Count == 0) continue;
-            var head = new Border
-            {
-                Padding = new Thickness(20, 6), Background = Tok.Frame, BorderBrush = Tok.RowLine, BorderThickness = new Thickness(0, 1, 0, 1),
-                Child = T($"{name} · {members.Count}", 12, color, FontWeight.SemiBold),
-            };
+            // Plus de 8 recettes : le groupe se replie (ouvert par un clic, ou tant qu'on cherche).
+            var group = name;
+            var foldable = members.Count > 8;
+            var open = !foldable || s.CraftOpen.Contains(group);
+            var head = Clickable(T($"{(foldable ? open ? "▾ " : "▸ " : "")}{name} · {members.Count}", 12, color, FontWeight.SemiBold),
+                () => { if (foldable) update(st => { if (!st.CraftOpen.Remove(group)) st.CraftOpen.Add(group); }); }, Tok.Frame, foldable ? Tok.Hover : null, new Thickness(20, 6));
+            head.BorderBrush = Tok.RowLine;
+            head.BorderThickness = new Thickness(0, 1, 0, 1);
             rows.Add(head);
             foreach (var p in members)
             {
@@ -601,15 +635,22 @@ sealed partial class ScreenViews
                 var row = TableRow(Columns(cols, MarketItemLine(p.Item, Title(rc), 13), T(why, 12, whyColor, wrap: true), result, make), false, () => OpenRecipe(id));
                 rows.Add(row);
                 items.Add((row, Search(p)));
+                if (!open) folded.Add((group, row));
                 restCount++;
             }
         }
         var none = T("Aucune recette ne correspond.", 12, Tok.Muted).WithMargin(20, 8, 20, 8);
+        var hidden = folded.Select(f => f.Control).ToHashSet();
         void Filter()
         {
             var count = 0;
-            foreach (var (control, text) in items) { control.IsVisible = Market.Matches(query.Text, text); if (control.IsVisible) count++; }
-            none.IsVisible = count == 0;
+            var searching = !string.IsNullOrWhiteSpace(query.Text);
+            foreach (var (control, text) in items)
+            {
+                control.IsVisible = Market.Matches(query.Text, text) && (searching || !hidden.Contains(control));
+                if (control.IsVisible) count++;
+            }
+            none.IsVisible = count == 0 && searching;
         }
         query.TextChanged += (_, _) => { s.CraftQuery = query.Text; Filter(); };
         Filter();
@@ -635,7 +676,14 @@ sealed partial class ScreenViews
         // L'objet fabriqué, qui a noté la recette, les liens.
         var head = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
         head.Children.Add(MarketItemLine(p.Item, rc.Output.Qty > 1 ? $"{rc.Output.Name} ×{rc.Output.Qty} par fabrication" : rc.Output.Name, 18, withKind: true).WithMargin(0, 0, 16, 0));
-        head.Children.Add(T($"notée par {(rc.Mine ? "toi" : rc.By ?? "un compte supprimé")} {Market.Since(rc.At)}{(rc.Note is { } n ? $" · {n}" : "")}", 11, Tok.Muted, mono: true).WithMargin(0, 5, 12, 0));
+        if (rc.Official)
+        {
+            head.Children.Add(T($"recette officielle · {rc.Profession}{(rc.Mastery is { } mastery ? $", maîtrise {mastery}" : "")}", 11, Tok.Muted, mono: true).WithMargin(0, 5, 12, 0));
+            if (rc.Source is { } source)
+                head.Children.Add(Tip(Clickable(T("recette sur MetaBot.GG ↗", 11, Accent.Main, mono: true), () => OpenLink(source), null, Tok.Hover, new Thickness(6, 2)),
+                    "Recette officielle relevée dans la base d'artisanat AION 2 de MetaBot.GG (site de fans) : ouvre sa page."));
+        }
+        else head.Children.Add(T($"notée par {(rc.Mine ? "toi" : rc.By ?? "un compte supprimé")} {Market.Since(rc.At)}{(rc.Note is { } n ? $" · {n}" : "")}", 11, Tok.Muted, mono: true).WithMargin(0, 5, 12, 0));
         if (long.TryParse(rc.Output.Key, out var gameId))
             head.Children.Add(Tip(Clickable(T("fiche AION 2 Hub ↗", 11, Accent.Main, mono: true), () => OpenLink($"https://aion2hub.com/database/items/{gameId}"), null, Tok.Hover, new Thickness(6, 2)),
                 "Fiche de l'objet sur AION 2 Hub (site de fans, en anglais) : sa recette pour la vérifier. Rien n'est repris automatiquement."));
@@ -648,7 +696,7 @@ sealed partial class ScreenViews
             b.BorderThickness = new Thickness(1);
             return Tip(b, tip);
         }
-        head.Children.Add(new StackPanel
+        if (!rc.Official) head.Children.Add(new StackPanel
         {
             Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 0),
             Children =
