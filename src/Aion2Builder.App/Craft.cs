@@ -481,7 +481,10 @@ sealed partial class ScreenViews
 
         var makeable = m.Plans.Count(p => p.CanMake > 0);
         var kpis = new Avalonia.Controls.Primitives.UniformGrid { Columns = 4 };
-        kpis.Children.Add(Kpi("Recettes notées", m.Plans.Count.ToString(), size: 20, note: "par les joueurs d'Aion 2 Todo, valables pour tous").WithMargin(0, 0, 10, 0));
+        var officialCount = m.Plans.Count(p => p.Recipe.Official);
+        kpis.Children.Add(Kpi("Recettes", m.Plans.Count.ToString(), size: 20,
+            note: officialCount == 0 ? "notées par les joueurs d'Aion 2 Todo, valables pour tous"
+                : $"{officialCount} officielles (MetaBot.GG)" + (m.Plans.Count > officialCount ? $" + {m.Plans.Count - officialCount} notées par les joueurs" : "")).WithMargin(0, 0, 10, 0));
         kpis.Children.Add(Kpi("Faisables avec ton stock", m.HasStock ? makeable.ToString() : "—", makeable > 0 ? Tok.Good : null, 20,
             note: m.Who is null ? "inventaire inconnu sur ce PC" : $"sac et coffre de {m.Who.Character}, relevé {Market.Since(m.Who.At)}").WithMargin(0, 0, 10, 0));
         var proposalSum = m.Proposal.Sum(x => x.Total);
