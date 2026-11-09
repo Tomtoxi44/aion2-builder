@@ -194,7 +194,92 @@ static class Market
     }
 
     /// <summary>Objet noté par les joueurs (par son nom, ou nommé depuis un sac) : son rang se choisit à la main ; celui d'un objet du jeu vient du jeu.</summary>
-    public static bool GradeEditable(MarketItem item) => item.Key.StartsWith("name:", StringComparison.Ordinal) || item.Category == "Nommé par un joueur";
+    public static bool GradeEditable(MarketItem item) =>
+        item.Source is null && (item.Key.StartsWith("name:", StringComparison.Ordinal) || item.Category == "Nommé par un joueur");
+
+    /// <summary>
+    /// Base de référence des objets du site (/api/content/items : noms officiels, rangs et catégories relevés sur MetaBot.GG, avec la
+    /// page de chaque objet) : gardée un jour dans %APPDATA%\Aion2Builder\item-reference.json. Vide tant qu'elle n'est pas lue.
+    /// </summary>
+    public static IReadOnlyList<MarketItem> Reference { get; private set; } = [];
+    static Dictionary<string, MarketItem> referenceByFold = [];
+    static List<(MarketItem Item, string Fold, HashSet<string> Pairs)>? referencePairs;
+
+    /// <summary>L'objet officiel de ce nom (accents, majuscules, « : », « ◆ » ignorés) ; null s'il n'est pas dans la base.</summary>
+    public static MarketItem? ReferenceOf(string? name) => name is null ? null : referenceByFold.GetValueOrDefault(Fold(name));
+
+    public static async Task<bool> LoadReference()
+    {
+        var file = Path.Combine(AppPaths.Root, "item-reference.json");
+        string? json = null;
+        try { if (File.Exists(file) && DateTime.UtcNow - File.GetLastWriteTimeUtc(file) < TimeSpan.FromDays(1)) json = File.ReadAllText(file); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        if (json is null)
+        {
+            try
+            {
+                using var http = new HttpClient { BaseAddress = new Uri(Aion2Builder.Import.PetSyncClient.Site), Timeout = TimeSpan.FromSeconds(90) };
+                json = await http.GetStringAsync("/api/content/items");
+                Directory.CreateDirectory(AppPaths.Root);
+                File.WriteAllText(file, json);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException)
+            {
+                try { json = File.Exists(file) ? File.ReadAllText(file) : null; } catch (IOException) { json = null; }
+                if (json is null) return false;
+            }
+        }
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var list = new List<MarketItem>();
+            foreach (var e in doc.RootElement.GetProperty("items").EnumerateArray())
+            {
+                var name = e.GetProperty("n").GetString() ?? "";
+                if (name.Length == 0) continue;
+                string? Str(string key) => e.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+                list.Add(new MarketItem("name:" + Fold(name), name, 0, false, Str("c") ?? "", Str("g"),
+                    Str("s") is { } slug ? "https://metabot.gg/fr_FR/aion-2/items/" + slug : null));
+            }
+            Reference = list;
+            referenceByFold = list.GroupBy(i => Fold(i.Name)).ToDictionary(g => g.Key, g => g.First());
+            referencePairs = null;
+            return true;
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { return false; }
+    }
+
+    /// <summary>
+    /// Le nom officiel le plus proche d'un nom lu de travers (« Ku kuru » → « Kukuru ») : au moins 88 % de ressemblance et nettement
+    /// devant le suivant ; null sinon (ou s'il est déjà officiel).
+    /// </summary>
+    public static MarketItem? Closest(string? name)
+    {
+        var f = Fold(name);
+        if (f.Length < 4 || Reference.Count == 0 || referenceByFold.ContainsKey(f)) return null;
+        static HashSet<string> Pairs(string s) { var set = new HashSet<string>(); for (var i = 0; i + 1 < s.Length; i++) set.Add(s.Substring(i, 2)); return set; }
+        referencePairs ??= Reference.Select(i => (i, Fold(i.Name), Pairs(Fold(i.Name)))).ToList();
+        var mine = Pairs(f);
+        static int Distance(string a, string b)
+        {
+            var prev = new int[b.Length + 1];
+            for (var j = 0; j <= b.Length; j++) prev[j] = j;
+            for (var i = 1; i <= a.Length; i++)
+            {
+                var cur = new int[b.Length + 1];
+                cur[0] = i;
+                for (var j = 1; j <= b.Length; j++) cur[j] = Math.Min(Math.Min(prev[j] + 1, cur[j - 1] + 1), prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+                prev = cur;
+            }
+            return prev[b.Length];
+        }
+        var ranked = referencePairs
+            .Select(x => (x.Item, x.Fold, Dice: 2.0 * x.Pairs.Count(mine.Contains) / Math.Max(1, x.Pairs.Count + mine.Count)))
+            .OrderByDescending(x => x.Dice).Take(6)
+            .Select(x => (x.Item, Score: 1 - (double)Distance(f, x.Fold) / Math.Max(f.Length, x.Fold.Length)))
+            .OrderByDescending(x => x.Score).ToList();
+        return ranked.Count > 0 && ranked[0].Score >= 0.88 && (ranked.Count == 1 || ranked[1].Score < ranked[0].Score - 0.03) ? ranked[0].Item : null;
+    }
 
     /// <summary>Corriger une recette : la nouvelle version est notée par toi, l'ancienne passe dans les retirées (rétablissable).</summary>
     public static async Task<string?> ReplaceRecipe(string key, int id, RecipeSend recipe)
@@ -534,7 +619,7 @@ sealed partial class ScreenViews
         if (market.ShotStatus is { } st) body.Children.Add(T(st, 12, st.StartsWith("Lecture") ? Tok.Muted : Tok.Warn, wrap: true));
         if (market.Shot is { Count: > 0 } lines)
         {
-            MarketItem? Known(string name) => data.Items.FirstOrDefault(x => Market.Fold(x.Name) == Market.Fold(name));
+            MarketItem? Known(string name) => data.Items.FirstOrDefault(x => Market.Fold(x.Name) == Market.Fold(name)) ?? Market.ReferenceOf(name);
             const string cols = "*,150,150,70,34";
             var table = new StackPanel { Spacing = 2, Children = { TableHeader(cols, "Objet (corrige si besoin)", "Prix unitaire", "Sur la capture", "", "") } };
             for (var i = 0; i < lines.Count; i++)
@@ -568,6 +653,15 @@ sealed partial class ScreenViews
                 var name = new TextBox { Text = item?.Name ?? line.Name, MinWidth = 0, FontSize = 13 };
                 var price = new TextBox { Text = Fmt.Big(line.Price), MinWidth = 0, FontSize = 13, HorizontalContentAlignment = HorizontalAlignment.Right };
                 var hint = T(item is null ? "nouveau" : "", 10, Tok.Warn, mono: true);
+                // Nom presque officiel (faute de lecture) : « officiel : … ? », un clic remplace le nom.
+                var suggest = new Border { Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand) };
+                void Suggest(string text)
+                {
+                    var close = Known(text) is null ? Market.Closest(text) : null;
+                    suggest.Child = close is null ? null : T($"officiel : {close.Name} ?", 10, Accent.Main, mono: true);
+                    suggest.Tag = close?.Name;
+                    hint.IsVisible = close is null;
+                }
                 void Changed()
                 {
                     var text = string.Join(' ', (name.Text ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries));
@@ -576,10 +670,13 @@ sealed partial class ScreenViews
                     market.EditShot(index, line);
                     var known = Known(text);
                     hint.Text = known is null ? "nouveau" : "";
+                    Suggest(text);
                     bar.Background = BarOf(line, known);
                 }
                 name.TextChanged += (_, _) => Changed();
                 price.TextChanged += (_, _) => Changed();
+                suggest.PointerPressed += (_, _) => { if (suggest.Tag is string official) name.Text = official; };
+                Suggest(item?.Name ?? line.Name);
                 var seen = line.Listings is not { } n ? "—" : line.Lowest ? $"le plus bas de {Fmt.Plural(n, "annonce")}" : $"{n} en vente";
                 var remove = Clickable(T("✕", 12, Tok.Muted), () => market.RemoveShot(index), null, Tok.Hover, new Thickness(8, 3));
                 remove.CornerRadius = new CornerRadius(3);
@@ -590,7 +687,8 @@ sealed partial class ScreenViews
                         Tip(T(seen, 11, Tok.Muted).WithMargin(12, 0, 0, 0), line.Lowest
                             ? "Annonces de cet objet lues sur la capture : le prix unitaire le plus bas est gardé."
                             : "Nombre d'annonces affiché par le jeu (pour information : seul le prix est noté)."),
-                        Tip(hint, "Pas encore dans la liste : il y entre sous ce nom (vérifie l'orthographe)."),
+                        new Panel { Children = { Tip(hint, "Pas encore dans la liste : il y entre sous ce nom (vérifie l'orthographe)."),
+                            Tip(suggest, "Nom officiel le plus proche (base d'objets du site, tirée de MetaBot.GG) : clic pour le prendre.") } },
                         Tip(remove, "Retirer cette ligne")),
                 });
             }
@@ -938,6 +1036,7 @@ sealed partial class ScreenViews
     Control MarketPriceForm(MarketData data, string shown)
     {
         var catalog = data.Items.OrderByDescending(i => i.Gathered).ThenByDescending(i => i.IsGathering).ThenBy(i => i.Name, French)
+            .Concat(Market.Reference.OrderBy(i => i.Name, French))  // noms officiels pas encore notés (base de référence du site)
             .DistinctBy(i => Market.Fold(i.Name)).ToList();
         // Filtre et modèle AVANT FilterMode et Text : un texte déjà là lance la recherche tout de suite, et Avalonia plante si le
         // filtre « Custom » n'est pas encore posé.

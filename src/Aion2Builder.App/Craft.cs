@@ -927,6 +927,7 @@ sealed partial class ScreenViews
         var npcByName = NpcByName(data);
         var items = data.Items.OrderByDescending(i => i.Gathered).ThenByDescending(i => i.IsGathering).ThenBy(i => i.Name, French)
             .Concat((data.Npc ?? []).OrderBy(n => n.Name, French).Select(n => new MarketItem(n.Key, n.Name, 0, false, $"PNJ · {n.Tab ?? "marchand"} · {Fmt.Big(n.Price)} Kinah")))
+            .Concat(Market.Reference.OrderBy(i => i.Name, French))  // noms officiels pas encore notés
             .DistinctBy(i => Market.Fold(i.Name)).ToList();
         TextBox Qty(string text, Action<string> changed)
         {

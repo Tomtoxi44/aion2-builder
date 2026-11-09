@@ -2227,10 +2227,13 @@ public sealed class MainWindow : Window
     }
     DateTime marketAt;
     bool marketLoading;
+    bool referenceAsked;
 
     /// <summary>Prix HdV de la communauté (Aion 2 Todo, avec ta clé) : relus au plus toutes les minutes, ou tout de suite après un changement.</summary>
     async Task LoadMarketAsync(bool force = false)
     {
+        // La base de référence des objets (noms officiels, rangs : site, tirée de MetaBot.GG), une fois par lancement (gardée un jour).
+        if (!referenceAsked) { referenceAsked = true; if (await Market.LoadReference()) Render(); }
         if (marketLoading || (!force && DateTime.UtcNow - marketAt < TimeSpan.FromMinutes(1)) || AccountKey() is not { } key) return;
         marketLoading = true;
         marketAt = DateTime.UtcNow;
