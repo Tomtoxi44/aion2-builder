@@ -340,7 +340,7 @@ sealed partial class ScreenViews
         var hdvPrices = new CraftBook(data, latest, tax, []);
         RecipePart Priced(RecipePart p)
         {
-            if (!npcByName.TryGetValue(Market.Fold(p.Name), out var n)) return p;
+            if (!npcByName.TryGetValue(NpcName(p.Name), out var n)) return p;
             if (p.Npc is null && hdvPrices.PriceOf(p)?.Price is { } h && h < n.Price) return p;
             return p with { Npc = n.Price };
         }
@@ -404,7 +404,7 @@ sealed partial class ScreenViews
 
     /// <summary>Prix chez le PNJ de ce que la recette fabrique (pour une fabrication), s'il n'a pas de prix à l'hôtel.</summary>
     static long? NpcPriceOf(CraftPlan p, CraftModel m) =>
-        p.C.Sell is null && m.NpcByName.TryGetValue(Market.Fold(p.Recipe.Output.Name), out var sold) ? sold.Price * p.Recipe.Output.Qty : null;
+        p.C.Sell is null && m.NpcByName.TryGetValue(NpcName(p.Recipe.Output.Name), out var sold) ? sold.Price * p.Recipe.Output.Qty : null;
 
     /// <summary>Kinah en court pour la barre de gauche : 146 k, 77,1 M.</summary>
     static string Short(long v)
@@ -1049,7 +1049,7 @@ sealed partial class ScreenViews
             var npc = Tip(Clickable(T(line.Npc ? "☑ PNJ" : "☐ PNJ", 12, line.Npc ? Accent.Main : Tok.Muted, mono: true), () => update(_ =>
             {
                 line.Npc = !line.Npc;
-                if (line.Npc && line.NpcPrice.Trim().Length == 0 && npcByName.TryGetValue(Market.Fold(line.Name), out var listed)) line.NpcPrice = listed.Price.ToString();
+                if (line.Npc && line.NpcPrice.Trim().Length == 0 && npcByName.TryGetValue(NpcName(line.Name), out var listed)) line.NpcPrice = listed.Price.ToString();
             }), null, Tok.Hover, new Thickness(6, 5)),
                 "Coche si cet ingrédient s'achète chez un PNJ (catalyseur…) : note son prix à l'unité. Il ne se revend pas à l'hôtel.");
             var row = new StackPanel
@@ -1114,7 +1114,7 @@ sealed partial class ScreenViews
             // Coché « PNJ » : le prix tapé ; sinon un objet de la liste « Objets du PNJ » prend son prix du PNJ.
             var inputs = lines.Select(l => Part(l.Name, Number(l.Qty, 1),
                 l.Npc ? long.Parse(new string(l.NpcPrice.Where(char.IsDigit).ToArray()))
-                : npcByName.TryGetValue(Market.Fold(l.Name.Trim()), out var listed) ? listed.Price : null)).ToList();
+                : npcByName.TryGetValue(NpcName(l.Name.Trim()), out var listed) ? listed.Price : null)).ToList();
             if (inputs.Count == 0) { update(st => st.CraftError = "Ajoute au moins un ingrédient."); return; }
             var cost = long.TryParse(new string(draft.Kinah.Where(char.IsDigit).ToArray()), out var k) ? k : 0;
             var output = Part(draft.Output, Number(draft.OutputQty, 1));
@@ -1198,9 +1198,17 @@ sealed partial class ScreenViews
         return row;
     }
 
-    /// <summary>Liste des objets du PNJ par nom (sans accents ni majuscules).</summary>
+    /// <summary>Liste des objets du PNJ par nom (sans accents ni majuscules, voir NpcName).</summary>
     static Dictionary<string, NpcItem> NpcByName(MarketData data) =>
-        (data.Npc ?? []).GroupBy(n => Market.Fold(n.Name)).ToDictionary(g => g.Key, g => g.First());
+        (data.Npc ?? []).GroupBy(n => NpcName(n.Name)).ToDictionary(g => g.Key, g => g.First());
+
+    /// <summary>
+    /// Nom d'un objet du PNJ pour le retrouver : sans accents ni majuscules, et sans « (lié) » / « (liée) »… : dans les recettes du
+    /// jeu, l'objet acheté au marchand porte ce nom (« Parchemin de courage (lié) »), le marchand affiche « Parchemin de courage ».
+    /// </summary>
+    static string NpcName(string name) => Market.Fold(BoundTag.Replace(name, ""));
+    static readonly System.Text.RegularExpressions.Regex BoundTag =
+        new(@"\s*\(li[ée]e?s?\)\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     /// <summary>
     /// « Objets du PNJ » : les prix des marchands, communs à tous les joueurs d'Aion 2 Todo (les mêmes pour tous dans le jeu), par
