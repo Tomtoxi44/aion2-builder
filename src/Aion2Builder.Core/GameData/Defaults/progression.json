@@ -110,10 +110,12 @@
         "how": ["Pour les fragments d'Ariel (cristaux Daevanion) et les kinahs, pas pour l'équipement"] },
       { "score": 2700, "unlocks": "Île céleste de Vakron et Canyon Urugugu en difficile (depuis le 28/10 : 3 résurrections, frénésie à 4 min)", "optional": true,
         "how": ["Pierre philosophale : Révélation (liée) en récompense au choix garantie", "Fragments d'Ariel garantis : 100 fragments = 1 cristal Daevanion : Ariel (30 fois par perso), ou 1 fragment = 5 pierres d'enchantement", "Tous les matériaux d'artisanat uniques s'y obtiennent"] },
-      { "score": 2800, "unlocks": "Raid Forge abyssale : Ludra en normal (pièces 102 ; depuis le 04/11, 1 h par run)",
+      { "score": 2800, "unlocks": "Raid Forge abyssale : Ludra en normal (pièces 102 ; depuis le 11/11, 2 h par run et réacteur central moins résistant)",
         "how": ["Mêmes types de récompenses qu'en difficile, avec des taux plus bas : arme et garde de Ludra, bracelets", "Bracelet de Ludra (amplification jusqu'à 5) : 6 « Gear Change Voucher: Ludra » (nom des notes anglaises) en transmutation", "Au-delà, les armures et accessoires 102 viennent de l'artisanat Seigneur dragon"] },
-      { "score": 3000, "unlocks": "Raid Forge abyssale : Ludra en difficile (depuis le 04/11, 1 h par run)", "optional": true,
-        "how": ["Meilleurs taux de butin qu'en normal, mêmes types de récompenses", "Bracelet de Ludra : 3 « Gear Change Voucher: Ludra (Hard) » (nom des notes anglaises) en transmutation"] }
+      { "score": 2800, "unlocks": "Temple du feu et Tanière de la Corne féroce en difficile (depuis le 11/11 : 3 résurrections, frénésie à 4 min)", "optional": true,
+        "how": ["Pierre philosophale : Révélation (liée) en récompense au choix garantie, et plus de Kinah qu'en normal", "Fragments d'Ariel du donjon garantis : 100 fragments = 1 cristal Daevanion : Ariel (30 fois par perso), ou 1 fragment = 5 pierres d'enchantement", "Tous les matériaux d'artisanat uniques, dont « Wrathful Mind / Will / Ego » (noms des notes anglaises) ; succès du mode difficile : apparences uniques"] },
+      { "score": 3000, "unlocks": "Raid Forge abyssale : Ludra en difficile (depuis le 11/11, 2 h par run)", "optional": true,
+        "how": ["Meilleurs taux de butin qu'en normal, mêmes types de récompenses", "Depuis le 11/11 (deux modes) : groupe de récompenses 5 garanti (30 → 100 %), avec « Wrathful Mind », « Wrathful Will » et « Wrathful Ego » liés (noms des notes anglaises)", "Bracelet de Ludra : 3 « Gear Change Voucher: Ludra (Hard) » (nom des notes anglaises) en transmutation"] }
     ],
     "tiers": [
       { "itemLevel": 54, "gate": 700, "where": { "Weapon": "Conquête : Grotte de Krao", "Guard": "Conquête : Draupnir", "Armor": "Conquête : Grotte de Krao, Draupnir", "Accessory": "Conquête : Grotte de Krao, Draupnir" } },
