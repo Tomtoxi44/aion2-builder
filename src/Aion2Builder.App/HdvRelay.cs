@@ -69,9 +69,7 @@ static class HdvRelay
         object result;
         try
         {
-            // Image doublée, comme dans l'écran : sur un écran 1080p, le texte du Marché est trop fin pour l'OCR.
-            var words = ScreenshotOcr.Words(image, InGameStatsReader.MinOcrSize, minScale: 2, colors: true).GetAwaiter().GetResult();
-            var lines = MarketShotReader.Read(words, out var problem);
+            var (lines, problem) = ReadShot(image).GetAwaiter().GetResult();
             result = new { problem = problem is null ? null : MarketShotReader.NoTitles, lines, reader = Reader };
         }
         catch (Exception ex)  // processus lancé par le Pet Meter : il lit l'erreur dans le fichier
@@ -79,6 +77,29 @@ static class HdvRelay
             result = new { problem = $"lecture impossible ({ex.Message})", lines = Array.Empty<MarketShotLine>(), reader = Reader };
         }
         File.WriteAllText(output, JsonSerializer.Serialize(result, Json));
+    }
+
+    /// <summary>
+    /// Lecture d'une capture du Marché (écran Prix HdV et relevé F9) : l'image doublée (sur un écran 1080p, le texte du Marché est
+    /// trop fin pour l'OCR), puis chaque case de nom restée vide sur une ligne qui a un prix relue seule (« Od », trop court,
+    /// échappe à la lecture de toute l'image). L'OCR de Windows est capricieux sur un mot de deux lettres : la case seule se lit
+    /// à la même taille, et sinon de plus en plus grande, jusqu'à ce qu'un nom en sorte.
+    /// </summary>
+    public static async Task<(List<MarketShotLine> Lines, string? Problem)> ReadShot(string image)
+    {
+        var words = await ScreenshotOcr.Words(image, InGameStatsReader.MinOcrSize, minScale: 2, colors: true);
+        var lines = MarketShotReader.Read(words, out var problem, out var gaps);
+        if (gaps.Count == 0 || gaps.Count > 20) return (lines, problem);
+        var more = new List<Aion2Builder.Combat.OcrWord>(words);
+        foreach (var gap in gaps)
+            foreach (var zoom in new[] { 1, 1.5, 2, 3 })
+            {
+                var found = await ScreenshotOcr.WordsIn(image, InGameStatsReader.MinOcrSize, 2, gap, zoom, colors: true);
+                if (!found.Any(w => w.Text.Count(char.IsLetter) >= 2)) continue;
+                more.AddRange(found);
+                break;
+            }
+        return more.Count == words.Count ? (lines, problem) : (MarketShotReader.Read(more, out problem), problem);
     }
 
     /// <summary>« --hdv-send lignes.json envoi.json » : note les lignes du relevé (la dernière lecture d'un objet l'emporte).</summary>

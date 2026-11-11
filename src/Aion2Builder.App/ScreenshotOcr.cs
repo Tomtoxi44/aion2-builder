@@ -24,9 +24,7 @@ static class ScreenshotOcr
         var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
         using var stream = await file.OpenAsync(Windows.Storage.FileAccessMode.Read);
         var decoder = await BitmapDecoder.CreateAsync(stream);
-        // Le moteur refuse les images trop grandes (écran 4K) : réduites, les positions restent proportionnelles.
-        var size = (double)Math.Max(decoder.PixelWidth, decoder.PixelHeight);
-        var scale = Math.Min(OcrEngine.MaxImageDimension / size, Math.Max(Math.Max(1.0, minScale), minSize / size));
+        var scale = ScaleFor(decoder, minSize, minScale);
         var transform = new BitmapTransform
         {
             ScaledWidth = (uint)Math.Max(1, decoder.PixelWidth * scale), ScaledHeight = (uint)Math.Max(1, decoder.PixelHeight * scale),
@@ -64,6 +62,57 @@ static class ScreenshotOcr
             .Select(w => new Word(w.Text, w.BoundingRect.X, w.BoundingRect.Y, w.BoundingRect.Width, w.BoundingRect.Height)).ToList();
         if (!colors) return words;
         return words.Select(w => w with { Rgb = TextColor(pixels!, width, height, w) }).ToList();
+    }
+
+    /// <summary>Agrandissement appliqué par Words : le moteur refuse les images trop grandes (écran 4K), réduites, les positions restent proportionnelles.</summary>
+    static double ScaleFor(BitmapDecoder decoder, int minSize, double minScale)
+    {
+        var size = (double)Math.Max(decoder.PixelWidth, decoder.PixelHeight);
+        return Math.Min(OcrEngine.MaxImageDimension / size, Math.Max(Math.Max(1.0, minScale), minSize / size));
+    }
+
+    /// <summary>
+    /// Relit une zone de l'image, agrandie « zoom » fois de plus que la lecture de toute l'image faite par Words(path, minSize,
+    /// minScale) : un mot court qu'elle a manqué (« Od » au Marché) se lit sur la zone seule, plus grande. Zone et mots rendus
+    /// dans les coordonnées de cette lecture-là.
+    /// </summary>
+    public static async Task<List<Word>> WordsIn(string path, int minSize, double minScale, (double X, double Y, double W, double H) zone, double zoom, bool colors = false)
+    {
+        var engine = OcrEngine.TryCreateFromLanguage(new Windows.Globalization.Language("fr-FR")) ?? OcrEngine.TryCreateFromUserProfileLanguages();
+        if (engine is null) return [];
+        var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
+        using var stream = await file.OpenAsync(Windows.Storage.FileAccessMode.Read);
+        var decoder = await BitmapDecoder.CreateAsync(stream);
+        var at = ScaleFor(decoder, minSize, minScale);
+        var scale = at * zoom;
+        uint fullW = (uint)Math.Max(1, decoder.PixelWidth * scale), fullH = (uint)Math.Max(1, decoder.PixelHeight * scale);
+        // La zone, agrandie, sans sortir de l'image ni dépasser la taille que le moteur accepte.
+        var x0 = (uint)Math.Clamp(zone.X / at * scale, 0, fullW - 1);
+        var y0 = (uint)Math.Clamp(zone.Y / at * scale, 0, fullH - 1);
+        var w = (uint)Math.Clamp(zone.W / at * scale, 1, Math.Min(fullW - x0, OcrEngine.MaxImageDimension));
+        var h = (uint)Math.Clamp(zone.H / at * scale, 1, Math.Min(fullH - y0, OcrEngine.MaxImageDimension));
+        var transform = new BitmapTransform
+        {
+            ScaledWidth = fullW, ScaledHeight = fullH, InterpolationMode = BitmapInterpolationMode.Fant,
+            Bounds = new BitmapBounds { X = x0, Y = y0, Width = w, Height = h },
+        };
+        using var bitmap = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied, transform,
+            ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.DoNotColorManage);
+        var result = await engine.RecognizeAsync(bitmap);
+        var words = result.Lines.SelectMany(l => l.Words)
+            .Select(x => new Word(x.Text, x.BoundingRect.X, x.BoundingRect.Y, x.BoundingRect.Width, x.BoundingRect.Height)).ToList();
+        if (colors)
+        {
+            var buffer = new Windows.Storage.Streams.Buffer((uint)(bitmap.PixelWidth * bitmap.PixelHeight * 4));
+            bitmap.CopyToBuffer(buffer);
+            var pixels = new byte[buffer.Length];
+            using var reader = Windows.Storage.Streams.DataReader.FromBuffer(buffer);
+            reader.ReadBytes(pixels);
+            words = words.Select(x => x with { Rgb = TextColor(pixels, bitmap.PixelWidth, bitmap.PixelHeight, x) }).ToList();
+        }
+        // Retour aux coordonnées de la lecture de toute l'image.
+        var back = at / scale;
+        return words.Select(x => x with { X = (x0 + x.X) * back, Y = (y0 + x.Y) * back, Width = x.Width * back, Height = x.Height * back }).ToList();
     }
 
     /// <summary>

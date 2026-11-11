@@ -2167,8 +2167,9 @@ public sealed class MainWindow : Window
             var refused = 0;
             foreach (var path in paths)
             {
-                // Image doublée : sur un écran 1080p ou plus petit, le texte du Marché est trop fin pour l'OCR (annonces perdues, accents).
-                lines.AddRange(MarketShotReader.Read(await ScreenshotOcr.Words(path, InGameStatsReader.MinOcrSize, minScale: 2, colors: true), out var problem));
+                // Image doublée, et les noms trop courts manqués relus de plus près (HdvRelay.ReadShot).
+                var (read, problem) = await HdvRelay.ReadShot(path);
+                lines.AddRange(read);
                 if (problem is not null) refused++;
             }
             // Un même objet sur deux captures : la dernière lecture l'emporte ; les lignes qui attendaient déjà restent.

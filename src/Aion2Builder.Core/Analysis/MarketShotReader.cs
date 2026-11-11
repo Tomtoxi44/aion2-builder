@@ -33,8 +33,15 @@ public static class MarketShotReader
     public const string NoTitles = "je ne vois pas les titres des colonnes (Objet, Prix de vente…). Refais la capture en gardant la ligne des titres au-dessus des objets.";
 
     /// <param name="problem">Non nul quand la capture est refusée (titres des colonnes absents) : aucune ligne n'est lue.</param>
-    public static List<MarketShotLine> Read(IReadOnlyList<OcrWord> words, out string? problem)
+    public static List<MarketShotLine> Read(IReadOnlyList<OcrWord> words, out string? problem) => Read(words, out problem, out _);
+
+    /// <param name="gaps">
+    /// Cases du nom restées vides sur une ligne qui a un prix (un nom court comme « Od » échappe à l'OCR de toute l'image) : à
+    /// relire agrandies, puis à relire avec les mots trouvés ajoutés (voir HdvRelay.ReadShot).
+    /// </param>
+    public static List<MarketShotLine> Read(IReadOnlyList<OcrWord> words, out string? problem, out List<(double X, double Y, double W, double H)> gaps)
     {
+        gaps = [];
         problem = NoTitles;
         if (words.Count == 0) return [];
         var height = Median(words.Select(w => w.Height));
@@ -84,7 +91,17 @@ public static class MarketShotReader
             {
                 var near = rows.Where(r => r.Name.Length >= 2 && !r.Level && r.Value is null && Math.Abs(r.Center - row.Center) < height * 1.8)
                     .OrderBy(r => Math.Abs(r.Center - row.Center)).ToList();
-                if (near.Count == 0) continue;
+                if (near.Count == 0)
+                {
+                    // La case du nom à relire : de la colonne du rang (étoile, icône) un peu au-delà du nom le plus long des autres
+                    // lignes ; une bande trop large, presque vide, ne rend rien à l'OCR.
+                    var others = rows.Where(r => r.Name.Length >= 2).SelectMany(r => r.NameWords).ToList();
+                    var zoneLeft = others.Count > 0 ? Math.Max(0, others.Min(w => w.X) - height * 0.5) : Math.Max(0, left == double.MinValue ? 0 : left);
+                    var longest = others.Count > 0 ? others.Max(w => w.X + w.Width) : double.NaN;
+                    var zoneRight = Math.Min(nameEnd, double.IsNaN(longest) ? zoneLeft + (nameEnd - zoneLeft) * 0.4 : longest + height * 4);
+                    gaps.Add((zoneLeft, row.Center - height * 1.1, zoneRight - zoneLeft, height * 2.2));
+                    continue;
+                }
                 named = near[0];
             }
             if (named.Name.Length < 2 || named.Level) continue;
@@ -128,11 +145,15 @@ public static class MarketShotReader
     }
 
     /// <summary>Le nom : les mots avec des lettres (le « 1 » de la pile sur l'icône et les signes seuls sont écartés).</summary>
-    static string Name(IEnumerable<OcrWord> words) =>
+    static string Name(IEnumerable<OcrWord> words)
+    {
         // L'OCR coupe « d'Yggdrasil » en « d' » + « Yggdrasil » : l'espace après l'apostrophe est retiré.
-        CleanName(System.Text.RegularExpressions.Regex.Replace(
+        var name = CleanName(System.Text.RegularExpressions.Regex.Replace(
             string.Join(' ', words.Select(w => w.Text.Trim()).Where(t => t.Length > 0 && Letters(t) > 0 || t.Any(char.IsDigit) && t.Length > 1)).Replace('’', '\''),
             @"'\s+", "'"));
+        // Un nom du jeu commence par une majuscule : « od » relu sur une case agrandie est « Od ».
+        return name.Length > 0 && char.IsLower(name[0]) ? char.ToUpperInvariant(name[0]) + name[1..] : name;
+    }
 
     /// <summary>
     /// Nom sans le bruit des icônes : chiffres et signes collés devant (« 01 Orbe d'illusion », « +4 Minerai… », « (9 Cuirasse… » :
