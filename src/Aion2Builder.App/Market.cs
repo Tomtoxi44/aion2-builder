@@ -1195,7 +1195,10 @@ sealed partial class ScreenViews
             link.HorizontalAlignment = HorizontalAlignment.Left;
             list.Children.Add(Tip(link, "Ouvrir la recette dans l'écran Craft"));
         }
-        if (uses.Count > 8) list.Children.Add(T($"et {Fmt.Plural(uses.Count - 8, "autre recette", "autres recettes")} (écran Craft, recherche par ingrédient)", 11, Tok.Muted, wrap: true).WithMargin(4, 2, 0, 0));
+        if (uses.Count > 8) list.Children.Add(T($"et {Fmt.Plural(uses.Count - 8, "autre recette", "autres recettes")}", 11, Tok.Muted, wrap: true).WithMargin(4, 2, 0, 0));
+        var all = Clickable(T("ce qu'il en faut et ce que ça rapporte ›", 12, Accent.Main, wrap: true), () => OpenUses(name), null, Tok.Hover, new Thickness(4, 2));
+        all.HorizontalAlignment = HorizontalAlignment.Left;
+        list.Children.Add(Tip(all, "Ouvrir « Que fabriquer avec… » dans l'écran Craft, sur cet objet."));
         return list;
     }
 

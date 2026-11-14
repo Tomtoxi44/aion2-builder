@@ -461,6 +461,8 @@ sealed partial class ScreenViews
         body.Children.Add(SideItem(Icons.Grid, "Vue d'ensemble", sum > 0 ? $"+{Short(sum)}" : null, Tok.Good,
             m.HasStock ? sum > 0 ? "ce que je fabriquerais avec ton stock" : "rien de rentable avec ton stock" : "toutes les recettes et leur verdict",
             s.CraftPage == CraftPage.Overview, () => update(st => st.CraftPage = CraftPage.Overview)));
+        body.Children.Add(SideItem(Icons.Search, "Que fabriquer avec…", null, null, "donne une ressource : les recettes qui l'utilisent",
+            s.CraftPage == CraftPage.Uses, () => update(st => st.CraftPage = CraftPage.Uses)));
         var runs = s.CraftRuns.Count;
         body.Children.Add(SideItem(Icons.Box, "Courses", runs > 0 ? runs.ToString() : null, Tok.Text2,
             runs > 0 ? $"{Short(Shopping(m).Total)} Kinah à payer, ton stock retiré" : "garde une série depuis une recette : la liste d'achats",
@@ -519,6 +521,7 @@ sealed partial class ScreenViews
             CraftPage.New => Page(s.CraftDraft.Replaces is null ? "Craft · noter une recette" : "Craft · corriger une recette", right, RecipeForm(m.Data)),
             CraftPage.Npc => Page("Craft · prix des PNJ", right, NpcCard(m.Data)),
             CraftPage.Shopping => CraftShoppingPage(m, right),
+            CraftPage.Uses => CraftUsesPage(m, right),
             _ => CraftOverview(m, right),
         };
     }
@@ -530,6 +533,7 @@ sealed partial class ScreenViews
         CraftPage.New => s.CraftDraft.Replaces is null ? "Noter une recette" : "Corriger une recette",
         CraftPage.Npc => "Prix des PNJ",
         CraftPage.Shopping => "Courses",
+        CraftPage.Uses => "Que fabriquer avec…",
         _ => "Vue d'ensemble",
     };
 
@@ -591,6 +595,8 @@ sealed partial class ScreenViews
         // recherche et les filtres valent pour les deux ; un clic ouvre la recette (ingrédients et calcul).
         var listStart = blocks.Count;
         var query = new TextBox { Text = s.CraftQuery ?? "", PlaceholderText = "chercher : potion, od, parchemin…", Width = 260 };
+        var byResource = Clickable(T("que fabriquer avec une ressource ? ›", 12, Accent.Main), () => update(st => st.CraftPage = CraftPage.Uses), null, Tok.Hover, new Thickness(6, 4));
+        byResource.VerticalAlignment = VerticalAlignment.Center;
         var filter = s.CraftFilter;
         blocks.Add(new StackPanel
         {
@@ -600,6 +606,7 @@ sealed partial class ScreenViews
                 query,
                 Choice(new (string, string?)[] { ("toutes", null), ("faisables", "make"), ("rentables", "gain") }
                     .Select(x => (x.Item1, filter == x.Item2, (Action)(() => update(st => st.CraftFilter = x.Item2))))),
+                Tip(byResource, "Tu donnes une ressource : les recettes qui l'utilisent, ce qu'il en faut et ce que ça rapporte."),
             },
         });
         // Le métier (recettes officielles), « Notées par les joueurs » pour les autres.

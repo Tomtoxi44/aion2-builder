@@ -296,7 +296,10 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    plancher) : elles s'affichent sur la carte, dans la barre de gauche et sur l'entrée Craft du rail, et les prix sont
    alors relus toutes les 15 minutes. **Maîtrise** : indique ton niveau dans chaque métier, une fois par personnage (rien
    ne le donne au Builder) ; les recettes qui en demandent plus sont rangées à part, et une carte montre ce que débloque
-   ton prochain palier.
+   ton prochain palier. **Que fabriquer avec…** : tape le nom d'une ressource, la page liste les recettes qui l'utilisent,
+   ce qu'il en faut par fabrication, combien tu peux en faire avec ton stock et ce que chacune rapporte, puis les recettes
+   un cran plus loin (celles qui utilisent ce que ces recettes fabriquent) ; sans rien taper, tes ressources qui servent à
+   une recette. On y arrive aussi depuis un objet de l'inventaire ou de l'hôtel des ventes (« Sert à fabriquer »).
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par
