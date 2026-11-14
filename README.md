@@ -271,7 +271,9 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    est comptée au prix de l'Od du même rang quand il est moins cher (l'Od se transmute en ressource, 1 pour 1), et un
    ingrédient qui se fabrique montre ce que coûte sa recette, avec « fabriquer plutôt » pour le compter ainsi. « Épingler »
    (page d'une recette) met le craft en haut de la vue d'ensemble : sa vente, son coût en achetant tout et leurs courbes sur
-   3 jours, avec une case par ingrédient pour ajouter sa courbe.
+   3 jours, avec une case par ingrédient pour ajouter sa courbe. Seules les recettes de la faction du
+   personnage sont montrées (le jeu en a une version élyséenne et une asmodienne), et « Simuler une série » chiffre N
+   fabrications : coût, reste à acheter une fois ton stock déduit, vente, gain et prix plancher (taxe comprise).
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par

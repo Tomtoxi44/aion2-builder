@@ -187,7 +187,7 @@ sealed partial class ScreenViews
             return Tip(panel, $"{Fmt.Big(last)} Kinah");
         }
         var gap = sellPts is { Count: > 0 } sp && costPts is { Count: > 0 } cp && !partial ? sp[^1].Price - cp[^1].Price : (long?)null;
-        var figures = new Avalonia.Controls.Primitives.UniformGrid { Columns = 3 };
+        var figures = new Avalonia.Controls.Primitives.UniformGrid { Columns = 4 };
         figures.Children.Add(Figure(p.C.ForSelf ? "VENTE · ne se vend pas" : "VENTE, TAXE DÉDUITE", sellPts));
         figures.Children.Add(Figure(partial ? "COÛT, AU MOINS" : "COÛT, TOUT ACHETÉ", costPts));
         var gapPanel = new StackPanel { Spacing = 1 };
@@ -196,6 +196,14 @@ sealed partial class ScreenViews
             ? T($"{(g >= 0 ? "+" : "−")}{Short(Math.Abs(g))}", 15, g > 0 ? Tok.Good : Tok.Bad, FontWeight.SemiBold, mono: true)
             : T("—", 15, Tok.Faint, FontWeight.SemiBold, mono: true));
         figures.Children.Add(Tip(gapPanel, "Vente (taxe déduite) moins coût en achetant tout, aux derniers prix."));
+        // Prix plancher : le prix affiché à l'hôtel sous lequel la vente ne rembourse plus le coût, taxe comprise.
+        var floor = !p.C.ForSelf && costPts is { Count: > 0 } fp && fp[^1].Price > 0 ? (long)Math.Ceiling(fp[^1].Price / (rc.Output.Qty * (1 - tax))) : (long?)null;
+        var floorPanel = new StackPanel { Spacing = 1 };
+        floorPanel.Children.Add(T("PLANCHER, L'UNITÉ", 10, Tok.Muted, mono: true));
+        floorPanel.Children.Add(T(floor is { } fl ? (partial ? "≥ " : "") + Short(fl) : "—", 15, floor is null ? Tok.Faint : Tok.Text, FontWeight.SemiBold, mono: true));
+        figures.Children.Add(Tip(floorPanel, floor is { } fv
+            ? $"Ne vends pas sous {Fmt.Big(fv)} Kinah l'unité : en dessous, la vente (taxe de {m.TaxNote} déduite) ne rembourse pas le coût en achetant tout."
+            : "Le prix sous lequel la vente ne rembourse pas le coût : il faut le coût."));
 
         var body = new StackPanel { Spacing = 8 };
         body.Children.Add(head);

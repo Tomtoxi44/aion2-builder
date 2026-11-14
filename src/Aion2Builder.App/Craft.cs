@@ -217,8 +217,12 @@ sealed class CraftBook(MarketData data, Dictionary<string, MarketPrice> latest, 
         return new CraftCosting(sell, inputs, buy, npc, rc.Kinah, noPrice, chained, oldest, uncounted, forSelf);
     }
 
-    /// <summary>Lié d'âme à la fabrication, ou objet de la liste « Fabrication » : il ne se revend pas.</summary>
-    public bool ForSelf(CraftRecipe rc) => rc.Bound || ItemOf(rc.Output)?.Category.StartsWith("Fabrication") == true;
+    /// <summary>
+    /// L'objet fabriqué ne se revend pas. Recette officielle : la base de référence dit s'il s'échange (Bound = non échangeable) ;
+    /// la liste « Fabrication » du site n'en dit rien (un plat relevé sur une capture d'artisanat s'y trouve et se vend très bien).
+    /// Recette notée par un joueur : lié d'âme, ou objet de la liste « Fabrication ».
+    /// </summary>
+    public bool ForSelf(CraftRecipe rc) => rc.Bound || !rc.Official && ItemOf(rc.Output)?.Category.StartsWith("Fabrication") == true;
 
     PartCost CostOf(RecipePart p, HashSet<int> path, int parent)
     {
@@ -344,7 +348,7 @@ sealed partial class ScreenViews
             if (p.Npc is null && hdvPrices.PriceOf(p)?.Price is { } h && h < n.Price) return p;
             return p with { Npc = n.Price };
         }
-        var full = MergeRecipes(data.Recipes ?? [], Market.OfficialRecipes)
+        var full = RecipesForMe(data)
             .Select(rc => rc with { Inputs = rc.Inputs.Select(Priced).ToList() }).ToList();
         // Ingrédients sortis du coût : ni dans le coût, ni dans « tu peux en faire » ; ils restent affichés, barrés, dans la recette.
         var recipes = full.Select(rc => rc with { Inputs = rc.Inputs.Where(p => !CraftSkipped(rc.Id, p)).ToList() }).ToList();
@@ -489,9 +493,12 @@ sealed partial class ScreenViews
         var makeable = m.Plans.Count(p => p.CanMake > 0);
         var kpis = new Avalonia.Controls.Primitives.UniformGrid { Columns = 4 };
         var officialCount = m.Plans.Count(p => p.Recipe.Official);
+        var myRace = RaceOf(r.Character.Race);
+        var otherRace = myRace == 0 ? 0 : Market.OfficialRecipes.Count - officialCount;
         kpis.Children.Add(Kpi("Recettes", m.Plans.Count.ToString(), size: 20,
             note: officialCount == 0 ? "notées par les joueurs d'Aion 2 Todo, valables pour tous"
-                : $"{officialCount} officielles (MetaBot.GG)" + (m.Plans.Count > officialCount ? $" + {m.Plans.Count - officialCount} notées par les joueurs" : "")).WithMargin(0, 0, 10, 0));
+                : $"{officialCount} officielles (MetaBot.GG)" + (m.Plans.Count > officialCount ? $" + {m.Plans.Count - officialCount} notées par les joueurs" : "") +
+                  (otherRace > 0 ? $" · celles des {(myRace == 1 ? "Asmodiens" : "Élyséens")} masquées ({otherRace})" : "")).WithMargin(0, 0, 10, 0));
         kpis.Children.Add(Kpi("Faisables avec ton stock", m.HasStock ? makeable.ToString() : "—", makeable > 0 ? Tok.Good : null, 20,
             note: m.Who is null ? "inventaire inconnu sur ce PC" : $"sac et coffre de {m.Who.Character}, relevé {Market.Since(m.Who.At)}").WithMargin(0, 0, 10, 0));
         var proposalSum = m.Proposal.Sum(x => x.Total);
@@ -539,7 +546,7 @@ sealed partial class ScreenViews
             },
         });
         // Le métier (recettes officielles), « Notées par les joueurs » pour les autres.
-        var professions = MergeRecipes(m.Data.Recipes ?? [], Market.OfficialRecipes).Select(r => r.Profession ?? "Notées par les joueurs").Distinct()
+        var professions = RecipesForMe(m.Data).Select(r => r.Profession ?? "Notées par les joueurs").Distinct()
             .OrderBy(p => p == "Notées par les joueurs").ThenBy(p => p, French).ToList();
         if (professions.Count > 1)
             blocks.Add(Choice(new[] { ("tous les métiers", s.CraftProfession is null, (Action)(() => update(st => st.CraftProfession = null))) }
@@ -874,6 +881,7 @@ sealed partial class ScreenViews
         var skippedCount = p.Parts.Count(x => CraftSkipped(rc.Id, x.Part));
         blocks.Add(TableCard("Ingrédients · pour une fabrication", T(skippedCount > 0 ? $"{Fmt.Plural(skippedCount, "ingrédient")} déjà à toi, hors du coût" : "décoche ce que tu as déjà", 11, Tok.Muted, mono: true),
             TableHeader(cols, "Compté", "Ingrédient", "Qté", "Ton stock", "Prix unitaire", "Dans le coût"), lines));
+        blocks.Add(CraftSimCard(m, p));
         blocks.Add(T($"Comment le coût est compté : un ingrédient à acheter coûte son prix à l'hôtel (la taxe de {m.TaxNote} ne touche que la vente) ; un ingrédient " +
                      $"déjà dans ton stock coûte ce qu'il te rapporterait vendu, taxe déduite, puisque le fabriquer, c'est renoncer à le vendre ; un objet du PNJ vaut son prix d'achat ; un ingrédient sans prix qu'une autre recette fabrique vaut le " +
                      "coût de cette recette (« fabriquer plutôt » l'impose même quand il a un prix). Une ressource de récolte prend le prix de l'Od du même rang " +

@@ -104,6 +104,8 @@ sealed class UiState
     public (int Id, string Name)? CraftUndo { get; set; }
     /// <summary>Compte rendu de la dernière capture de recette lue (ce qui a été lu, complété, ce qui reste à compléter).</summary>
     public string? CraftShotStatus { get; set; }
+    /// <summary>Page d'une recette → « Simuler une série » : la recette, le nombre de fabrications et le prix de vente saisis.</summary>
+    public (int Recipe, string Qty, string Price) CraftSim { get; set; } = (0, "10", "");
     /// <summary>Écran Craft : ingrédients sortis du coût (« id de recette:clé »), comme l'arme précédente qu'on a déjà ; gardés dans ui.json.</summary>
     public HashSet<string> CraftSkip { get; } = [];
     /// <summary>Écran Craft : ingrédients fabriqués par leur recette plutôt qu'achetés (« recette:clé »), gardés dans tes réglages.</summary>

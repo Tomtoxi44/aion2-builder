@@ -546,7 +546,10 @@ sealed partial class ScreenViews
             Background = grade is null ? Tok.Border : MarketBrush(grade),
         });
         row.Children.Add(T(name, size, MarketBrush(grade), grade is "Unique" or "Epic" or "Mythic" ? FontWeight.SemiBold : FontWeight.Medium));
-        if (withKind && item is not null) row.Children.Add(T(item.Kind + (grade is null || item.IsGathering ? "" : $" · {Market.GradeWord(grade)}"), 11, Tok.Muted));
+        // Un objet noté ou fabriqué par les joueurs que la base officielle connaît montre sa vraie catégorie (« Nourritures »), pas « Noté par un joueur ».
+        var kind = item is null ? "" : (item.Category is "Noté par un joueur" or "Nommé par un joueur" || item.Category.StartsWith("Fabrication"))
+                                       && Market.ReferenceOf(item.Name)?.Category is { Length: > 0 } official ? official : item.Kind;
+        if (withKind && item is not null) row.Children.Add(T(kind + (grade is null || item.IsGathering ? "" : $" · {Market.GradeWord(grade)}"), 11, Tok.Muted));
         if (withKind && item?.Gathered == true) row.Children.Add(T("récolté", 10, Tok.Good, mono: true).WithMargin(0, 2, 0, 0));
         return row;
     }
@@ -1156,7 +1159,7 @@ sealed partial class ScreenViews
     /// <summary>Recettes notées qui utilisent cet objet (clic : la recette dans l'écran Craft).</summary>
     Control? UsedInRecipes(MarketData data, string key, string name)
     {
-        var uses = MergeRecipes(data.Recipes ?? [], Market.OfficialRecipes).Where(rc => rc.Inputs.Any(p => p.Key == key || Market.Fold(p.Name) == Market.Fold(name))).ToList();
+        var uses = RecipesForMe(data).Where(rc => rc.Inputs.Any(p => p.Key == key || Market.Fold(p.Name) == Market.Fold(name))).ToList();
         if (uses.Count == 0) return null;
         var list = new StackPanel { Spacing = 2, Children = { Label("Sert à fabriquer") } };
         foreach (var rc in uses.Take(8))
