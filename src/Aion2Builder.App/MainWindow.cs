@@ -179,6 +179,7 @@ public sealed class MainWindow : Window
         {
             if (e.Key == Key.F1) { e.Handled = true; ShowOverlay(Overlay.Shortcuts); return; }
             if (e.Key == Key.Escape && overlay != Overlay.None) { e.Handled = true; ShowOverlay(Overlay.None); return; }
+            if (e.Key == Key.Escape && Comfort && drawerOpen) { e.Handled = true; CloseDrawer(); return; }
             if (e.Key == Key.F5) { e.Handled = true; _ = RefreshAsync(); return; }
             if (!e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
             // Ctrl+1 à Ctrl+9 : les écrans du rail, dans l'ordre choisi.
@@ -392,7 +393,11 @@ public sealed class MainWindow : Window
 
     void Update(Action<UiState> change)
     {
+        var (screenBefore, selected) = (state.Screen, Comfort ? Selection(state) : null);
         change(state);
+        // Présentation Confort : changer d'écran referme le détail ; cliquer une ligne (la sélection change) l'ouvre.
+        if (state.Screen != screenBefore) drawerOpen = false;
+        else if (selected is not null && Selection(state) != selected) { drawerFresh = !drawerOpen; drawerOpen = true; }
         prefs = prefs with { Screen = state.Screen.ToString(), GearPage = state.GearPage.ToString(), SkillPage = state.SkillPage.ToString(), BuildPage = state.BuildPage.ToString(), DetailsByNeed = state.ByNeed,
             CraftSkip = state.CraftSkip.Count == 0 ? null : [.. state.CraftSkip.Order(StringComparer.Ordinal)],
             CraftMake = state.CraftMake.Count == 0 ? null : [.. state.CraftMake.Order(StringComparer.Ordinal)],
@@ -438,6 +443,7 @@ public sealed class MainWindow : Window
 
     void ToggleInspector()
     {
+        if (Comfort) { drawerOpen = !drawerOpen; drawerFresh = drawerOpen; Render(); return; }
         prefs = prefs with { InspectorHidden = !prefs.InspectorHidden };
         prefs.Save();
         Render();
@@ -504,7 +510,7 @@ public sealed class MainWindow : Window
         if (!string.IsNullOrEmpty(detail)) body.Children.Add(T(detail, 12, Tok.Text2, wrap: true).WithLineHeight(1.4));
         var toast = new Border
         {
-            Width = 320, Padding = new Thickness(12, 9), Background = Tok.Panel, CornerRadius = new CornerRadius(4),
+            Width = 320, Padding = new Thickness(12, 9), Background = Tok.Panel, CornerRadius = new CornerRadius(Skin.Radius),
             BorderBrush = error ? Tok.Bad : Tok.Good, BorderThickness = new Thickness(3, 0, 0, 0),
             BoxShadow = BoxShadows.Parse("0 6 20 0 #60000000"), Opacity = 0, Cursor = new Cursor(StandardCursorType.Hand),
             Transitions = [new Avalonia.Animation.DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(180) }],
@@ -529,6 +535,8 @@ public sealed class MainWindow : Window
 
     void Render()
     {
+        Skin.Use(Comfort);
+        Background = Tok.Window;
         Accent = AccentTheme.Find(prefs.Accent);
         var root = new Grid { RowDefinitions = new RowDefinitions("36,*,24") };
         var title = TitleBar();
@@ -607,7 +615,7 @@ public sealed class MainWindow : Window
                 var score = report is null ? null : ScreenViews.ScoreOf(report, screen);
                 var alerts = screen == Screen.Craft ? CraftAlertCount() : 0;
                 var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
-                if (alerts > 0) right.Children.Add(new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(4), Background = Tok.Warn, VerticalAlignment = VerticalAlignment.Center });
+                if (alerts > 0) right.Children.Add(new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(Skin.Radius), Background = Tok.Warn, VerticalAlignment = VerticalAlignment.Center });
                 if (score is { } v) right.Children.Add(T(v.ToString(), 12, Tok.Score(v), FontWeight.SemiBold, mono: true));
                 if (hasPages) right.Children.Add(T(prefs.SideHidden ? "▸" : "▾", 11, Tok.Muted, mono: true));
                 DockPanel.SetDock(right, Dock.Right);
@@ -794,8 +802,9 @@ public sealed class MainWindow : Window
             Spacing = 18, Margin = new Thickness(18, 14, 18, 18),
             Children =
             {
-                Choice("Présentation", "IDE : le rail d'icônes et la barre secondaire, comme un éditeur de code. Confort : un seul menu à gauche, avec le nom entier de " +
-                                       "chaque écran, rangé par usage, et ses sous-pages juste dessous. Le contenu des écrans est le même.",
+                Choice("Présentation", "IDE : le rail d'icônes, la barre secondaire et l'inspecteur, comme un éditeur de code. Confort : un seul menu à gauche avec le nom " +
+                                       "entier de chaque écran, des couleurs adoucies, l'essentiel en tête de chaque écran (une phrase, trois choses à faire, le " +
+                                       "détail replié) et le détail de ce que tu cliques qui glisse par la droite.",
                     [("IDE (par défaut)", !Comfort, () => Set(prefs with { Layout = "ide" })), ("Confort", Comfort, () => Set(prefs with { Layout = "confort" }))]),
                 Choice("Taille de l'affichage", "Agrandit ou réduit tout d'un bloc : textes, tableaux, boutons.",
                     ZoomSteps.Select(z => ($"{z} %", prefs.Zoom == z, (Action)(() => Set(prefs with { Zoom = z }))))),
@@ -853,7 +862,7 @@ public sealed class MainWindow : Window
         {
             var label = installing ? "mise à jour…" : $"⬆ {available.Label} disponible";
             var pill = Clickable(T(label, 12, Tok.OnAccent, FontWeight.SemiBold, mono: true), () => _ = InstallUpdateAsync(), Accent.Main, padding: new Thickness(10, 3));
-            pill.CornerRadius = new CornerRadius(4);
+            pill.CornerRadius = new CornerRadius(Skin.Radius);
             ToolTip.SetTip(pill, $"Nouvelle version sur Aion 2 Todo (tu as {Updater.CurrentLabel}) : clic pour la télécharger et relancer l'application.");
             right.Children.Insert(0, pill);
         }
@@ -926,7 +935,7 @@ public sealed class MainWindow : Window
                 Label("Couleur secondaire"), grid,
                 Label("Présentation").WithMargin(0, 6, 0, 0),
                 Pick([("IDE", !Comfort, () => Apply(prefs with { Layout = "ide" })), ("Confort", Comfort, () => Apply(prefs with { Layout = "confort" }))]),
-                T("Confort : un seul menu à gauche, nom entier de chaque écran.", 11, Tok.Muted, wrap: true),
+                T("Confort : un seul menu à gauche, couleurs adoucies, l'essentiel en tête de chaque écran, le détail à la demande.", 11, Tok.Muted, wrap: true),
                 Label("Taille").WithMargin(0, 6, 0, 0),
                 Pick(ZoomSteps.Select(z => ($"{z} %", prefs.Zoom == z, (Action)(() => Apply(prefs with { Zoom = z }))))),
             },
@@ -942,7 +951,7 @@ public sealed class MainWindow : Window
             () => FlyoutBase.ShowAttachedFlyout(button!), hover: Tok.HoverStrong, padding: new Thickness(9, 3));
         button.BorderBrush = Tok.Border;
         button.BorderThickness = new Thickness(1);
-        button.CornerRadius = new CornerRadius(4);
+        button.CornerRadius = new CornerRadius(Skin.Radius);
         FlyoutBase.SetAttachedFlyout(button, flyout);
         ToolTip.SetTip(button, "Couleur secondaire, présentation (IDE ou Confort) et taille de l'affichage");
         return button;
@@ -960,7 +969,7 @@ public sealed class MainWindow : Window
         }
         return new Border
         {
-            Background = Tok.Window, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Padding = new Thickness(2),
+            Background = Tok.Window, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(Skin.Radius), Padding = new Thickness(2),
             Child = new StackPanel { Orientation = Orientation.Horizontal, Children = { Segment("JcE", GameMode.PvE), Segment("JcJ", GameMode.PvP) } },
         };
     }
@@ -995,7 +1004,7 @@ public sealed class MainWindow : Window
                         top,
                         new Border
                         {
-                            Width = 8, Height = 8, CornerRadius = new CornerRadius(4), Background = Tok.Warn, HorizontalAlignment = HorizontalAlignment.Right,
+                            Width = 8, Height = 8, CornerRadius = new CornerRadius(Skin.Radius), Background = Tok.Warn, HorizontalAlignment = HorizontalAlignment.Right,
                             VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, -2, 12, 0),
                         },
                     },
@@ -1269,7 +1278,7 @@ public sealed class MainWindow : Window
         var (content, inspector) = views.Build();
         side = views.Side();
         var grid = new Grid { RowDefinitions = new RowDefinitions("36,*") };
-        if (!prefs.BottomHidden)
+        if (BottomShown)
         {
             // Panneau du bas, comme la liste d'erreurs de Visual Studio : redimensionnable, masquable (Ctrl+J).
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
@@ -1291,7 +1300,35 @@ public sealed class MainWindow : Window
         var body = new Grid();
         body.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star) { MinWidth = 420 });
         body.Children.Add(KeepScroll(Scroll(content)));
-        if (inspector is not null && !prefs.InspectorHidden)
+        if (Comfort && inspector is not null && drawerOpen)
+        {
+            // Le détail à la demande : il glisse par-dessus la droite de la page, et se referme par ✕, Échap ou Ctrl+I.
+            var close = Clickable(T("✕ fermer", 11, Tok.Text2, mono: true), CloseDrawer, Tok.Chrome, Tok.HoverStrong, new Thickness(8, 3));
+            close.HorizontalAlignment = HorizontalAlignment.Right;
+            close.VerticalAlignment = VerticalAlignment.Top;
+            close.Margin = new Thickness(0, 5, 10, 0);
+            close.CornerRadius = new CornerRadius(3);
+            close.BorderBrush = Tok.Border;
+            close.BorderThickness = new Thickness(1);
+            ToolTip.SetTip(close, "Fermer le détail (Échap)");
+            var drawer = new Border
+            {
+                Width = Math.Clamp(prefs.InspectorWidth, 300, 520), HorizontalAlignment = HorizontalAlignment.Right, Background = Tok.Panel,
+                BorderBrush = Tok.Border, BorderThickness = new Thickness(1, 0, 0, 0), BoxShadow = BoxShadows.Parse("-18 0 36 0 #66000000"),
+                Child = new Panel { Children = { Scroll(inspector), close } },
+            };
+            if (drawerFresh)
+            {
+                drawerFresh = false;
+                var move = new TranslateTransform(36, 0) { Transitions = [new Avalonia.Animation.DoubleTransition { Property = TranslateTransform.XProperty, Duration = TimeSpan.FromMilliseconds(170) }] };
+                drawer.RenderTransform = move;
+                drawer.Opacity = 0;
+                drawer.Transitions = [new Avalonia.Animation.DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(170) }];
+                Dispatcher.UIThread.Post(() => { drawer.Opacity = 1; move.X = 0; }, DispatcherPriority.Loaded);
+            }
+            body.Children.Add(drawer);
+        }
+        else if (!Comfort && inspector is not null && !prefs.InspectorHidden)
         {
             body.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
             body.ColumnDefinitions.Add(new ColumnDefinition(Math.Clamp(prefs.InspectorWidth, 240, 760), GridUnitType.Pixel) { MinWidth = 240, MaxWidth = 760 });
@@ -1448,19 +1485,35 @@ public sealed class MainWindow : Window
         _ => ("·", Tok.Muted),
     };
 
+    /// <summary>
+    /// Présentation Confort, panneaux « à la demande » : le panneau des conseils ne s'ouvre que par un clic (barre d'état, Ctrl+J)
+    /// et le détail de ce que tu cliques glisse par la droite, puis se referme (✕, Échap, Ctrl+I). Gardé le temps de la session.
+    /// </summary>
+    bool comfortBottom, drawerOpen, drawerFresh;
+
+    bool BottomShown => Comfort ? comfortBottom : !prefs.BottomHidden;
+
     void ToggleBottom()
     {
-        prefs = prefs with { BottomHidden = !prefs.BottomHidden };
+        if (Comfort) comfortBottom = !comfortBottom;
+        else prefs = prefs with { BottomHidden = !prefs.BottomHidden };
         prefs.Save();
         Render();
     }
 
     void SetBottomTab(string tab)
     {
-        prefs = prefs with { BottomTab = tab, BottomHidden = false };
+        if (Comfort) { comfortBottom = true; prefs = prefs with { BottomTab = tab }; }
+        else prefs = prefs with { BottomTab = tab, BottomHidden = false };
         prefs.Save();
         Render();
     }
+
+    /// <summary>Ce que l'inspecteur montre : quand ça change sans changer d'écran, c'est qu'on vient de cliquer une ligne.</summary>
+    static string Selection(UiState st) =>
+        $"{st.Slot}|{st.Stat}|{st.Skill}|{st.Board}|{st.Genus}|{st.MarketItem}|{st.InventoryItem}|{st.CombatSkill}|{st.CombatRival}|{st.CombatPlayer}|{st.DetailsItem}|{st.CombatBoss}";
+
+    void CloseDrawer() { drawerOpen = false; Render(); }
 
     Control BottomPanel(AdviceReport r, ScreenViews views)
     {
@@ -1555,7 +1608,7 @@ public sealed class MainWindow : Window
             var className = db.FindClass(c.ClassCode)?.Name ?? c.ClassCode;
             var chip = new Border
             {
-                Width = 20, Height = 20, CornerRadius = new CornerRadius(4), Background = on ? Accent.Dim : Tok.Border,
+                Width = 20, Height = 20, CornerRadius = new CornerRadius(Skin.Radius), Background = on ? Accent.Dim : Tok.Border,
                 Child = T(c.Name[..1].ToUpperInvariant(), 11, on ? Accent.Main : Tok.Muted, FontWeight.SemiBold, mono: true).Centered(),
             };
             var tabPath = path;
@@ -1642,12 +1695,14 @@ public sealed class MainWindow : Window
         };
         if (hasInspector)
         {
-            var toggle = Clickable(T(prefs.InspectorHidden ? "◧ inspecteur" : "◨ inspecteur", 11, prefs.InspectorHidden ? Tok.Muted : Tok.Text2, mono: true),
+            var hidden = Comfort ? !drawerOpen : prefs.InspectorHidden;
+            var toggle = Clickable(T(Comfort ? hidden ? "◧ détail" : "◨ détail" : hidden ? "◧ inspecteur" : "◨ inspecteur", 11, hidden ? Tok.Muted : Tok.Text2, mono: true),
                 ToggleInspector, hover: Tok.HoverStrong, padding: new Thickness(7, 2));
             toggle.BorderBrush = Tok.Border;
             toggle.BorderThickness = new Thickness(1);
             toggle.CornerRadius = new CornerRadius(3);
-            ToolTip.SetTip(toggle, prefs.InspectorHidden ? "Afficher l'inspecteur (Ctrl+I)" : "Masquer l'inspecteur (Ctrl+I) ; sa largeur se règle en glissant sa bordure");
+            ToolTip.SetTip(toggle, Comfort ? "Le détail de ce que tu as cliqué : il s'ouvre tout seul quand tu cliques une ligne (Ctrl+I, Échap pour fermer)"
+                : prefs.InspectorHidden ? "Afficher l'inspecteur (Ctrl+I)" : "Masquer l'inspecteur (Ctrl+I) ; sa largeur se règle en glissant sa bordure");
             right.Children.Add(toggle);
         }
         DockPanel.SetDock(right, Dock.Right);
@@ -1681,7 +1736,7 @@ public sealed class MainWindow : Window
             {
                 // Les conseils, comptés comme partout ailleurs : un clic ouvre ou ferme le panneau du bas.
                 var counter = Clickable(T(Fmt.CountsText(report.Findings), 11, Tok.StatusText, FontWeight.SemiBold, mono: true),
-                    () => { if (prefs.BottomHidden) SetBottomTab("advice"); else ToggleBottom(); }, hover: Tok.Alpha(Brushes.White, 0.12), padding: new Thickness(6, 0));
+                    () => { if (BottomShown) ToggleBottom(); else SetBottomTab("advice"); }, hover: Tok.Alpha(Brushes.White, 0.12), padding: new Thickness(6, 0));
                 ToolTip.SetTip(counter, "Clic : la liste des conseils en bas de l'écran (Ctrl+J). Importants = critiques et importants ; les infos sont à part.");
                 left.Children.Add(counter);
             }
@@ -1700,7 +1755,12 @@ public sealed class MainWindow : Window
         right.Children.Add(T(dataSource, 11, Tok.StatusText, mono: true));
         right.Children.Add(T(Updater.CurrentLabel, 11, Tok.StatusText, mono: true));
         DockPanel.SetDock(right, Dock.Right);
-        return new Border { Background = Accent.Bar, Padding = new Thickness(12, 0), Child = new DockPanel { Children = { right, left } } };
+        // Présentation Confort : une barre d'état discrète, de la couleur du cadre.
+        return new Border
+        {
+            Background = Comfort ? Tok.Chrome : Accent.Bar, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, Comfort ? 1 : 0, 0, 0),
+            Padding = new Thickness(12, 0), Child = new DockPanel { Children = { right, left } },
+        };
     }
 
     // ----- Pet Meter : pastille d'état et lancement -----
@@ -1861,14 +1921,14 @@ public sealed class MainWindow : Window
         // Page « nouvel onglet » : la recherche (un perso à toi ou celui d'un pote), puis tes personnages et ceux déjà consultés.
         var palette = new Border
         {
-            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
+            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(Skin.Radius),
             BoxShadow = BoxShadows.Parse("0 12 40 0 #80000000"),
             Child = new StackPanel { Spacing = 2, Children = { input, Label("Site officiel").WithMargin(12, 8, 12, 4), hitsPanel, new Border { Height = 6 } } },
         };
         var hint = T("Entrée pour importer le meilleur résultat · un clic ouvre le personnage dans un onglet · Ctrl+K pour revenir ici", 12, Tok.Muted, mono: true);
         var list = new Border
         {
-            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
+            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(Skin.Radius),
             Child = new StackPanel { Children = { HistoryHeader(), historyPanel, new Border { Height = 6 } } },
         };
         var page = new StackPanel

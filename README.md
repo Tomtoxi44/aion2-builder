@@ -127,7 +127,11 @@ L'interface est organisée comme un éditeur :
 - **Bascule JcE | JcJ** toujours visible en haut ; **thème** : 8 couleurs secondaires au choix, la présentation et la
   taille de l'affichage (90 à 140 %). Présentation **IDE** (par défaut) : rail d'icônes et barre secondaire. Présentation
   **Confort** : un seul menu à gauche, avec le nom entier de chaque écran, rangé par usage (mon personnage, combat et
-  progrès, récolte et commerce), et les sous-pages de l'écran ouvert juste dessous. Le contenu des écrans est le même.
+  progrès, récolte et commerce), et les sous-pages de l'écran ouvert juste dessous ; des couleurs adoucies, des coins
+  arrondis et des titres en minuscules ; l'essentiel en tête de la première page d'un écran (une phrase qui résume, au
+  plus trois choses à faire dans l'ordre, le détail replié dessous et ouvert d'un clic) sur Accueil, Stats, Équipement,
+  Compétences, Daevanion, Familiers et Craft ; le détail de ce que tu cliques qui glisse par la droite (✕, Échap ou
+  Ctrl+I pour le fermer) et les conseils ouverts depuis la barre d'état, au lieu de panneaux toujours visibles.
 - **Inspecteur à droite** : clique une pièce, une stat, une compétence ou un plateau pour son détail. Sa largeur se règle
   en glissant sa bordure, **Ctrl+I** le masque. Les compteurs « − N + » (points non dépensés) recalculent tout de suite.
 - **Menus** : Fichier → Exporter le rapport en Markdown (**Ctrl+E**) / Paramètres (**Ctrl+,** : mises à jour,

@@ -316,7 +316,14 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
     /// <summary>Pièces qui demandent une action (barre d'état).</summary>
     public static int Todo(AdviceReport r) => r.Gear.Slots.Count(x => x.Status != SlotStatus.Ok && !(x.Status == SlotStatus.Empty && x.Priority <= 1));
 
-    public (Control Content, Control? Inspector) Build() => s.Screen switch
+    /// <summary>L'écran ouvert et son inspecteur ; en présentation Confort, la première page d'un écran s'ouvre sur l'essentiel.</summary>
+    public (Control Content, Control? Inspector) Build()
+    {
+        var (content, inspector) = BuildScreenOf();
+        return (Compose(content), inspector);
+    }
+
+    (Control Content, Control? Inspector) BuildScreenOf() => s.Screen switch
     {
         Screen.Home => (HomeScreen(), HomeInspector()),
         Screen.Gear => (GearScreen(), GearInspector()),
@@ -434,6 +441,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
     /// </summary>
     Control? TodoCards(params Area[] areas)
     {
+        if (EssentialHere) return null;  // présentation Confort : ces actions sont déjà en tête de la page
         var todo = r.ActionPlan.Where(f => areas.Contains(f.Area) && !IsDone(f)).ToList();
         if (todo.Count == 0) return null;
         var head = new DockPanel();
@@ -466,7 +474,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         var stripe = new Border { Width = 3, Background = LevelColor(f.Severity) };
         DockPanel.SetDock(stripe, Dock.Left);
         var card = Clickable(new DockPanel { Children = { stripe, new Border { Padding = new Thickness(12, 10), Child = body } } }, () => Go(f), Tok.Panel, Tok.TileHover, new Thickness(0));
-        card.CornerRadius = new CornerRadius(4);
+        card.CornerRadius = new CornerRadius(Skin.Radius);
         card.BorderBrush = Tok.Border;
         card.BorderThickness = new Thickness(1);
         card.ClipToBounds = true;
@@ -638,7 +646,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         var cards = new List<Control>();
         Control Card2(string label, string value, IBrush? color, string sub, Action open, string tip) => Tip(Clickable(new Border
         {
-            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
+            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(Skin.Radius),
             Padding = new Thickness(14, 10),
             Child = new StackPanel { Spacing = 4, Children = { Label(label), T(value, 20, color ?? Tok.Text, FontWeight.SemiBold, mono: true), T(sub, 11, Tok.Muted, wrap: true) } },
         }, open, hover: Tok.HoverStrong), tip);
@@ -700,7 +708,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
                     Children = { Label(Nav.First(n => n.Screen == screen).Short), T(v.ToString(), 22, Tok.Score(v), FontWeight.SemiBold, mono: true), RoundBar(v / 100.0, Tok.Score(v), 4) },
                 },
                 () => GoTo(screen), Tok.Panel, Tok.TileHover, new Thickness(12, 8, 12, 10));
-            tile.CornerRadius = new CornerRadius(4);
+            tile.CornerRadius = new CornerRadius(Skin.Radius);
             tile.BorderBrush = Tok.Border;
             tile.BorderThickness = new Thickness(1);
             Tip(tile, ScoreTip(screen));
@@ -1235,7 +1243,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
             update(st => st.GearPage = GearPage.Optimize);
             refresh();
         }, Accent.Main, padding: new Thickness(14, 6));
-        button.CornerRadius = new CornerRadius(4);
+        button.CornerRadius = new CornerRadius(Skin.Radius);
         button.HorizontalAlignment = HorizontalAlignment.Left;
         return Tip(button, "Relit ton perso sur le site officiel, puis cherche les bonnes stats pour chaque pièce : options d'âme et pierres à garder ou à changer, " +
                            "pour combler ce qui manque sans dépasser les plafonds.");
@@ -1783,7 +1791,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
             rows.Add(T($"Le site officiel ne donne pas la pièce au-delà de +{levels[^1].Level}.", 12, Tok.Muted).WithMargin(20, 6));
         body.Children.Add(new Border
         {
-            BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), ClipToBounds = true,
+            BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(Skin.Radius), ClipToBounds = true,
             Child = Table(),
         });
         StackPanel Table()
@@ -2949,7 +2957,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
               "Lance le Pet Meter pendant tes combats puis ↻ sur l'écran Combat : tes vrais chiffres remplaceront la simulation.";
         page.Children.Add(new Border
         {
-            Background = Tok.Panel, BorderBrush = measured ? Tok.Good : Tok.Warn, BorderThickness = new Thickness(3, 1, 1, 1), CornerRadius = new CornerRadius(4),
+            Background = Tok.Panel, BorderBrush = measured ? Tok.Good : Tok.Warn, BorderThickness = new Thickness(3, 1, 1, 1), CornerRadius = new CornerRadius(Skin.Radius),
             Padding = new Thickness(14, 10), Child = T(source, 13, Tok.Text2, wrap: true).WithLineHeight(1.5),
         });
 
@@ -3168,7 +3176,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
                     () => update(st => st.Skill = name), hover: Tok.Hover, padding: new Thickness(20, 4)));
             }
         }
-        return new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), ClipToBounds = true, Child = panel };
+        return new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(Skin.Radius), ClipToBounds = true, Child = panel };
     }
 
     // ----- Spécialisations : lesquelles équiper, sort par sort -----
@@ -4611,7 +4619,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         DockPanel.SetDock(stripe, Dock.Left);
         return new Border
         {
-            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), ClipToBounds = true,
+            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(Skin.Radius), ClipToBounds = true,
             Child = new DockPanel { Children = { stripe, new Border { Padding = new Thickness(14, 12), Child = body } } },
         };
     }
@@ -4647,7 +4655,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
                         T(b.Verdict, 12, b.Level <= Severity.Advice ? LevelColor(b.Level) : Tok.Muted, wrap: true)),
                 });
         }
-        return new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), ClipToBounds = true, Child = panel };
+        return new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(Skin.Radius), ClipToBounds = true, Child = panel };
     }
 
     Control CombatInspector()
@@ -4708,7 +4716,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
                 T("conseils selon", 11, Tok.Muted, mono: true),
                 new Border
                 {
-                    Background = Tok.Window, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Padding = new Thickness(2),
+                    Background = Tok.Window, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(Skin.Radius), Padding = new Thickness(2),
                     Child = new StackPanel
                     {
                         Orientation = Orientation.Horizontal,
@@ -4951,7 +4959,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         var opened = selected.Board.OpenNodes / (double)Math.Max(1, selected.Board.TotalNodes);
         info.Children.Add(new Border
         {
-            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Padding = new Thickness(14, 10),
+            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(Skin.Radius), Padding = new Thickness(14, 10),
             Child = new StackPanel
             {
                 Spacing = 6,
@@ -5379,7 +5387,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         void Submit() { if (!string.IsNullOrWhiteSpace(box.Text)) onPets(box.Text.Trim()); }
         box.KeyDown += (_, e) => { if (e.Key == Avalonia.Input.Key.Enter) { e.Handled = true; Submit(); } };
         var link = Clickable(T("Relier", 12, Tok.OnAccent, FontWeight.SemiBold), Submit, Accent.Main, padding: new Thickness(14, 6));
-        link.CornerRadius = new CornerRadius(4);
+        link.CornerRadius = new CornerRadius(Skin.Radius);
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { box, link } };
 
         var panel = new StackPanel

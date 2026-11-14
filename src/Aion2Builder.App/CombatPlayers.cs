@@ -138,7 +138,7 @@ sealed partial class ScreenViews
             Spacing = 8,
             Children =
             {
-                new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), ClipToBounds = true, Child = table },
+                new Border { BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(Skin.Radius), ClipToBounds = true, Child = table },
                 T(note, 12, Tok.Muted, wrap: true).WithLineHeight(1.4),
             },
         }, "Le groupe sur ce combat", T(Fmt.Plural(players.Count, "joueur"), 12, Tok.Muted)));

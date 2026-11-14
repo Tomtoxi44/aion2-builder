@@ -51,8 +51,10 @@ static class Ui
     }
 
     /// <summary>Libellé de section : 11 px, majuscules, interlettrage 0,08 em.</summary>
-    public static TextBlock Label(string text, IBrush? color = null) =>
-        new() { Text = text.ToUpperInvariant(), FontSize = 11, LetterSpacing = 0.88, Foreground = color ?? Tok.Muted, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+    /// <remarks>Présentation Confort : en minuscules (première lettre en capitale), 12 px, demi-gras, sans interlettrage.</remarks>
+    public static TextBlock Label(string text, IBrush? color = null) => Skin.Comfort
+        ? new() { Text = text.Length > 0 ? char.ToUpper(text[0]) + text[1..] : text, FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = color ?? Tok.Text2, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Tag = "label" }
+        : new() { Text = text.ToUpperInvariant(), FontSize = 11, LetterSpacing = 0.88, Foreground = color ?? Tok.Muted, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Tag = "label" };
 
     /// <summary>En-tête de section commun au contenu (padX 20) et à l'inspecteur (padX 14).</summary>
     public static Border SectionHeader(string text, Control? right = null, double padX = 14, bool topBorder = false)
@@ -289,8 +291,8 @@ static class Ui
         body.Children.Add(new Border { Padding = padding ?? new Thickness(14, 12), Child = content });
         return new Border
         {
-            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), ClipToBounds = true,
-            Child = body,
+            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(Skin.Radius), ClipToBounds = true,
+            Child = body, Tag = title,  // le titre : la présentation Confort replie les panneaux titrés
         };
     }
 
@@ -302,8 +304,8 @@ static class Ui
         if (note is not null) body.Children.Add(T(note, 11, Tok.Muted, wrap: true));
         return new Border
         {
-            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(14, 10), Child = body,
+            Background = Tok.Panel, BorderBrush = Tok.Border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(Skin.Radius),
+            Padding = new Thickness(14, 10), Child = body, Tag = "kpi",
         };
     }
 

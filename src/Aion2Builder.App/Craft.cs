@@ -589,6 +589,7 @@ sealed partial class ScreenViews
 
         // Les recettes (choix « C » du 8 novembre) : celles qui rapportent en cartes, les autres en liste rangée par conseil ; la
         // recherche et les filtres valent pour les deux ; un clic ouvre la recette (ingrédients et calcul).
+        var listStart = blocks.Count;
         var query = new TextBox { Text = s.CraftQuery ?? "", PlaceholderText = "chercher : potion, od, parchemin…", Width = 260 };
         var filter = s.CraftFilter;
         blocks.Add(new StackPanel
@@ -655,7 +656,7 @@ sealed partial class ScreenViews
                 var card = Clickable(body, () => OpenRecipe(id), Tok.Panel, Tok.Hover, new Thickness(14, 12));
                 card.BorderBrush = Tok.Good;
                 card.BorderThickness = new Thickness(0, 2, 0, 0);
-                card.CornerRadius = new CornerRadius(4);
+                card.CornerRadius = new CornerRadius(Skin.Radius);
                 var cell = Tip(card, "Ouvrir la recette : ses ingrédients et le calcul.").WithMargin(0, 0, 12, 12);
                 grid.Children.Add(cell);
                 items.Add((cell, Search(p)));
@@ -740,6 +741,14 @@ sealed partial class ScreenViews
             blocks.Add(TableCard(winners.Count > 0 ? "Les autres recettes" : "Recettes",
                 T((filter is null ? Fmt.Plural(restCount, "recette") : $"{restCount} sur {m.Plans.Count}") + " · clic : ingrédients et calcul", 11, Tok.Muted, mono: true),
                 TableHeader(cols, "Objet fabriqué", "Pourquoi", "Par fabrication", "Tu peux en faire"), rows.Append(none)));
+        if (Skin.Comfort)
+        {
+            // Présentation Confort : la recherche, les filtres et toutes les recettes forment un seul panneau, replié sous l'essentiel.
+            var list = new StackPanel { Spacing = 14, Margin = new Thickness(14, 12) };
+            foreach (var b in blocks.Skip(listStart)) if (b is not null) list.Children.Add(b);
+            blocks.RemoveRange(listStart, blocks.Count - listStart);
+            blocks.Add(Card(list, $"Toutes les recettes · {m.Plans.Count}", T("recherche, filtres, verdict de chacune", 11, Tok.Muted, mono: true), new Thickness(0)));
+        }
         return Page("Craft · vue d'ensemble", right, blocks.ToArray());
     }
 
