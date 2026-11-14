@@ -217,6 +217,9 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    l'application la relit avec la même clé de synchro (écran **Familiers**, ou `pets --key`). Les stats sont ajoutées à
    ta répartition ; l'espèce conseillée est celle dont un familier au niveau 3 sert le plus ta classe (relevée si sa
    famille de stats est en manque), avec les familiers les plus proches du niveau suivant.
+   « Où farmer » en fait une route : pour chaque familier, le monstre du monde ouvert de ta faction qui donne son âme
+   (niveau, chance, points d'apparition), zone par zone, avec le kibélisque le plus proche et le nombre de monstres à tuer
+   (base des familiers de [MetaBot.GG](https://metabot.gg/fr_FR/aion-2/mounts)).
 8. **Build conçu.** Pour chaque classe, un second build est construit sans guide ni profil de joueur, à partir des
    données des sorts au niveau 1 ([metabot.gg](https://metabot.gg/fr_FR/aion-2/skills), avec les spécialisations de
    chaque sort) : dégâts par seconde = % d'ATQ ÷ temps de recharge (× nombre de cibles),

@@ -52,6 +52,9 @@ sealed class UiState
     public string? Skill { get; set; }
     public int? Board { get; set; }
     public string? Genus { get; set; }
+    /// <summary>Familiers → « Où farmer » : toutes les espèces (sinon celle à farmer en premier) ; jusqu'au niveau 3 (sinon le niveau suivant).</summary>
+    public bool PetFarmAll { get; set; }
+    public bool PetFarmMax { get; set; }
     /// <summary>Récolte : le jour montré (« AAAA-MM-JJ », « 7 » ou « 30 » derniers jours ; null : le plus récent) et le serveur.</summary>
     public string? GatherDay { get; set; }
     public string? GatherServer { get; set; }
@@ -5357,7 +5360,8 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
               "Les stats secondaires comptent dans ta répartition ; les stats principales sont déjà dans les totaux du site officiel. " +
               "Non compté : les stats tirées par l'analyse de perception d'espèce (ni le site officiel ni le Pet Meter ne les lisent).",
                 12, Tok.Text2, wrap: true).WithLineHeight(1.45).WithMargin(22, 0, 0, 0));
-        return Page($"Familiers · lus le {c.FetchedAtUtc.ToLocalTime():dd/MM HH:mm}", actions, kpis, farm,
+        // La route de farm (base des monstres) remplace la simple liste dès qu'elle est lue.
+        return Page($"Familiers · lus le {c.FetchedAtUtc.ToLocalTime():dd/MM HH:mm}", actions, kpis, PetFarmCard(c, best) ?? farm,
             TableCard("Espèces", T("clic = détail dans l'inspecteur", 11, Tok.Muted, mono: true), TableHeader(cols, "Espèce", "Obtenus", "Niv. 1 · 2 · 3", "Stats données", "Intérêt"), rows),
             how);
     }
