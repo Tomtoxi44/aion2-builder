@@ -25,6 +25,16 @@ sealed record CraftRecipe(int Id, RecipePart Output, List<RecipePart> Inputs, lo
     /// <summary>Métier (Forge, Armure, Artisanat, Alchimie, Cuisine) et maîtrise demandée, pour une recette officielle.</summary>
     public string? Profession { get; init; }
     public int? Mastery { get; init; }
+    /// <summary>
+    /// Chance (en %) qu'une fabrication réussie déclenche le combo (0 : pas de combo) ; ComboName : ce que le combo donne (la version
+    /// « éclatante », pour une pièce d'équipement) ; RateNormal / RateCombo : courbes de réussite de la fabrication normale et de la
+    /// fabrication combo (Market.CraftCurves) ; Transfer : fabrication par transfert, la pièce dont elle part (elle ne rate pas).
+    /// </summary>
+    public int Combo { get; init; }
+    public string? ComboName { get; init; }
+    public string? RateNormal { get; init; }
+    public string? RateCombo { get; init; }
+    public string? Transfer { get; init; }
 }
 
 /// <summary>Recette envoyée à Aion 2 Todo : chaque objet par sa clé de la liste, sinon par son nom ; Npc = prix chez le PNJ.</summary>
@@ -463,6 +473,8 @@ sealed partial class ScreenViews
             s.CraftPage == CraftPage.Overview, () => update(st => st.CraftPage = CraftPage.Overview)));
         body.Children.Add(SideItem(Icons.Search, "Que fabriquer avec…", null, null, "donne une ressource : les recettes qui l'utilisent",
             s.CraftPage == CraftPage.Uses, () => update(st => st.CraftPage = CraftPage.Uses)));
+        body.Children.Add(SideItem(Icons.Steps, "Chaîne d'un équipement", null, null, "du blanc au dernier palier : combos, essais, ressources",
+            s.CraftPage == CraftPage.Chain, () => update(st => st.CraftPage = CraftPage.Chain)));
         var runs = s.CraftRuns.Count;
         body.Children.Add(SideItem(Icons.Box, "Courses", runs > 0 ? runs.ToString() : null, Tok.Text2,
             runs > 0 ? $"{Short(Shopping(m).Total)} Kinah à payer, ton stock retiré" : "garde une série depuis une recette : la liste d'achats",
@@ -522,6 +534,7 @@ sealed partial class ScreenViews
             CraftPage.Npc => Page("Craft · prix des PNJ", right, NpcCard(m.Data)),
             CraftPage.Shopping => CraftShoppingPage(m, right),
             CraftPage.Uses => CraftUsesPage(m, right),
+            CraftPage.Chain => CraftChainPage(m, right),
             _ => CraftOverview(m, right),
         };
     }
@@ -534,6 +547,7 @@ sealed partial class ScreenViews
         CraftPage.Npc => "Prix des PNJ",
         CraftPage.Shopping => "Courses",
         CraftPage.Uses => "Que fabriquer avec…",
+        CraftPage.Chain => "Chaîne d'un équipement",
         _ => "Vue d'ensemble",
     };
 
@@ -780,6 +794,7 @@ sealed partial class ScreenViews
             if (rc.Source is { } source)
                 head.Children.Add(Tip(Clickable(T("recette sur MetaBot.GG ↗", 11, Accent.Main, mono: true), () => OpenLink(source), null, Tok.Hover, new Thickness(6, 2)),
                     "Recette officielle relevée dans la base d'artisanat AION 2 de MetaBot.GG (site de fans) : ouvre sa page."));
+            if (CraftOddsLine(m, rc) is { } odds) head.Children.Add(odds);
         }
         else head.Children.Add(T($"notée par {(rc.Mine ? "toi" : rc.By ?? "un compte supprimé")} {Market.Since(rc.At)}{(rc.Note is { } n ? $" · {n}" : "")}", 11, Tok.Muted, mono: true).WithMargin(0, 5, 12, 0));
         if (long.TryParse(rc.Output.Key, out var gameId))

@@ -160,8 +160,12 @@ sealed partial class ScreenViews
     /// <summary>Le titre d'un panneau sans son compteur (« Tes séries · 2 » → « Tes séries ») : la clé de son état replié.</summary>
     string FoldKey(string title) => $"fold:{s.Screen}:{title.Split(" · ")[0]}";
 
-    /// <summary>Un panneau ouvert d'office (les crafts épinglés : tu les as mis là pour les voir) ; un clic inverse, pour la session.</summary>
-    static bool OpenByDefault(string title) => title.StartsWith("Épinglés", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// Un panneau ouvert d'office (les crafts épinglés : tu les as mis là pour les voir ; les paliers d'une chaîne d'équipement :
+    /// c'est ce que la page est venue montrer) ; un clic inverse, pour la session.
+    /// </summary>
+    static bool OpenByDefault(string title) =>
+        title.StartsWith("Épinglés", StringComparison.OrdinalIgnoreCase) || title.StartsWith("Les paliers", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Replie un panneau titré : sa barre de titre reçoit une flèche et devient cliquable, son contenu est caché tant qu'il est

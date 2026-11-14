@@ -208,12 +208,19 @@ static class Market
     /// <summary>Recettes officielles du jeu (site /api/content/recipes, tirées de MetaBot.GG) : gardées un jour ; vides tant qu'elles ne sont pas lues.</summary>
     public static IReadOnlyList<CraftRecipe> OfficialRecipes { get; private set; } = [];
 
+    /// <summary>
+    /// Courbes de réussite des recettes officielles (même source) : la chance, en %, selon l'écart entre ta maîtrise et celle de la
+    /// recette (indice 0 : à son niveau ; au-delà de la courbe, sa dernière valeur).
+    /// </summary>
+    public static IReadOnlyDictionary<string, double[]> CraftCurves { get; private set; } = new Dictionary<string, double[]>();
+
     public static async Task<bool> LoadOfficialRecipes()
     {
         var file = Path.Combine(AppPaths.Root, "official-recipes.json");
         string? json = null;
         try { if (File.Exists(file) && DateTime.UtcNow - File.GetLastWriteTimeUtc(file) < TimeSpan.FromDays(1)) json = File.ReadAllText(file); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        if (json is not null && !json.Contains("\"curves\"")) json = null;  // gardé d'avant les chances de fabrication : relu sur le site
         if (json is null)
         {
             try
@@ -234,6 +241,13 @@ static class Market
             using var doc = JsonDocument.Parse(json);
             var at = File.Exists(file) ? File.GetLastWriteTimeUtc(file) : DateTime.UtcNow;
             static RecipePart Part(JsonElement e) => new(e.GetProperty("key").GetString() ?? "", e.GetProperty("name").GetString() ?? "", e.GetProperty("qty").GetInt32());
+            static string? Text(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+            static string? Rate(JsonElement e, int at) =>
+                e.TryGetProperty("rate", out var v) && v.ValueKind == JsonValueKind.Array && v.GetArrayLength() > at && v[at].ValueKind == JsonValueKind.String ? v[at].GetString() : null;
+            var curves = new Dictionary<string, double[]>();
+            if (doc.RootElement.TryGetProperty("curves", out var cv) && cv.ValueKind == JsonValueKind.Object)
+                foreach (var c in cv.EnumerateObject())
+                    if (c.Value.ValueKind == JsonValueKind.Array) curves[c.Name] = c.Value.EnumerateArray().Select(x => x.GetDouble()).ToArray();
             var list = new List<CraftRecipe>();
             foreach (var r in doc.RootElement.GetProperty("recipes").EnumerateArray())
             {
@@ -243,9 +257,12 @@ static class Market
                     0, null, at, "MetaBot.GG", false, r.TryGetProperty("bound", out var b) && b.GetBoolean())
                 {
                     Official = true, Source = r.TryGetProperty("source", out var src) ? src.GetString() : null, Profession = profession, Mastery = mastery,
+                    Combo = r.TryGetProperty("combo", out var cb) && cb.ValueKind == JsonValueKind.Number ? cb.GetInt32() : 0,
+                    ComboName = Text(r, "comboName"), Transfer = Text(r, "transfer"), RateNormal = Rate(r, 0), RateCombo = Rate(r, 1),
                 });
             }
             OfficialRecipes = list;
+            CraftCurves = curves;
             return true;
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { return false; }

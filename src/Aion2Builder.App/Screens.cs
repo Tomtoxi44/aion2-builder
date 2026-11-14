@@ -16,7 +16,7 @@ using static Aion2Builder.App.Ui;
 namespace Aion2Builder.App;
 
 /// <summary>Pages de l'écran Craft (barre de gauche).</summary>
-enum CraftPage { Overview, Recipe, New, Npc, Shopping, Uses }
+enum CraftPage { Overview, Recipe, New, Npc, Shopping, Uses, Chain }
 
 /// <summary>Pages de l'écran HdV (barre de gauche).</summary>
 enum MarketPage { Prices, Chart, Add, Stock, Removed }
@@ -96,6 +96,9 @@ sealed class UiState
     public string? CraftQuery { get; set; }
     /// <summary>Craft · « Que fabriquer avec… » : le nom de ressource tapé.</summary>
     public string? CraftUse { get; set; }
+    /// <summary>Craft · « Chaîne d'un équipement » : la pièce choisie (son premier palier, nom plié) et le but (nom plié ; null : le dernier palier).</summary>
+    public string? CraftChainLine { get; set; }
+    public string? CraftChainGoal { get; set; }
     public string? CraftFilter { get; set; }
     /// <summary>Craft : métier montré (Forge, Armure…, « Notées par les joueurs ») ; null : tous.</summary>
     public string? CraftProfession { get; set; }
@@ -223,6 +226,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         public const string Card = "M3 1.5h8v11H3zM5 5h4M5 8h4M5 10.5h2";
         public const string Star = "M7 1.5l1.7 3.5 3.8.5-2.8 2.6.7 3.8L7 10.1l-3.4 1.8.7-3.8L1.5 5.5l3.8-.5z";
         public const string Search = "M6 2.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM8.6 8.6L12 12";
+        public const string Steps = "M1.5 12h3V9h3V6h3V3h2.5";
     }
 
     /// <summary>Barre secondaire de l'écran ouvert (sous-pages, combats, plateaux…), null pour les écrans d'une seule page.</summary>
