@@ -77,7 +77,7 @@ sealed partial class ScreenViews
         }
         var cost = Cell("COÛT, TOUT ACHETÉ");
         var pocket = Cell("À ACHETER, STOCK DÉDUIT");
-        var sell = Cell("VENTE, TAXE DÉDUITE");
+        var sell = Cell("VENTE, FRAIS DÉDUITS");
         var gain = Cell("GAIN");
         var low = Cell("PRIX PLANCHER, L'UNITÉ");
         var needs = T("", 12, Tok.Text2, wrap: true).WithLineHeight(1.45);
@@ -111,7 +111,7 @@ sealed partial class ScreenViews
                 long? income = n > 0 && unit is { } u ? (long)Math.Round(u * keep * n) : null;
                 sell.Value.Text = income is { } i ? Fmt.Big(i) : unit is null ? "prix ?" : "—";
                 sell.Note.Text = unit is { } shown
-                    ? $"{Fmt.Big(n * rc.Output.Qty)} × {Fmt.Big(shown)}, taxe de {m.TaxNote} déduite" + (Num(price.Text) is null ? $" (dernier prix de {m.Data.Label(m.Shown)})" : "")
+                    ? $"{Fmt.Big(n * rc.Output.Qty)} × {Fmt.Big(shown)}, frais de vente de {m.TaxNote} déduits" + (Num(price.Text) is null ? $" (dernier prix de {m.Data.Label(m.Shown)})" : "")
                     : $"pas de prix noté sur {m.Data.Label(m.Shown)} : indique ton prix de vente";
                 if (income is { } inc)
                 {
@@ -155,8 +155,8 @@ sealed partial class ScreenViews
         var body = new StackPanel { Spacing = 12, Children = { inputs, cells, needs } };
         if (!p.C.ForSelf && floor is not null)
             body.Children.Add(T($"Prix plancher : le coût d'une fabrication tout acheté ({Fmt.Big(perCraft)}) divisé par ce que la vente te laisse " +
-                                $"({(rc.Output.Qty > 1 ? $"{rc.Output.Qty} objets, " : "")}taxe de {m.TaxNote} déduite). La taxe est prise sur la vente, au même taux " +
-                                "quelle que soit la taille du lot.", 11, Tok.Muted, wrap: true).WithLineHeight(1.45));
+                                $"({(rc.Output.Qty > 1 ? $"{rc.Output.Qty} objets, " : "")}frais de vente de {m.TaxNote} déduits : {SaleCostDetail(m.Shown)}). Ces frais suivent le prix : " +
+                                "la taille du lot n'y change rien, mais chaque remise en vente repaie les frais d'enregistrement.", 11, Tok.Muted, wrap: true).WithLineHeight(1.45));
         return Card(body, "Simuler une série", T("coût, vente et prix plancher pour N fabrications", 11, Tok.Muted, mono: true), new Thickness(16, 12, 16, 12));
     }
 }
