@@ -31,7 +31,9 @@ sealed record UiPrefs(string Region = "eu", string Server = "", string Name = ""
     List<string>? Mine = null, bool BottomHidden = false, double BottomHeight = 190, string BottomTab = "advice", List<string>? RailOrder = null, string GearPage = "Overview", string SkillPage = "Overview", string BuildPage = "Compare", bool SideHidden = false,
     bool TipsSeen = false, int UiVersion = 1, bool DetailsByNeed = false, bool AutoInstall = true, string? AutoInstallFailed = null,
     string? PetMeterExe = null, List<string>? CraftSkip = null, List<string>? CraftMake = null,
-    List<int>? CraftPins = null, List<string>? CraftPinLines = null)
+    List<int>? CraftPins = null, List<string>? CraftPinLines = null, Dictionary<int, int>? CraftRuns = null,
+    Dictionary<int, CraftAlert>? CraftAlerts = null, Dictionary<string, Dictionary<string, int>>? CraftMastery = null,
+    string Layout = "ide", int Zoom = 100)
 {
     static string PathOf => System.IO.Path.Combine(AppPaths.Root, "ui.json");
 
@@ -220,6 +222,10 @@ public sealed class MainWindow : Window
         var updateTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(6) };
         updateTimer.Tick += async (_, _) => await CheckUpdateAsync(manual: false);
         updateTimer.Start();
+        // Alertes des crafts épinglés : tant qu'une alerte est réglée, les prix sont relus toutes les 15 min (rien sinon).
+        var alertTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(15) };
+        alertTimer.Tick += (_, _) => { if (state.CraftAlerts.Count > 0 && report is not null) _ = LoadMarketAsync(); };
+        alertTimer.Start();
 
         // Onglets de la dernière session (fichiers encore présents), puis le dernier personnage affiché.
         foreach (var path in (prefs.Tabs ?? []).Append(prefs.LastFile).OfType<string>().Distinct())
@@ -232,6 +238,10 @@ public sealed class MainWindow : Window
         foreach (var made in prefs.CraftMake ?? []) state.CraftMake.Add(made);
         foreach (var pin in prefs.CraftPins ?? []) state.CraftPins.Add(pin);
         foreach (var line in prefs.CraftPinLines ?? []) state.CraftPinLines.Add(line);
+        foreach (var (id, n) in prefs.CraftRuns ?? []) state.CraftRuns[id] = n;
+        foreach (var (id, alert) in prefs.CraftAlerts ?? []) state.CraftAlerts[id] = alert;
+        if (state.CraftAlerts.Count > 0) Dispatcher.UIThread.Post(() => _ = LoadMarketAsync(), DispatcherPriority.Background);
+        foreach (var (who, levels) in prefs.CraftMastery ?? []) state.CraftMastery[who] = new(levels);
         var last = prefs.LastFile is not null && opened.ContainsKey(prefs.LastFile) ? prefs.LastFile : tabs.FirstOrDefault();
         if (last is not null)
         {
@@ -387,7 +397,10 @@ public sealed class MainWindow : Window
             CraftSkip = state.CraftSkip.Count == 0 ? null : [.. state.CraftSkip.Order(StringComparer.Ordinal)],
             CraftMake = state.CraftMake.Count == 0 ? null : [.. state.CraftMake.Order(StringComparer.Ordinal)],
             CraftPins = state.CraftPins.Count == 0 ? null : [.. state.CraftPins.Order()],
-            CraftPinLines = state.CraftPinLines.Count == 0 ? null : [.. state.CraftPinLines.Order(StringComparer.Ordinal)] };
+            CraftPinLines = state.CraftPinLines.Count == 0 ? null : [.. state.CraftPinLines.Order(StringComparer.Ordinal)],
+            CraftRuns = state.CraftRuns.Count == 0 ? null : new(state.CraftRuns),
+            CraftAlerts = state.CraftAlerts.Count == 0 ? null : new(state.CraftAlerts),
+            CraftMastery = state.CraftMastery.Count == 0 ? null : state.CraftMastery.ToDictionary(x => x.Key, x => new Dictionary<string, int>(x.Value)) };
         prefs.Save();
         Render();
     }
@@ -519,9 +532,11 @@ public sealed class MainWindow : Window
         Accent = AccentTheme.Find(prefs.Accent);
         var root = new Grid { RowDefinitions = new RowDefinitions("36,*,24") };
         var title = TitleBar();
-        var middle = new Grid { ColumnDefinitions = new ColumnDefinitions("52,*") };
-        var rail = Rail();
+        // Présentation « Confort » : un seul menu à gauche (nom entier de chaque écran, rangé par usage, ses sous-pages dessous) à la
+        // place du rail d'icônes et de la barre secondaire. La zone centrale d'abord : elle dit quelles sous-pages l'écran a.
+        var middle = new Grid { ColumnDefinitions = new ColumnDefinitions(Comfort ? "244,*" : "52,*") };
         var main = MainArea();
+        var rail = Comfort ? NavTree() : Rail();
         Grid.SetColumn(main, 1);
         middle.Children.Add(rail);
         middle.Children.Add(main);
@@ -540,7 +555,91 @@ public sealed class MainWindow : Window
             Grid.SetRowSpan(layer, 3);
             root.Children.Add(layer);
         }
-        Content = root;
+        // Taille de l'affichage : tout est agrandi d'un bloc (textes, tableaux, boutons), sans rien tronquer.
+        var zoom = Math.Clamp(prefs.Zoom, 80, 160) / 100.0;
+        Content = zoom == 1 ? root : new LayoutTransformControl { LayoutTransform = new ScaleTransform(zoom, zoom), Child = root };
+    }
+
+    bool Comfort => prefs.Layout == "confort";
+
+    /// <summary>Les écrans rangés par usage, pour le menu de la présentation « Confort ».</summary>
+    static readonly (string Title, (Screen Screen, string Name)[] Screens)[] NavGroups =
+    [
+        ("Mon personnage", [(Screen.Home, "Accueil"), (Screen.Stats, "Stats"), (Screen.Gear, "Équipement"), (Screen.Skills, "Compétences"),
+            (Screen.Build, "Build et rotation"), (Screen.Daeva, "Daevanion"), (Screen.Pets, "Familiers")]),
+        ("Combat et progrès", [(Screen.Combat, "Combat"), (Screen.Simulate, "Simulation « et si »"), (Screen.Progress, "Progression"), (Screen.Details, "Tous les conseils")]),
+        ("Récolte et commerce", [(Screen.Gather, "Récolte"), (Screen.Inventory, "Inventaire"), (Screen.Craft, "Craft"), (Screen.Market, "Hôtel des ventes")]),
+    ];
+
+    /// <summary>
+    /// Menu de la présentation « Confort » : le personnage en haut, puis chaque écran par son nom entier, rangé par usage, avec sa
+    /// note à droite ; sous l'écran ouvert, ses sous-pages (ce que la barre secondaire montre en présentation IDE). Ctrl+B les replie.
+    /// </summary>
+    Control NavTree()
+    {
+        var panel = new StackPanel { Margin = new Thickness(0, 8, 0, 12) };
+        var who = Clickable(new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 10,
+                Children =
+                {
+                    new Border
+                    {
+                        Width = 30, Height = 30, CornerRadius = new CornerRadius(6), Background = Tok.Border,
+                        Child = T(current is null ? "+" : current.Name[..1].ToUpperInvariant(), 14, Accent.Main, FontWeight.SemiBold, mono: true).Centered(),
+                    },
+                    new StackPanel
+                    {
+                        Spacing = 1, VerticalAlignment = VerticalAlignment.Center,
+                        Children = { T(current?.Name ?? "Importer un personnage", 13, Tok.Text, FontWeight.SemiBold), T("changer de personnage", 11, Tok.Muted) },
+                    },
+                },
+            }, ShowImport, null, Tok.Hover, new Thickness(14, 6));
+        ToolTip.SetTip(who, "Importer ou changer de personnage (Ctrl+K)");
+        panel.Children.Add(who);
+        foreach (var (title, screens) in NavGroups)
+        {
+            panel.Children.Add(Label(title).WithMargin(16, 14, 14, 4));
+            foreach (var (screen, name) in screens)
+            {
+                var on = state.Screen == screen;
+                var hasPages = on && side is not null;
+                var score = report is null ? null : ScreenViews.ScoreOf(report, screen);
+                var alerts = screen == Screen.Craft ? CraftAlertCount() : 0;
+                var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+                if (alerts > 0) right.Children.Add(new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(4), Background = Tok.Warn, VerticalAlignment = VerticalAlignment.Center });
+                if (score is { } v) right.Children.Add(T(v.ToString(), 12, Tok.Score(v), FontWeight.SemiBold, mono: true));
+                if (hasPages) right.Children.Add(T(prefs.SideHidden ? "▸" : "▾", 11, Tok.Muted, mono: true));
+                DockPanel.SetDock(right, Dock.Right);
+                var icon = new Border { Width = 22, Margin = new Thickness(0, 0, 8, 0), Child = RailIcon(screen, on) };
+                DockPanel.SetDock(icon, Dock.Left);
+                var entry = new Border
+                {
+                    Padding = new Thickness(14, 7, 12, 7), Background = on ? Accent.Dim : Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand),
+                    BorderBrush = on ? Accent.Main : Brushes.Transparent, BorderThickness = new Thickness(2, 0, 0, 0),
+                    Child = new DockPanel { Children = { right, icon, T(name, 13, on ? Tok.Text : Tok.Text2, on ? FontWeight.SemiBold : FontWeight.Normal) } },
+                };
+                if (!on)
+                {
+                    entry.PointerEntered += (_, _) => entry.Background = Tok.Hover;
+                    entry.PointerExited += (_, _) => entry.Background = Brushes.Transparent;
+                }
+                // L'écran ouvert : un clic replie ou déplie ses sous-pages ; un autre écran : il s'ouvre.
+                entry.PointerPressed += (_, e) => { e.Handled = true; if (report is null) return; if (on && hasPages) ToggleSide(); else if (!on) Navigate(screen); };
+                var full = ScreenViews.Nav.FirstOrDefault(n => n.Screen == screen).Title;
+                ToolTip.SetTip(entry, (alerts > 0 ? $"{Fmt.Plural(alerts, "alerte")} sur tes crafts épinglés · " : "") + (full ?? name) +
+                                      (score is not null ? " · sa note sur 100" : "") + (hasPages ? " · clic : replier ou déplier ses sous-pages (Ctrl+B)" : ""));
+                panel.Children.Add(entry);
+                if (hasPages && !prefs.SideHidden)
+                {
+                    var pages = new StackPanel();
+                    if (side!.Actions is not null) pages.Children.Add(new Border { Padding = new Thickness(12, 4, 8, 4), HorizontalAlignment = HorizontalAlignment.Right, Child = side.Actions });
+                    pages.Children.Add(side.Body);
+                    panel.Children.Add(new Border { Margin = new Thickness(22, 0, 0, 8), BorderBrush = Tok.Border, BorderThickness = new Thickness(1, 0, 0, 0), Child = pages });
+                }
+            }
+        }
+        return new Border { Background = Tok.Chrome, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 1, 0), Child = Scroll(panel) };
     }
 
     /// <summary>Carte centrée sur un voile sombre ; un clic sur le voile ou Échap la ferme.</summary>
@@ -695,6 +794,11 @@ public sealed class MainWindow : Window
             Spacing = 18, Margin = new Thickness(18, 14, 18, 18),
             Children =
             {
+                Choice("Présentation", "IDE : le rail d'icônes et la barre secondaire, comme un éditeur de code. Confort : un seul menu à gauche, avec le nom entier de " +
+                                       "chaque écran, rangé par usage, et ses sous-pages juste dessous. Le contenu des écrans est le même.",
+                    [("IDE (par défaut)", !Comfort, () => Set(prefs with { Layout = "ide" })), ("Confort", Comfort, () => Set(prefs with { Layout = "confort" }))]),
+                Choice("Taille de l'affichage", "Agrandit ou réduit tout d'un bloc : textes, tableaux, boutons.",
+                    ZoomSteps.Select(z => ($"{z} %", prefs.Zoom == z, (Action)(() => Set(prefs with { Zoom = z }))))),
                 Choice("Mises à jour", "Demande à Aion 2 Todo s'il existe une nouvelle version, au lancement puis toutes les 6 h. Le téléchargement n'a lieu qu'au clic.",
                     [("automatique", prefs.AutoUpdate, () => Set(prefs with { AutoUpdate = true })), ("à la demande", !prefs.AutoUpdate, () => Set(prefs with { AutoUpdate = false }))]),
                 Choice("Actualiser à l'ouverture", "Relit le personnage sur le site officiel quand tu l'ouvres, si son import date de plus de :",
@@ -709,8 +813,12 @@ public sealed class MainWindow : Window
             },
         };
         var close = Clickable(T("fermer · Échap", 11, Tok.Muted, mono: true), () => ShowOverlay(Overlay.None));
-        return new StackPanel { Children = { SectionHeader("Paramètres", close), body } };
+        var scroll = Scroll(body);
+        scroll.MaxHeight = 560;
+        return new StackPanel { Children = { SectionHeader("Paramètres", close), scroll } };
     }
+
+    static readonly int[] ZoomSteps = [90, 100, 110, 125, 140];
 
     Control TitleBar()
     {
@@ -794,7 +902,35 @@ public sealed class MainWindow : Window
             Grid.SetRow(swatch, i / 4);
             grid.Children.Add(swatch);
         }
-        flyout.Content = new StackPanel { Width = 190, Spacing = 8, Children = { Label("Couleur secondaire"), grid } };
+        Control Pick(IEnumerable<(string Text, bool On, Action Do)> options)
+        {
+            var row = new WrapPanel();
+            foreach (var (text, on, act) in options)
+            {
+                var b = Clickable(T(text, 11, on ? Tok.OnAccent : Tok.Text2, FontWeight.SemiBold, mono: true), () => { flyout.Hide(); act(); },
+                    on ? Accent.Main : Tok.Window, on ? null : Tok.HoverStrong, new Thickness(8, 3));
+                b.CornerRadius = new CornerRadius(3);
+                b.BorderBrush = Tok.Border;
+                b.BorderThickness = new Thickness(1);
+                b.Margin = new Thickness(0, 0, 4, 4);
+                row.Children.Add(b);
+            }
+            return row;
+        }
+        void Apply(UiPrefs updated) { prefs = updated; prefs.Save(); Render(); }
+        flyout.Content = new StackPanel
+        {
+            Width = 200, Spacing = 8,
+            Children =
+            {
+                Label("Couleur secondaire"), grid,
+                Label("Présentation").WithMargin(0, 6, 0, 0),
+                Pick([("IDE", !Comfort, () => Apply(prefs with { Layout = "ide" })), ("Confort", Comfort, () => Apply(prefs with { Layout = "confort" }))]),
+                T("Confort : un seul menu à gauche, nom entier de chaque écran.", 11, Tok.Muted, wrap: true),
+                Label("Taille").WithMargin(0, 6, 0, 0),
+                Pick(ZoomSteps.Select(z => ($"{z} %", prefs.Zoom == z, (Action)(() => Apply(prefs with { Zoom = z }))))),
+            },
+        };
 
         // Le clic ouvre le menu lui-même : Clickable marque le clic comme traité, un second gestionnaire ne serait jamais appelé.
         Border? button = null;
@@ -808,7 +944,7 @@ public sealed class MainWindow : Window
         button.BorderThickness = new Thickness(1);
         button.CornerRadius = new CornerRadius(4);
         FlyoutBase.SetAttachedFlyout(button, flyout);
-        ToolTip.SetTip(button, "Couleur secondaire de l'interface");
+        ToolTip.SetTip(button, "Couleur secondaire, présentation (IDE ou Confort) et taille de l'affichage");
         return button;
     }
 
@@ -849,18 +985,54 @@ public sealed class MainWindow : Window
             var on = state.Screen == screen;
             var score = report is null ? null : ScreenViews.ScoreOf(report, screen);
             Control top = score is { } v ? T(v.ToString(), 13, Tok.Score(v), FontWeight.SemiBold, mono: true).Centered() : RailIcon(screen, on);
+            // Craft : une pastille quand une alerte d'un craft épinglé est déclenchée.
+            var alerts = screen == Screen.Craft ? CraftAlertCount() : 0;
+            if (alerts > 0)
+                top = new Panel
+                {
+                    Children =
+                    {
+                        top,
+                        new Border
+                        {
+                            Width = 8, Height = 8, CornerRadius = new CornerRadius(4), Background = Tok.Warn, HorizontalAlignment = HorizontalAlignment.Right,
+                            VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, -2, 12, 0),
+                        },
+                    },
+                };
             var entry = new Border
             {
                 Width = 52, Padding = new Thickness(0, 8), Background = Brushes.Transparent, Cursor = new Cursor(StandardCursorType.Hand),
                 BorderBrush = on ? Accent.Main : Brushes.Transparent, BorderThickness = new Thickness(2, 0, 0, 0),
                 Child = new StackPanel { Spacing = 2, HorizontalAlignment = HorizontalAlignment.Center, Children = { top, T(shortName, 10, on ? Tok.Text : Tok.Muted).Centered() } },
             };
-            ToolTip.SetTip(entry, $"{title} · glisse (ou clic droit) pour changer l'ordre");
+            ToolTip.SetTip(entry, (alerts > 0 ? $"{Fmt.Plural(alerts, "alerte")} sur tes crafts épinglés · " : "") + $"{title} · glisse (ou clic droit) pour changer l'ordre");
             RailDrag(entry, index, entries, panel, () => { if (report is not null) Navigate(screen); });
             entries.Add(entry);
             panel.Children.Add(entry);
         }
         return new Border { Background = Tok.Chrome, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 1, 0), Child = panel };
+    }
+
+    /// <summary>Alertes des crafts épinglés : calculées une fois par relevé de prix et par réglage (pas à chaque affichage).</summary>
+    (MarketData? Data, AdviceReport? Report, string Settings, int Count) craftAlertCache;
+    readonly HashSet<string> craftAlertsSeen = [];
+
+    int CraftAlertCount()
+    {
+        if (report is null || market is null || state.CraftAlerts.Count == 0) return 0;
+        var settings = string.Join(";", state.CraftAlerts.OrderBy(x => x.Key).Select(x => $"{x.Key}:{x.Value.Gain}:{x.Value.Floor}")) + "|" +
+                       string.Join(",", state.CraftPins.Order()) + "|" + state.InventoryChar + "|" + state.MarketMarket + "|" + state.CraftSkip.Count + "|" + state.CraftMake.Count;
+        if (ReferenceEquals(craftAlertCache.Data, market) && ReferenceEquals(craftAlertCache.Report, report) && craftAlertCache.Settings == settings)
+            return craftAlertCache.Count;
+        var hits = Views(report, state).CraftAlertsNow();
+        craftAlertCache = (market, report, settings, hits.Count);
+        // Une notification par alerte nouvellement déclenchée (pas à chaque affichage).
+        var keys = hits.Select(h => h.Key).ToHashSet();
+        craftAlertsSeen.IntersectWith(keys);
+        foreach (var hit in hits)
+            if (craftAlertsSeen.Add(hit.Key)) Dispatcher.UIThread.Post(() => Toast(hit.Title, hit.Text));
+        return hits.Count;
     }
 
     /// <summary>
@@ -1032,6 +1204,12 @@ public sealed class MainWindow : Window
         var data = screen switch
         {
             Screen.Progress => "M1,12 L6,7 L10,9 L16,3 L19,5",
+            // Écrans notés : le rail montre leur note, le menu « Confort » leur icône (maison, barres, bouclier, éclair, losange).
+            Screen.Home => "M2,8 L9,2 L16,8 M4,7 V14 H14 V7",
+            Screen.Stats => "M3,14 V8 M9,14 V2 M15,14 V5",
+            Screen.Gear => "M9,1 L15,3.5 V8 Q15,12.5 9,14.5 Q3,12.5 3,8 V3.5 Z",
+            Screen.Skills => "M10,1 L4,9 H9 L7,15 L14,6 H9 Z",
+            Screen.Daeva => "M9,1 L16,8 L9,15 L2,8 Z M9,5 L12,8 L9,11 L6,8 Z",
             Screen.Build => "M1,2 H17 M1,7 H13 M1,12 H9",
             Screen.Combat => "M2,2 L14,14 M16,2 L4,14 M1,11 L5,15 M17,11 L13,15",
             Screen.Simulate => "M1,8 H6 L11,2 H17 M6,8 L11,14 H17",
@@ -1071,7 +1249,8 @@ public sealed class MainWindow : Window
         Grid.SetRow(page, 1);
         Grid.SetColumn(page, 1);
         grid.Children.Add(page);
-        if (side is not null)
+        // Présentation « Confort » : les sous-pages sont dans le menu de gauche, sous l'écran ouvert.
+        if (side is not null && !Comfort)
         {
             var bar = SideBar(side);
             Grid.SetRowSpan(bar, 2);
@@ -2270,7 +2449,8 @@ public sealed class MainWindow : Window
             Journal.Write("prix HdV : " + ex.Message);
         }
         finally { marketLoading = false; }
-        if (state.Screen is Screen.Gather or Screen.Market or Screen.Inventory or Screen.Craft) Render();
+        // Une alerte de craft épinglé peut s'être déclenchée : le rail la montre sur tous les écrans.
+        if (state.Screen is Screen.Gather or Screen.Market or Screen.Inventory or Screen.Craft || state.CraftAlerts.Count > 0) Render();
     }
 
     /// <summary>Écran Inventaire : nommer un objet de ton sac pour tous ; la liste des noms est relue aussitôt.</summary>

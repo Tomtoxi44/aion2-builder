@@ -152,7 +152,7 @@ sealed partial class ScreenViews
         };
         var cells = new Avalonia.Controls.Primitives.UniformGrid { Columns = 5 };
         foreach (var c in new[] { cost, pocket, sell, gain, low }) cells.Children.Add(c.Panel);
-        var body = new StackPanel { Spacing = 12, Children = { inputs, cells, needs } };
+        var body = new StackPanel { Spacing = 12, Children = { inputs, cells, needs, CraftRunButtons(rc.Id, () => Math.Min(Num(qty.Text) ?? 0, 1_000_000)) } };
         if (!p.C.ForSelf && floor is not null)
             body.Children.Add(T($"Prix plancher : le coût d'une fabrication tout acheté ({Fmt.Big(perCraft)}) divisé par ce que la vente te laisse " +
                                 $"({(rc.Output.Qty > 1 ? $"{rc.Output.Qty} objets, " : "")}frais de vente de {m.TaxNote} déduits : {SaleCostDetail(m.Shown)}). Ces frais suivent le prix : " +

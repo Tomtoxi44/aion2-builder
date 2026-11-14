@@ -16,7 +16,7 @@ using static Aion2Builder.App.Ui;
 namespace Aion2Builder.App;
 
 /// <summary>Pages de l'écran Craft (barre de gauche).</summary>
-enum CraftPage { Overview, Recipe, New, Npc }
+enum CraftPage { Overview, Recipe, New, Npc, Shopping }
 
 /// <summary>Pages de l'écran HdV (barre de gauche).</summary>
 enum MarketPage { Prices, Chart, Add, Stock, Removed }
@@ -117,6 +117,12 @@ sealed class UiState
     public HashSet<int> CraftPins { get; } = [];
     /// <summary>Courbes des cartes épinglées dont l'affichage est inversé (« recette:sell », « recette:cost », « recette:clé », « recette:% »).</summary>
     public HashSet<string> CraftPinLines { get; } = [];
+    /// <summary>Craft → Courses : les séries gardées (recette → nombre de fabrications), gardées dans tes réglages.</summary>
+    public Dictionary<int, int> CraftRuns { get; } = [];
+    /// <summary>Craft : alertes des crafts épinglés (recette → seuil de gain, vente sous le prix plancher), gardées dans tes réglages.</summary>
+    public Dictionary<int, CraftAlert> CraftAlerts { get; } = [];
+    /// <summary>Craft : ta maîtrise par personnage puis par métier, tapée à la main (rien ne la donne), gardée dans tes réglages.</summary>
+    public Dictionary<string, Dictionary<string, int>> CraftMastery { get; } = [];
     /// <summary>Écran Craft → « Objets du PNJ » : saisie d'un objet (nom, prix, onglet), erreur, liste dépliée.</summary>
     public string NpcName { get; set; } = "";
     public string NpcPrice { get; set; } = "";

@@ -8,6 +8,12 @@ using static Aion2Builder.App.Ui;
 namespace Aion2Builder.App;
 
 /// <summary>
+/// Alerte d'un craft épinglé, vérifiée à chaque nouveau prix : Gain = préviens-moi quand le gain par fabrication (en achetant
+/// tout, frais de vente déduits) atteint ce nombre ; Floor = préviens-moi quand le prix de vente passe sous le prix plancher.
+/// </summary>
+sealed record CraftAlert(long? Gain = null, bool Floor = false);
+
+/// <summary>
 /// Crafts épinglés : épinglés depuis la page d'une recette, ils ont chacun une carte en haut de la vue d'ensemble du Craft, avec
 /// le prix de vente, le coût en achetant tout, et leurs courbes sur 3 jours ; des cases ajoutent ou retirent la vente, le coût et
 /// chaque ingrédient (sa part du coût : quantité × prix).
@@ -24,6 +30,33 @@ sealed partial class ScreenViews
     bool PinLineOn(int id, string line, bool byDefault) => byDefault ^ s.CraftPinLines.Contains($"{id}:{line}");
 
     void TogglePinLine(int id, string line) => update(st => { var k = $"{id}:{line}"; if (!st.CraftPinLines.Remove(k)) st.CraftPinLines.Add(k); });
+
+    /// <summary>Une alerte déclenchée : le craft, son titre court, ce qu'elle dit, et si c'est une bonne nouvelle (gain atteint).</summary>
+    sealed record CraftAlertHit(CraftPlan Plan, string Kind, string Title, string Text, bool Good);
+
+    /// <summary>
+    /// Les alertes déclenchées aux derniers prix, pour les crafts épinglés qui en ont une. Le gain n'est jugé que si tous les
+    /// ingrédients ont un prix : avec un coût « au moins », le gain serait surestimé.
+    /// </summary>
+    List<CraftAlertHit> CraftAlertHits(CraftModel m)
+    {
+        var hits = new List<CraftAlertHit>();
+        foreach (var (id, alert) in s.CraftAlerts.OrderBy(x => x.Key))
+        {
+            if (!s.CraftPins.Contains(id) || m.Plans.FirstOrDefault(p => p.Recipe.Id == id) is not { } plan) continue;
+            var now = NowOf(m, plan);
+            if (alert.Gain is { } wanted && now.Gain is { } gain && gain >= wanted && !now.Partial)
+                hits.Add(new(plan, "gain", "gain atteint", $"+{Fmt.Big(gain)} Kinah par fabrication, ton seuil est {Fmt.Big(wanted)} : c'est le moment de fabriquer.", true));
+            if (alert.Floor && now.Unit is { } unit && now.Floor is { } floor && unit < floor)
+                hits.Add(new(plan, "floor", "vente sous le plancher", $"se vend {Fmt.Big(unit)} l'unité, le plancher est {(now.Partial ? "au moins " : "")}{Fmt.Big(floor)} : " +
+                    "vendre ne rembourse plus le coût.", false));
+        }
+        return hits;
+    }
+
+    /// <summary>Pour la fenêtre (pastille du rail, notification) : les alertes déclenchées, une clé stable chacune.</summary>
+    public List<(string Key, string Title, string Text)> CraftAlertsNow() =>
+        Crafting() is { } m ? CraftAlertHits(m).Select(h => ($"{h.Plan.Recipe.Id}:{h.Kind}", $"{h.Plan.Recipe.Output.Name} : {h.Title}", h.Text)).ToList() : [];
 
     /// <summary>Les crafts épinglés, une carte chacun (deux par ligne), sous les chiffres de la vue d'ensemble.</summary>
     IEnumerable<Control> CraftPinBlocks(CraftModel m)
@@ -207,6 +240,13 @@ sealed partial class ScreenViews
 
         var body = new StackPanel { Spacing = 8 };
         body.Children.Add(head);
+        foreach (var hit in CraftAlertHits(m).Where(h => h.Plan.Recipe.Id == id))
+            body.Children.Add(new Border
+            {
+                Padding = new Thickness(10, 6), Background = Tok.Alpha(hit.Good ? Tok.Good : Tok.Bad, 0.12), BorderBrush = hit.Good ? Tok.Good : Tok.Bad,
+                BorderThickness = new Thickness(2, 0, 0, 0),
+                Child = T($"{(hit.Good ? "▲" : "▼")} {char.ToUpperInvariant(hit.Title[0])}{hit.Title[1..]} : {hit.Text}", 12, Tok.Text, wrap: true).WithLineHeight(1.4),
+            });
         body.Children.Add(figures);
         var measure = Tip(Choice([("Kinah", !percent, () => { if (percent) TogglePinLine(id, "%"); }), ("%", percent, () => { if (!percent) TogglePinLine(id, "%"); })]),
             "Kinah : les prix ; % : l'évolution de chaque courbe depuis le début des 3 jours, pour comparer des prix très différents.");
@@ -217,7 +257,43 @@ sealed partial class ScreenViews
         if (series.Count > 0 && noData.Count > 0)
             body.Children.Add(T($"Sans prix sur {m.Data.Label(m.Shown)} : {string.Join(", ", noData)}.", 11, Tok.Muted, wrap: true));
         body.Children.Add(T($"{PinDays} derniers jours · prix de {m.Data.Label(m.Shown)}" + (percent ? "" : " · ingrédient : quantité × prix"), 10, Tok.Faint, mono: true));
+        if (!p.C.ForSelf) body.Children.Add(CraftAlertRow(id, partial));
         return Card(body, padding: new Thickness(12, 10, 12, 10));
+    }
+
+    /// <summary>
+    /// Les deux alertes d'une carte épinglée : un seuil de gain par fabrication (gardé à la sortie de la case, ou sur Entrée) et
+    /// « la vente passe sous le plancher ». Elles s'affichent sur la carte, dans la barre de gauche et sur l'entrée Craft du rail.
+    /// </summary>
+    Control CraftAlertRow(int id, bool partial)
+    {
+        var alert = s.CraftAlerts.GetValueOrDefault(id) ?? new CraftAlert();
+        void Set(CraftAlert next) => update(st =>
+        {
+            if (next.Gain is null && !next.Floor) st.CraftAlerts.Remove(id);
+            else st.CraftAlerts[id] = next;
+        });
+        var gain = new TextBox { Text = alert.Gain?.ToString() ?? "", Width = 96, PlaceholderText = "ex. 5000", FontSize = 12 };
+        void Commit() { var typed = Num(gain.Text); if (typed != alert.Gain) Set(alert with { Gain = typed }); }
+        gain.LostFocus += (_, _) => Commit();
+        gain.KeyDown += (_, k) => { if (k.Key == Avalonia.Input.Key.Enter) { k.Handled = true; Commit(); } };
+        var floor = Clickable(new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 6,
+                Children = { Tick(alert.Floor, 14), T("la vente passe sous le plancher", 11, alert.Floor ? Tok.Text : Tok.Muted) },
+            }, () => Set(alert with { Floor = !alert.Floor }), null, Tok.Hover, new Thickness(6, 3));
+        floor.CornerRadius = new CornerRadius(3);
+        var row = new WrapPanel();
+        row.Children.Add(T("PRÉVIENS-MOI SI", 10, Tok.Muted, mono: true).WithMargin(0, 0, 8, 0));
+        row.Children.Add(Tip(new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 0, 10, 0),
+                Children = { T("le gain atteint", 11, alert.Gain is null ? Tok.Muted : Tok.Text), gain, T("par fabrication", 11, Tok.Muted) },
+            },
+            "Gain par fabrication en achetant tout, frais de vente déduits (le chiffre « Écart » de la carte). Vide : pas d'alerte. Entrée pour valider." +
+            (partial ? " Des ingrédients n'ont pas de prix : l'alerte attend qu'ils en aient." : "")));
+        row.Children.Add(Tip(floor, "Prévient quand le dernier prix de vente noté passe sous le prix plancher : vendre ne rembourse alors plus le coût."));
+        return row;
     }
 
     /// <summary>Case d'une courbe : sa couleur quand elle est tracée, un clic l'ajoute ou la retire.</summary>

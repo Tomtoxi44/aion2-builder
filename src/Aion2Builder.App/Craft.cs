@@ -118,6 +118,8 @@ sealed record CraftPlan(CraftRecipe Recipe, MarketItem? Item, CraftCosting C, in
     public long? Total => Gain is { } g && CanMake is { } n ? g * n : null;
     /// <summary>Kinah dépensés par fabrication : achats au PNJ et coût de fabrication.</summary>
     public long Spend => C.Npc + C.Fee;
+    /// <summary>Hors de portée : la maîtrise demandée dépasse celle que tu as indiquée pour ce métier (la phrase qui le dit) ; null sinon.</summary>
+    public string? Locked { get; init; }
 }
 
 /// <summary>
@@ -126,8 +128,9 @@ sealed record CraftPlan(CraftRecipe Recipe, MarketItem? Item, CraftCosting C, in
 /// récolte (rangs 1 à 4) prend le prix de l'Od du même rang quand il est moins cher : l'Od se transmute en n'importe quelle
 /// ressource de son rang, 1 pour 1. Make : les ingrédients que tu choisis de fabriquer plutôt que d'acheter (« recette:clé »).
 /// </summary>
+/// <param name="reachable">Les recettes que ta maîtrise permet : un ingrédient n'est chiffré par sa recette que si tu peux la faire.</param>
 sealed class CraftBook(MarketData data, Dictionary<string, MarketPrice> latest, double tax, List<CraftRecipe> recipes, IReadOnlySet<string>? make = null,
-    Func<RecipePart, long?>? haveOf = null)
+    Func<RecipePart, long?>? haveOf = null, Func<CraftRecipe, bool>? reachable = null)
 {
     public double Tax => tax;
 
@@ -155,7 +158,7 @@ sealed class CraftBook(MarketData data, Dictionary<string, MarketPrice> latest, 
     {
         if (path.Count > 3) return null;
         // La plus complète d'abord : une recette dont tout a un prix passe devant une moins chère qui en oublie.
-        var best = recipes.Where(r => !path.Contains(r.Id) && Same(r.Output, p))
+        var best = recipes.Where(r => !path.Contains(r.Id) && Same(r.Output, p) && reachable?.Invoke(r) != false)
             .Select(r => (R: r, C: Cost(r, path)))
             .OrderBy(x => x.C.Uncounted.Count)
             .ThenBy(x => (x.C.Inputs!.Value + x.C.Npc + x.C.Fee) / (double)x.R.Output.Qty)
@@ -316,9 +319,13 @@ sealed partial class ScreenViews
     /// L'écran Craft calculé une fois par affichage (barre de gauche et page) : les recettes notées par les joueurs d'Aion 2
     /// Todo, croisées avec ton stock (sac et coffre lus par le Pet Meter) et les derniers prix de la communauté.
     /// </summary>
+    /// <param name="HaveOf">Ce que ton stock a d'un objet (null sans inventaire).</param>
+    /// <param name="WhereOf">Stock de tous tes persos : sur lesquels est l'objet (« Tinifixi ×3, Tarnafix ×10 ») ; null sinon.</param>
+    /// <param name="Mastery">Ta maîtrise par métier (celle du perso ouvert), tapée à la main ; un métier absent : inconnue.</param>
     sealed record CraftModel(MarketData Data, string Shown, double Tax, string TaxNote, CraftBook Book, Dictionary<string, NpcItem> NpcByName,
         List<CraftPlan> Plans, List<CharacterInventory> Owners, CharacterInventory? Who, bool HasStock, long Kinah,
-        List<(CraftPlan Plan, int N, long Total)> Proposal, List<CraftPlan> Flips);
+        List<(CraftPlan Plan, int N, long Total)> Proposal, List<CraftPlan> Flips,
+        Func<RecipePart, long?> HaveOf, Func<RecipePart, string?> WhereOf, bool AllStock, IReadOnlyDictionary<string, int> Mastery);
 
     CraftModel? craftModel;
     bool craftModelDone;
@@ -367,14 +374,28 @@ sealed partial class ScreenViews
         // Ton stock : le perso choisi (comme l'écran Inventaire), sac + coffre + autres rangements, sans les pièces portées.
         var inv = PetMeterInventory.Load();
         var owners = inv?.Chars.Values.OrderByDescending(c => c.At).ToList() ?? [];
-        var who = inv is null || owners.Count == 0 ? null : owners.FirstOrDefault(c => c.Character == s.InventoryChar) ?? inv.For(r.Character.Name) ?? owners[0];
+        var allStock = s.InventoryChar == AllChars && owners.Count > 1;
+        var who = inv is null || owners.Count == 0 ? null
+            : allStock ? EveryChar(owners) : owners.FirstOrDefault(c => c.Character == s.InventoryChar) ?? inv.For(r.Character.Name) ?? owners[0];
         long kinahHave = 0;
-        var entries = inv is null || who is null ? null : InventoryEntries(inv, who, days, latest, out kinahHave);
+        var entries = inv is null || who is null ? null
+            : allStock ? InventoryEntriesAll(inv, owners, days, latest, out kinahHave) : InventoryEntries(inv, who, days, latest, out kinahHave);
         var byKey = entries?.GroupBy(e => e.Id.ToString()).ToDictionary(g => g.Key, g => g.Sum(e => e.Qty)) ?? [];
         var byName = entries?.Where(e => e.Family != "Sans nom").GroupBy(e => Market.Fold(e.Name)).ToDictionary(g => g.Key, g => g.Sum(e => e.Qty)) ?? [];
         long? HaveOf(RecipePart p) => entries is null ? null : byKey.TryGetValue(p.Key, out var q) ? q : byName.GetValueOrDefault(Market.Fold(p.Name));
+        // Stock de tous tes persos : sur lesquels est l'objet.
+        string? WhereOf(RecipePart p)
+        {
+            if (!allStock || entries is null) return null;
+            var e = entries.FirstOrDefault(x => x.Id.ToString() == p.Key) ?? entries.FirstOrDefault(x => x.Family != "Sans nom" && Market.Fold(x.Name) == Market.Fold(p.Name));
+            return e is null ? null : string.Join(", ", e.Where.GroupBy(w => PlaceOwner(w.Place)).Select(g => $"{g.Key} ×{Fmt.Big(g.Sum(w => w.Qty))}"));
+        }
+        // Ta maîtrise (perso ouvert, tapée à la main) : une recette qui en demande plus est hors de portée.
+        IReadOnlyDictionary<string, int> mastery = s.CraftMastery.GetValueOrDefault(r.Character.Name) ?? [];
+        string? LockOf(CraftRecipe rc) => rc.Official && rc.Profession is { } job && rc.Mastery is { } need && mastery.TryGetValue(job, out var mine) && need > mine
+            ? $"maîtrise {need} en {job} demandée, tu as {mine}" : null;
         // Les ingrédients de ton stock comptent à ce qu'ils te rapporteraient vendus (frais de vente déduits), les autres au prix payé.
-        var book = new CraftBook(data, latest, tax, recipes, s.CraftMake, HaveOf);
+        var book = new CraftBook(data, latest, tax, recipes, s.CraftMake, HaveOf, rc => LockOf(rc) is null);
 
         var plans = full.Zip(recipes, (shownRc, rc) =>
         {
@@ -382,7 +403,8 @@ sealed partial class ScreenViews
             var costing = book.Cost(rc);
             int? canMake = null;
             string? limit = null;
-            if (entries is not null)
+            var locked = LockOf(rc);
+            if (entries is not null && locked is null)
             {
                 // Les objets du PNJ s'achètent au besoin : ils ne limitent que par les Kinah.
                 var counts = parts.Where(x => x.Part.Npc is null && !CraftSkipped(rc.Id, x.Part))
@@ -396,14 +418,15 @@ sealed partial class ScreenViews
                     limit = min.Name;
                 }
             }
-            return new CraftPlan(rc, book.ItemOf(rc.Output), costing, canMake, limit, parts);
+            return new CraftPlan(rc, book.ItemOf(rc.Output), costing, canMake, limit, parts) { Locked = locked };
         })
             // Les rentables d'abord (gain en tout avec ton stock, puis par fabrication), puis le reste par nom.
             .OrderByDescending(p => p.Gain is null ? 0 : 1).ThenByDescending(p => p.Total ?? long.MinValue).ThenByDescending(p => p.Gain ?? long.MinValue)
             .ThenBy(p => p.Recipe.Output.Name, French).ToList();
-        var proposal = entries is null ? [] : CraftBook.Proposal(plans, HaveOf, kinahHave);
-        var flips = plans.Where(p => p.Flip > 0).OrderByDescending(p => p.Flip).ToList();
-        return craftModel = new CraftModel(data, shown, tax, taxNote, book, npcByName, plans, owners, who, entries is not null, kinahHave, proposal, flips);
+        var proposal = entries is null ? [] : CraftBook.Proposal(plans.Where(p => p.Locked is null), HaveOf, kinahHave);
+        var flips = plans.Where(p => p.Flip > 0 && p.Locked is null).OrderByDescending(p => p.Flip).ToList();
+        return craftModel = new CraftModel(data, shown, tax, taxNote, book, npcByName, plans, owners, who, entries is not null, kinahHave, proposal, flips,
+            HaveOf, WhereOf, allStock, mastery);
     }
 
     enum CraftCall { Make, SellInputs, ForSelf, BuyNpc, NoPrice }
@@ -438,6 +461,22 @@ sealed partial class ScreenViews
         body.Children.Add(SideItem(Icons.Grid, "Vue d'ensemble", sum > 0 ? $"+{Short(sum)}" : null, Tok.Good,
             m.HasStock ? sum > 0 ? "ce que je fabriquerais avec ton stock" : "rien de rentable avec ton stock" : "toutes les recettes et leur verdict",
             s.CraftPage == CraftPage.Overview, () => update(st => st.CraftPage = CraftPage.Overview)));
+        var runs = s.CraftRuns.Count;
+        body.Children.Add(SideItem(Icons.Box, "Courses", runs > 0 ? runs.ToString() : null, Tok.Text2,
+            runs > 0 ? $"{Short(Shopping(m).Total)} Kinah à payer, ton stock retiré" : "garde une série depuis une recette : la liste d'achats",
+            s.CraftPage == CraftPage.Shopping, () => update(st => st.CraftPage = CraftPage.Shopping)));
+        // Alertes des crafts épinglés déclenchées aux derniers prix.
+        var hits = CraftAlertHits(m);
+        if (hits.Count > 0)
+        {
+            body.Children.Add(SideGroup($"Alertes · {hits.Count}"));
+            foreach (var hit in hits)
+            {
+                var hitId = hit.Plan.Recipe.Id;
+                body.Children.Add(SideItem(Icons.Star, hit.Plan.Recipe.Output.Name, hit.Good ? "▲" : "▼", hit.Good ? Tok.Good : Tok.Bad, $"{hit.Title} : {hit.Text}",
+                    s.CraftPage == CraftPage.Recipe && s.CraftRecipe == hitId, () => OpenRecipe(hitId)));
+            }
+        }
         // Les recettes sont dans la page (choix « C » du 8 novembre) : ici, seulement la recette ouverte.
         if (s.CraftPage == CraftPage.Recipe && m.Plans.FirstOrDefault(p => p.Recipe.Id == s.CraftRecipe) is { } open)
         {
@@ -470,13 +509,16 @@ sealed partial class ScreenViews
         if (Crafting() is not { } m)
             return Page("Craft", null, Card(T(market.Status ?? "Lecture des recettes et des prix sur Aion 2 Todo…", 13, Tok.Muted, wrap: true)));
         var right = m.Owners.Count > 1
-            ? Choice(m.Owners.Select(c => (c.Character, c == m.Who, (Action)(() => update(st => st.InventoryChar = c.Character)))))
+            ? Tip(Choice(m.Owners.Select(c => (c.Character, !m.AllStock && c == m.Who, (Action)(() => update(st => st.InventoryChar = c.Character))))
+                .Append(("tous", m.AllStock, (Action)(() => update(st => st.InventoryChar = AllChars))))),
+                "Le stock compté : celui d'un perso, ou « tous » : les sacs et coffres de tous tes persos réunis.")
             : m.Who is null ? null : (Control)T($"stock de {m.Who.Character}", 11, Tok.Muted, mono: true);
         return s.CraftPage switch
         {
             CraftPage.Recipe when m.Plans.FirstOrDefault(p => p.Recipe.Id == s.CraftRecipe) is { } plan => CraftRecipePage(m, plan, right),
             CraftPage.New => Page(s.CraftDraft.Replaces is null ? "Craft · noter une recette" : "Craft · corriger une recette", right, RecipeForm(m.Data)),
             CraftPage.Npc => Page("Craft · prix des PNJ", right, NpcCard(m.Data)),
+            CraftPage.Shopping => CraftShoppingPage(m, right),
             _ => CraftOverview(m, right),
         };
     }
@@ -487,6 +529,7 @@ sealed partial class ScreenViews
         CraftPage.Recipe => Crafting()?.Plans.FirstOrDefault(p => p.Recipe.Id == s.CraftRecipe)?.Recipe.Output.Name ?? "Vue d'ensemble",
         CraftPage.New => s.CraftDraft.Replaces is null ? "Noter une recette" : "Corriger une recette",
         CraftPage.Npc => "Prix des PNJ",
+        CraftPage.Shopping => "Courses",
         _ => "Vue d'ensemble",
     };
 
@@ -501,7 +544,7 @@ sealed partial class ScreenViews
             blocks.Add(T("Ton stock vient du Pet Meter de ce PC (inventory.json, v0.21.0 ou plus, lancé avant d'entrer en jeu). Sans lui, les recettes et leurs " +
                          "gains restent visibles, sans « tu peux en faire » ni proposition.", 12, Tok.Muted, wrap: true));
 
-        var makeable = m.Plans.Count(p => p.CanMake > 0);
+        var makeable = m.Plans.Count(p => p.CanMake > 0 && p.Locked is null);
         var kpis = new Avalonia.Controls.Primitives.UniformGrid { Columns = 4 };
         var officialCount = m.Plans.Count(p => p.Recipe.Official);
         var myRace = RaceOf(r.Character.Race);
@@ -511,13 +554,15 @@ sealed partial class ScreenViews
                 : $"{officialCount} officielles (MetaBot.GG)" + (m.Plans.Count > officialCount ? $" + {m.Plans.Count - officialCount} notées par les joueurs" : "") +
                   (otherRace > 0 ? $" · celles des {(myRace == 1 ? "Asmodiens" : "Élyséens")} masquées ({otherRace})" : "")).WithMargin(0, 0, 10, 0));
         kpis.Children.Add(Kpi("Faisables avec ton stock", m.HasStock ? makeable.ToString() : "—", makeable > 0 ? Tok.Good : null, 20,
-            note: m.Who is null ? "inventaire inconnu sur ce PC" : $"sac et coffre de {m.Who.Character}, relevé {Market.Since(m.Who.At)}").WithMargin(0, 0, 10, 0));
+            note: m.Who is null ? "inventaire inconnu sur ce PC"
+                : m.AllStock ? $"sacs et coffres de tes {m.Owners.Count} persos réunis" : $"sac et coffre de {m.Who.Character}, relevé {Market.Since(m.Who.At)}").WithMargin(0, 0, 10, 0));
         var proposalSum = m.Proposal.Sum(x => x.Total);
         kpis.Children.Add(Kpi("Gain en fabriquant", !m.HasStock ? "—" : proposalSum > 0 ? $"+{Fmt.Big(proposalSum)}" : "0", proposalSum > 0 ? Tok.Good : null, 20,
             note: !m.HasStock ? "il faut ton stock (Pet Meter)" : proposalSum > 0 ? "Kinah de plus que vendre tes ingrédients, en suivant la proposition"
                 : "rien de rentable avec ton stock aux prix connus").WithMargin(0, 0, 10, 0));
         kpis.Children.Add(Kpi("Frais de vente", $"{m.Tax:P0}", size: 20, note: $"{SaleCostDetail(m.Shown)} ; prix de {data.Label(m.Shown)}"));
         blocks.Add(kpis);
+        blocks.Add(CraftMasteryRow(m));
         // Les crafts épinglés (page d'une recette → « épingler ») : leur prix et leurs courbes sur 3 jours.
         blocks.AddRange(CraftPinBlocks(m));
 
@@ -527,6 +572,7 @@ sealed partial class ScreenViews
                               "(écran HdV → « Vendre ou garder ? ») ou note d'autres recettes et d'autres prix.", 12, Tok.Muted, wrap: true), "Ce que je fabriquerais avec ton stock"));
         // Sans stock, tout est déjà compté acheté : « ce qui rapporte » le dit, la carte des achats rentables ferait doublon.
         if (m.Flips.Count > 0 && m.HasStock) blocks.Add(CraftFlipCard(m.Flips.Take(5).ToList(), m.Flips.Count, data.Label(m.Shown)));
+        blocks.Add(CraftNextTierCard(m));
 
         if (s.CraftUndo is { } undo)
         {
@@ -569,7 +615,7 @@ sealed partial class ScreenViews
         string Title(CraftRecipe rc) => rc.Output.Qty > 1 ? $"{rc.Output.Name} ×{rc.Output.Qty}" : rc.Output.Name;
 
         // Ce qui rapporte : une carte par recette, le gain en gros, ses ingrédients (Od et « fabriqué » marqués).
-        var winners = visible.Where(p => CallOf(p, m).Call == CraftCall.Make).OrderByDescending(p => p.Gain).ToList();
+        var winners = visible.Where(p => p.Locked is null && CallOf(p, m).Call == CraftCall.Make).OrderByDescending(p => p.Gain).ToList();
         if (winners.Count > 0)
         {
             var grid = new Avalonia.Controls.Primitives.UniformGrid { Columns = 3 };
@@ -621,15 +667,18 @@ sealed partial class ScreenViews
         // Le reste, rangé par conseil : pourquoi en trois mots, le chiffre, tu peux en faire.
         const string cols = "*,200,130,110";
         var rows = new List<Control>();
-        var groups = new (CraftCall Call, string Name, IBrush Color)[]
+        // Hors de portée (maîtrise) : un groupe à part, en dernier ; null = ce groupe.
+        var groups = new (CraftCall? Call, string Name, IBrush Color)[]
         {
             (CraftCall.SellInputs, "Vends plutôt les ingrédients", Tok.Warn), (CraftCall.BuyNpc, "Achète-le au PNJ", Tok.Warn),
             (CraftCall.ForSelf, "Pour toi (ne se revend pas)", Tok.Info), (CraftCall.NoPrice, "Prix manquant", Tok.Muted),
+            (null, "Hors de portée : maîtrise trop basse", Tok.Faint),
         };
         var restCount = 0;
-        foreach (var (call, name, color) in groups)
+        foreach (var (groupCall, name, color) in groups)
         {
-            var members = visible.Where(p => CallOf(p, m).Call == call).ToList();
+            var members = visible.Where(p => groupCall is null ? p.Locked is not null : p.Locked is null && CallOf(p, m).Call == groupCall)
+                .OrderBy(p => groupCall is null ? p.Recipe.Mastery ?? 0 : 0).ToList();
             if (members.Count == 0) continue;
             // Plus de 8 recettes : le groupe se replie (ouvert par un clic, ou tant qu'on cherche).
             var group = name;
@@ -643,7 +692,8 @@ sealed partial class ScreenViews
             foreach (var p in members)
             {
                 var rc = p.Recipe;
-                var (why, whyColor) = call switch
+                var call = CallOf(p, m).Call;
+                var (why, whyColor) = groupCall is null ? (p.Locked!, Tok.Muted) : call switch
                 {
                     CraftCall.SellInputs => ("les ingrédients valent plus", Tok.Text2),
                     CraftCall.BuyNpc => ("moins cher que le fabriquer", Tok.Text2),
@@ -653,6 +703,8 @@ sealed partial class ScreenViews
                 };
                 Control result = call switch
                 {
+                    CraftCall.Make => Tip(T($"+{Fmt.Big(p.Gain!.Value)}", 13, Tok.Text2, FontWeight.SemiBold, mono: true).AlignRight(),
+                        "Ce que la recette rapporterait par fabrication, une fois ta maîtrise montée."),
                     CraftCall.SellInputs => Tip(T($"−{Fmt.Big(-p.Gain!.Value)}", 13, Tok.Bad, FontWeight.SemiBold, mono: true).AlignRight(),
                         "Par fabrication : vendre le fabriqué (frais de vente déduits) moins ce que rapporteraient ses ingrédients vendus tels quels."),
                     CraftCall.ForSelf => Tip(T((p.Complete ? "" : "au moins ") + Short(p.Cost!.Value), 13, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(),
@@ -804,6 +856,9 @@ sealed partial class ScreenViews
         if (!p.Complete && call != CraftCall.NoPrice)
             verdict += $" Sans prix ni recette, comptés 0 : {string.Join(", ", p.C.Uncounted)}.";
         if (p.C.Oldest < stale) verdict += $" Le plus ancien des prix utilisés date du {p.C.Oldest!.Value.ToLocalTime():dd/MM} : à revoir.";
+        if (p.Locked is { } locked)
+            blocks.Add(Callout($"Hors de portée pour {r.Character.Name} : {locked}. Les chiffres disent ce qu'elle rapporterait une fois ta maîtrise montée " +
+                               "(ta maîtrise se règle dans la vue d'ensemble du Craft).", Tok.Warn));
         blocks.Add(Callout(verdict, call == CraftCall.NoPrice ? Tok.Muted : color));
 
         // Les ingrédients d'une fabrication.
@@ -857,8 +912,10 @@ sealed partial class ScreenViews
             Control stock = off ? T("", 12)
                 : part.Npc is not null ? T("au besoin", 11, Tok.Muted).AlignRight()
                 : x.Have is not { } have ? T("—", 12, Tok.Faint, mono: true).AlignRight()
-                : have >= part.Qty ? T(Fmt.Big(have), 13, Tok.Text2, mono: true).AlignRight()
-                : Tip(T(Fmt.Big(have), 13, Tok.Warn, FontWeight.SemiBold, mono: true).AlignRight(), $"Il t'en manque {Fmt.Big(part.Qty - have)} pour une fabrication.");
+                : have >= part.Qty ? m.WhereOf(part) is { } on ? Tip(T(Fmt.Big(have), 13, Tok.Text2, mono: true).AlignRight(), $"Sur tes persos : {on}.")
+                    : T(Fmt.Big(have), 13, Tok.Text2, mono: true).AlignRight()
+                : Tip(T(Fmt.Big(have), 13, Tok.Warn, FontWeight.SemiBold, mono: true).AlignRight(),
+                    $"Il t'en manque {Fmt.Big(part.Qty - have)} pour une fabrication." + (have > 0 && m.WhereOf(part) is { } on2 ? $" Sur tes persos : {on2}." : ""));
             var unit = pc.Unit is { } u ? T(Fmt.Big(u), 13, off ? Tok.Faint : Tok.Text2, mono: true).AlignRight() : T("—", 12, Tok.Faint, mono: true).AlignRight();
             Control weight = off ? T("0", 13, Tok.Faint, mono: true).AlignRight()
                 : pc.Source == PartSource.None ? T("0 ?", 13, Tok.Warn, mono: true).AlignRight()

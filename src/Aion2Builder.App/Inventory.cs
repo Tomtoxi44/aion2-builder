@@ -21,6 +21,32 @@ sealed partial class ScreenViews
 
     static readonly string[] InventoryFamilies = ["Récolte", "Équipement", "Autres objets", "Sans nom"];
 
+    /// <summary>« Tous mes persos » dans le choix du perso (Inventaire, Craft) : les stocks réunis, avec qui a quoi.</summary>
+    const string AllChars = "*";
+
+    /// <summary>Le rangement sans le perso (« Tinifixi : sac » → « sac »), pour les filtres de l'inventaire réuni.</summary>
+    static string BarePlace(string place) => place.LastIndexOf(" : ", StringComparison.Ordinal) is >= 0 and var i ? place[(i + 3)..] : place;
+
+    /// <summary>Le perso d'une pile de l'inventaire réuni (« Tinifixi : sac » → « Tinifixi ») ; null pour l'inventaire d'un seul perso.</summary>
+    static string? PlaceOwner(string place) => place.LastIndexOf(" : ", StringComparison.Ordinal) is >= 0 and var i ? place[..i] : null;
+
+    /// <summary>Les objets de tous tes persos réunis : une ligne par objet, chaque pile marquée de son perso (« Tinifixi : sac »).</summary>
+    List<InventoryEntry> InventoryEntriesAll(InventoryFile inv, IReadOnlyList<CharacterInventory> owners, IReadOnlyList<GatherDay> days, Dictionary<string, MarketPrice> latest, out long kinah)
+    {
+        kinah = 0;
+        var all = new List<InventoryEntry>();
+        foreach (var c in owners)
+        {
+            all.AddRange(InventoryEntries(inv, c, days, latest, out var k)
+                .Select(e => e with { Where = e.Where.Select(w => ($"{c.Character} : {w.Place}", w.Slot, w.Qty)).ToList() }));
+            kinah += k;
+        }
+        return all.GroupBy(e => e.Id).Select(g => g.First() with { Qty = g.Sum(e => e.Qty), Where = g.SelectMany(e => e.Where).ToList() }).ToList();
+    }
+
+    /// <summary>Le stock de tous les persos lus par le Pet Meter, présenté comme celui d'un seul.</summary>
+    static CharacterInventory EveryChar(IReadOnlyList<CharacterInventory> owners) => new("tous tes persos", owners.Min(c => c.At), null, []);
+
     /// <summary>
     /// Les objets d'un perso (sac, coffre, autres rangements ; sans les pièces portées ni les Kinah, comptés à part), toutes piles
     /// réunies, nommés (ressources de récolte, liste d'Aion 2 Todo) et au dernier prix connu. Partagé par les écrans Inventaire et Craft.
@@ -47,8 +73,9 @@ sealed partial class ScreenViews
     }
 
     /// <summary>L'inventaire calculé une fois par affichage (barre de gauche, page, inspecteur) : le perso choisi, ses objets nommés et chiffrés.</summary>
+    /// <param name="All">Tous tes persos réunis (chaque pile dit sur quel perso elle est).</param>
     sealed record InventoryModel(InventoryFile Inv, List<CharacterInventory> Owners, CharacterInventory Who, List<InventoryEntry> Entries, long Kinah,
-        MarketData? Data, string? Shown);
+        MarketData? Data, string? Shown, bool All = false);
 
     InventoryModel? inventoryModel;
     bool inventoryModelDone;
@@ -60,12 +87,14 @@ sealed partial class ScreenViews
         if (PetMeterInventory.Load() is not { Chars.Count: > 0 } inv) return null;
         var days = PetMeterGathering.Merge(accountGather.Days, PetMeterGathering.Load());
         var owners = inv.Chars.Values.OrderByDescending(c => c.At).ToList();
-        var who = owners.FirstOrDefault(c => c.Character == s.InventoryChar) ?? inv.For(r.Character.Name) ?? owners[0];
+        var all = s.InventoryChar == AllChars && owners.Count > 1;
+        var who = all ? EveryChar(owners) : owners.FirstOrDefault(c => c.Character == s.InventoryChar) ?? inv.For(r.Character.Name) ?? owners[0];
         var data = market.Data;
         var shown = data is null ? null : MarketShown(data);
         var latest = data is null || shown is null ? [] : data.Latest(shown);
-        var entries = InventoryEntries(inv, who, days, latest, out var kinah);
-        return inventoryModel = new InventoryModel(inv, owners, who, entries, kinah, data, shown);
+        long kinah;
+        var entries = all ? InventoryEntriesAll(inv, owners, days, latest, out kinah) : InventoryEntries(inv, who, days, latest, out kinah);
+        return inventoryModel = new InventoryModel(inv, owners, who, entries, kinah, data, shown, all);
     }
 
     static string FamilyIcon(string family) => family switch
@@ -95,7 +124,7 @@ sealed partial class ScreenViews
                 family == "Sans nom" ? "le jeu ne donne que leur numéro ; un nom vaut pour tous" : value > 0 ? $"≈ {Short(value)} Kinah aux prix connus" : "sans prix connu",
                 s.InventoryFamily == family, () => update(st => { st.InventoryFamily = f; st.InventoryItem = null; })));
         }
-        return new SidePanel($"Inventaire · {m.Who.Character}", null, body);
+        return new SidePanel(m.All ? "Inventaire · tous" : $"Inventaire · {m.Who.Character}", null, body);
     }
 
     /// <summary>
@@ -114,7 +143,7 @@ sealed partial class ScreenViews
         var family = s.InventoryFamily is { } fam && entries.Any(e => e.Family == fam) ? fam : null;
         // Filtre de rangement : sac, coffre, ou « autres » (arcanes rangées, rangements).
         var place = s.InventoryPlace;
-        static string PlaceOf((string Place, int Slot, long Qty) w) => w.Place is "sac" or "coffre" ? w.Place : "autres";
+        static string PlaceOf((string Place, int Slot, long Qty) w) => BarePlace(w.Place) is var bare && bare is "sac" or "coffre" ? bare : "autres";
         var visible = entries.Where(e => family is null || e.Family == family).Where(e => place is null || e.Where.Any(w => PlaceOf(w) == place)).ToList();
 
         var blocks = new List<Control?>();
@@ -129,11 +158,11 @@ sealed partial class ScreenViews
         var unnamed = entries.Count(e => e.Family == "Sans nom");
         var kpis = new Avalonia.Controls.Primitives.UniformGrid { Columns = 4 };
         kpis.Children.Add(Kpi(family is null ? "Objets différents" : family == "Sans nom" ? "À nommer" : family, scope.Count.ToString(), size: 20,
-            note: $"{Fmt.Big(scope.Sum(e => e.Qty))} en tout : sac ({scope.Count(e => e.Where.Any(w => w.Place == "sac"))}), coffre ({scope.Count(e => e.Where.Any(w => w.Place == "coffre"))})").WithMargin(0, 0, 10, 0));
+            note: $"{Fmt.Big(scope.Sum(e => e.Qty))} en tout : sac ({scope.Count(e => e.Where.Any(w => BarePlace(w.Place) == "sac"))}), coffre ({scope.Count(e => e.Where.Any(w => BarePlace(w.Place) == "coffre"))})").WithMargin(0, 0, 10, 0));
         kpis.Children.Add(Kpi("Valeur connue", priced.Count == 0 ? "—" : $"≈ {Fmt.Big(priced.Sum(e => e.Value!.Value))}", priced.Count == 0 ? null : Tok.Good, 20,
             note: shown is null ? "aucun prix sans ta clé Aion 2 Todo"
                 : $"Kinah, au dernier prix noté sur {data!.Label(shown)} ; {Fmt.Plural(scope.Count - priced.Count, "objet")} sans prix, pas compté{(scope.Count - priced.Count > 1 ? "s" : "")}").WithMargin(0, 0, 10, 0));
-        kpis.Children.Add(Kpi("Kinah", m.Kinah > 0 ? Fmt.Big(m.Kinah) : "—", size: 20, note: $"dans ton sac, relevé {Market.Since(who.At)}").WithMargin(0, 0, 10, 0));
+        kpis.Children.Add(Kpi("Kinah", m.Kinah > 0 ? Fmt.Big(m.Kinah) : "—", size: 20, note: m.All ? $"sur tes {m.Owners.Count} persos : " + string.Join(", ", m.Owners.Select(c => c.Character)) : $"dans ton sac, relevé {Market.Since(who.At)}").WithMargin(0, 0, 10, 0));
         kpis.Children.Add(Kpi("Sans nom", unnamed.ToString(), unnamed > 0 ? Tok.Warn : null, 20,
             note: unnamed > 0 ? "le jeu ne donne que leur numéro : nomme-les (barre de gauche → « À nommer »)" : "tous tes objets ont un nom"));
         blocks.Add(kpis);
@@ -154,7 +183,8 @@ sealed partial class ScreenViews
 
         var selected = InventorySelected(m);
         var rows = new List<(Control Row, string Text, Control Card)>();
-        const string cols = "*,190,100,110,130";
+        // Tous tes persos : la colonne du rangement dit aussi sur quel perso, elle s'élargit.
+        var cols = m.All ? "*,290,100,110,130" : "*,190,100,110,130";
         foreach (var fam2 in InventoryFamilies.Where(f => f != "Sans nom"))
         {
             var list = visible.Where(e => e.Family == fam2).OrderByDescending(e => e.Value ?? -1).ThenByDescending(e => e.Qty).ThenBy(e => e.Name, StringComparer.CurrentCulture).ToList();
@@ -162,10 +192,14 @@ sealed partial class ScreenViews
             var lines = new List<Control>();
             foreach (var e in list)
             {
-                var whereText = string.Join(" · ", e.Where.GroupBy(w => w.Place).Select(g => $"{g.Key} ×{Fmt.Big(g.Sum(w => w.Qty))}"));
+                // Tous tes persos : « Tinifixi : sac ×6, coffre ×374 · Tarnafix : sac ×3 ».
+                var whereText = m.All
+                    ? string.Join(" · ", e.Where.GroupBy(w => PlaceOwner(w.Place)).Select(o => $"{o.Key} : " +
+                        string.Join(", ", o.GroupBy(w => BarePlace(w.Place)).Select(g => $"{g.Key} ×{Fmt.Big(g.Sum(w => w.Qty))}"))))
+                    : string.Join(" · ", e.Where.GroupBy(w => w.Place).Select(g => $"{g.Key} ×{Fmt.Big(g.Sum(w => w.Qty))}"));
                 var id = e.Id;
                 var line = TableRow(Columns(cols, MarketItemLine(e.Item, e.Name, 13, withKind: fam2 != "Récolte"),
-                        T(whereText, 12, Tok.Text2),
+                        T(whereText, 12, Tok.Text2, wrap: m.All),
                         T(Fmt.Big(e.Qty), 13, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(),
                         e.Price is { } pr ? T(Fmt.Big(pr), 12, Tok.Text2, mono: true).AlignRight() : T("—", 12, Tok.Faint, mono: true).AlignRight(),
                         e.Value is { } v ? T(Fmt.Big(v), 13, Tok.Good, mono: true).AlignRight() : T("—", 12, Tok.Faint, mono: true).AlignRight()),
@@ -239,7 +273,9 @@ sealed partial class ScreenViews
         Filter();
 
         var right = m.Owners.Count > 1
-            ? Choice(m.Owners.Select(c => (c.Character, c == who, (Action)(() => update(st => { st.InventoryChar = c.Character; st.InventoryItem = null; })))))
+            ? Tip(Choice(m.Owners.Select(c => (c.Character, !m.All && c == who, (Action)(() => update(st => { st.InventoryChar = c.Character; st.InventoryItem = null; }))))
+                .Append(("tous", m.All, (Action)(() => update(st => { st.InventoryChar = AllChars; st.InventoryItem = null; }))))),
+                "Un perso, ou « tous » : les sacs et coffres de tous tes persos réunis, chaque ligne disant sur quel perso est l'objet.")
             : (Control)T($"relevé {Market.Since(who.At)}", 11, Tok.Muted, mono: true);
         return Page($"Inventaire · {who.Character}" + (family is null ? "" : $" · {(family == "Sans nom" ? "à nommer" : family.ToLowerInvariant())}"), right, blocks.ToArray());
     }

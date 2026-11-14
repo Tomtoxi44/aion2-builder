@@ -535,6 +535,20 @@ sealed partial class ScreenViews
         };
     }
 
+    /// <summary>
+    /// Le groupe de la liste des prix pour une catégorie de la base officielle : armes, armures et bijoux vont dans « Équipement »,
+    /// les matériaux de collecte dans « Récolte », le reste garde le nom de sa catégorie du jeu ; null si la catégorie est inconnue.
+    /// </summary>
+    static string? GameGroup(string? category) => category switch
+    {
+        null or "" => null,
+        "Arcs" or "Bâtons" or "Dagues" or "Épées" or "Espadons" or "Grimoires" or "Masses" or "Orbes" or "Garde-bras"
+            or "Casques" or "Épaulettes" or "Torses" or "Gants" or "Bas" or "Chaussures" or "Capes"
+            or "Anneaux" or "Boucles d'oreilles" or "Colliers" or "Bracelets" => "Équipement",
+        "Matériaux de collecte" => "Récolte",
+        _ => category,
+    };
+
     /// <summary>Un objet comme dans l'hôtel du jeu : barre de la couleur de son rang, nom coloré, puis (facultatif) sa catégorie.</summary>
     Control MarketItemLine(MarketItem? item, string name, double size = 13, bool withKind = false)
     {
@@ -982,14 +996,22 @@ sealed partial class ScreenViews
         }
         blocks.Add(filters);
 
-        // Les groupes : type d'objet, comme les onglets de l'hôtel du jeu.
-        static string GroupOf((string Key, MarketItem? Item, List<MarketPrice> List) x) =>
-            x.Item?.IsGathering == true ? "Récolte"
-            : x.Item?.Category.StartsWith("Fabrication") == true ? "Fabrication"
-            : x.Item is null || x.Key.StartsWith("name:") || x.Item.Category is "Noté par un joueur" or "Nommé par un joueur" ? "Noté par les joueurs"
-            : "Équipement";
-        string[] order = ["Récolte", "Équipement", "Fabrication", "Noté par les joueurs"];
+        // Les groupes : type d'objet, comme les onglets de l'hôtel du jeu. Un objet noté ou fabriqué par les joueurs que la base
+        // officielle connaît va dans sa catégorie du jeu (Nourritures, Potions, Matériaux de fabrication…) ; les autres restent
+        // dans « Fabrication » ou « Noté par les joueurs ».
+        static string GroupOf((string Key, MarketItem? Item, List<MarketPrice> List) x)
+        {
+            if (x.Item?.IsGathering == true) return "Récolte";
+            var crafted = x.Item?.Category.StartsWith("Fabrication") == true;
+            var byPlayers = x.Item is null || x.Key.StartsWith("name:") || x.Item.Category is "Noté par un joueur" or "Nommé par un joueur";
+            // Une pièce d'équipement a « emplacement · rang » pour catégorie ; sinon c'est déjà une catégorie du jeu donnée par le site.
+            if (!crafted && !byPlayers) return x.Item!.Category.Contains(" · ") ? "Équipement" : GameGroup(x.Item.Category) ?? "Équipement";
+            return GameGroup(Market.ReferenceOf(x.Item?.Name ?? x.List[^1].ItemName)?.Category) ?? (crafted ? "Fabrication" : "Noté par les joueurs");
+        }
         var filtered = byItem.Where(x => s.MarketGrade is null || x.Item?.GameGrade == s.MarketGrade).ToList();
+        // Récolte et équipement d'abord, puis les catégories du jeu par ordre alphabétique, puis ce que seuls les joueurs ont noté.
+        string[] leading = ["Récolte", "Équipement"], trailing = ["Fabrication", "Noté par les joueurs"];
+        var order = leading.Concat(filtered.Select(GroupOf).Distinct().Where(g => !leading.Contains(g) && !trailing.Contains(g)).OrderBy(g => g, French)).Concat(trailing).ToList();
         const string cols = "*,110,80,96";
         var table = new StackPanel();
         var header = TableHeader(cols, "Objet", "Prix", "Évolution", "Tendance");

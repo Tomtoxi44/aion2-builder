@@ -124,7 +124,10 @@ L'interface est organisée comme un éditeur :
   niveaux de compétences, cases Daevanion ouvertes).
 - **Build et rotation** : le build des joueurs et le build conçu côte à côte (priorités, niveaux visés, ≠ là où ils
   diffèrent, rotation par phases et conseils de jeu) ; « Joueurs | Conçue » choisit celui que suivent les conseils.
-- **Bascule JcE | JcJ** toujours visible en haut ; **thème** : 8 couleurs secondaires au choix.
+- **Bascule JcE | JcJ** toujours visible en haut ; **thème** : 8 couleurs secondaires au choix, la présentation et la
+  taille de l'affichage (90 à 140 %). Présentation **IDE** (par défaut) : rail d'icônes et barre secondaire. Présentation
+  **Confort** : un seul menu à gauche, avec le nom entier de chaque écran, rangé par usage (mon personnage, combat et
+  progrès, récolte et commerce), et les sous-pages de l'écran ouvert juste dessous. Le contenu des écrans est le même.
 - **Inspecteur à droite** : clique une pièce, une stat, une compétence ou un plateau pour son détail. Sa largeur se règle
   en glissant sa bordure, **Ctrl+I** le masque. Les compteurs « − N + » (points non dépensés) recalculent tout de suite.
 - **Menus** : Fichier → Exporter le rapport en Markdown (**Ctrl+E**) / Paramètres (**Ctrl+,** : mises à jour,
@@ -267,8 +270,12 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    source publique n'existe), les mêmes que l'onglet « Prix HdV » du site. Barre de gauche : Derniers prix (un objet par
    ligne, l'objet choisi dans l'inspecteur avec sa courbe et chaque relevé), Courbes, Noter des prix (Pet Meter F9, capture
    ou à la main), Vendre ou garder ?, Retirés récemment. Un prix faux se retire pour tout le monde, rétablissable 30 jours.
+   Les derniers prix sont rangés comme l'hôtel du jeu : récolte, équipement, puis la catégorie du jeu de chaque objet que
+   la base officielle connaît (Nourritures, Potions, Matériaux de fabrication…).
    **Inventaire** : ton sac et ton coffre lus par le Pet Meter, par famille (barre de gauche), à la valeur des derniers
-   prix ; l'inspecteur dit où est rangé l'objet choisi et les recettes qui l'utilisent. **Craft** : les recettes notées par
+   prix ; l'inspecteur dit où est rangé l'objet choisi et les recettes qui l'utilisent. Avec plusieurs persos lus par le
+   Pet Meter, « tous » réunit leurs sacs et coffres et dit sur quel perso est chaque objet (dans le Craft aussi, pour le
+   stock compté). **Craft** : les recettes notées par
    les joueurs ; la vue d'ensemble dit quoi fabriquer avec ton stock, et chaque recette (barre de gauche) a sa page : coût,
    vente, gain, et le tableau de ses ingrédients (décoche ce que tu as déjà : il sort du coût). Une ressource de récolte
    est comptée au prix de l'Od du même rang quand il est moins cher (l'Od se transmute en ressource, 1 pour 1), et un
@@ -277,6 +284,13 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    3 jours, avec une case par ingrédient pour ajouter sa courbe. Seules les recettes de la faction du
    personnage sont montrées (le jeu en a une version élyséenne et une asmodienne), et « Simuler une série » chiffre N
    fabrications : coût, reste à acheter une fois ton stock déduit, vente, gain et prix plancher (taxe comprise).
+   « Garder dans les courses » ajoute la série à la page **Courses** : les ingrédients de toutes tes séries additionnés,
+   ton stock retiré une seule fois, l'hôtel et le PNJ séparés, le total à payer, et la liste en texte à copier. Une carte
+   épinglée a deux **alertes** au choix (le gain par fabrication atteint ton seuil ; la vente passe sous le prix
+   plancher) : elles s'affichent sur la carte, dans la barre de gauche et sur l'entrée Craft du rail, et les prix sont
+   alors relus toutes les 15 minutes. **Maîtrise** : indique ton niveau dans chaque métier, une fois par personnage (rien
+   ne le donne au Builder) ; les recettes qui en demandent plus sont rangées à part, et une carte montre ce que débloque
+   ton prochain palier.
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par
