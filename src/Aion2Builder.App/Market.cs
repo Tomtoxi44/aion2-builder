@@ -900,7 +900,7 @@ sealed partial class ScreenViews
                 return Page(pageTitle, null, blocks.ToArray());
         }
 
-        if (market.Shot is { Count: > 0 } waiting)
+        if (market.Shot is { Count: > 0 } waiting && !Skin.Comfort)  // Confort : c'est la première chose à faire, en tête de la page
             blocks.Add(Clickable(T($"{Fmt.Plural(waiting.Count, "ligne lue", "lignes lues")} sur une capture de l'hôtel attend{(waiting.Count > 1 ? "ent" : "")} ta vérification · ouvrir « Noter des prix »",
                 12, Tok.Warn, wrap: true), () => MarketGo(MarketPage.Add, here), null, Tok.Hover, new Thickness(0, 2)));
 
@@ -965,7 +965,10 @@ sealed partial class ScreenViews
             if (panel.Children.Count == 0) panel.Children.Add(T(empty, 12, Tok.Muted, wrap: true));
             return panel;
         }
-        if (moves.Count > 0)
+        // Présentation Confort : ce qui a le plus bougé est en tête de la page (l'essentiel), pas en deux panneaux.
+        if (Skin.Comfort)
+            pageLead = MarketLead(data, shown, byItem.Count, moves.Select(x => (x.Key, x.Last.ItemName, x.Last.Price, x.Pct!.Value)).ToList(), market.Shot?.Count ?? 0);
+        if (moves.Count > 0 && !Skin.Comfort)
             blocks.Add(Columns("*,*",
                 Card(MoveList(moves.Where(x => x.Pct > 0).OrderByDescending(x => x.Pct).Take(4), "Rien n'a monté cette semaine."), "En hausse · 7 jours",
                     T("clic : l'objet", 11, Tok.Muted, mono: true)).WithMargin(0, 0, 12, 0),
@@ -994,7 +997,7 @@ sealed partial class ScreenViews
             }
             filters.Children.Add(dots);
         }
-        blocks.Add(filters);
+        if (!Skin.Comfort) blocks.Add(filters);  // Confort : les filtres sont dans le panneau des prix, replié avec lui
 
         // Les groupes : type d'objet, comme les onglets de l'hôtel du jeu. Un objet noté ou fabriqué par les joueurs que la base
         // officielle connaît va dans sa catégorie du jeu (Nourritures, Potions, Matériaux de fabrication…) ; les autres restent
@@ -1081,7 +1084,7 @@ sealed partial class ScreenViews
         query.TextChanged += (_, _) => { s.MarketQuery = query.Text; Filter(); };
         Filter();
         blocks.Add(TableCard("Derniers prix de la communauté", T($"{Fmt.Plural(filtered.Count, "objet")} · prix unitaire en Kinah · clic : le détail à droite", 11, Tok.Muted, mono: true),
-            header, [table]));
+            Skin.Comfort ? new StackPanel { Children = { new Border { Padding = new Thickness(20, 10, 20, 4), Child = filters }, header } } : header, [table]));
         if (data.Items.Any(i => i.Source is not null))
         {
             var credit = Clickable(T("Noms officiels et rangs des objets reconnus : base d'objets AION 2 de MetaBot.GG ↗", 11, Tok.Muted), () => OpenLink("https://metabot.gg/fr_FR/aion-2/items"),

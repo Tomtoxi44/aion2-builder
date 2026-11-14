@@ -33,7 +33,7 @@ sealed record UiPrefs(string Region = "eu", string Server = "", string Name = ""
     string? PetMeterExe = null, List<string>? CraftSkip = null, List<string>? CraftMake = null,
     List<int>? CraftPins = null, List<string>? CraftPinLines = null, Dictionary<int, int>? CraftRuns = null,
     Dictionary<int, CraftAlert>? CraftAlerts = null, Dictionary<string, Dictionary<string, int>>? CraftMastery = null,
-    string Layout = "ide", int Zoom = 100)
+    string Layout = "ide", int Zoom = 100, List<string>? Folds = null)
 {
     static string PathOf => System.IO.Path.Combine(AppPaths.Root, "ui.json");
 
@@ -243,6 +243,7 @@ public sealed class MainWindow : Window
         foreach (var (id, alert) in prefs.CraftAlerts ?? []) state.CraftAlerts[id] = alert;
         if (state.CraftAlerts.Count > 0) Dispatcher.UIThread.Post(() => _ = LoadMarketAsync(), DispatcherPriority.Background);
         foreach (var (who, levels) in prefs.CraftMastery ?? []) state.CraftMastery[who] = new(levels);
+        foreach (var fold in prefs.Folds ?? []) state.Open.Add(fold);  // panneaux ouverts ou repliés en présentation Confort
         var last = prefs.LastFile is not null && opened.ContainsKey(prefs.LastFile) ? prefs.LastFile : tabs.FirstOrDefault();
         if (last is not null)
         {
@@ -405,7 +406,8 @@ public sealed class MainWindow : Window
             CraftPinLines = state.CraftPinLines.Count == 0 ? null : [.. state.CraftPinLines.Order(StringComparer.Ordinal)],
             CraftRuns = state.CraftRuns.Count == 0 ? null : new(state.CraftRuns),
             CraftAlerts = state.CraftAlerts.Count == 0 ? null : new(state.CraftAlerts),
-            CraftMastery = state.CraftMastery.Count == 0 ? null : state.CraftMastery.ToDictionary(x => x.Key, x => new Dictionary<string, int>(x.Value)) };
+            CraftMastery = state.CraftMastery.Count == 0 ? null : state.CraftMastery.ToDictionary(x => x.Key, x => new Dictionary<string, int>(x.Value)),
+            Folds = state.Open.Where(k => k.StartsWith("fold:", StringComparison.Ordinal)).Order(StringComparer.Ordinal).ToList() is { Count: > 0 } folds ? folds : null };
         prefs.Save();
         Render();
     }

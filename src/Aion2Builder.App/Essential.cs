@@ -19,10 +19,19 @@ namespace Aion2Builder.App;
 sealed partial class ScreenViews
 {
     /// <summary>Une chose à faire : son titre, une ligne d'explication (Good : un gain, écrit en vert), le mot du bouton, où il mène.</summary>
-    sealed record LeadAction(string Title, string? Text, string Button, Action Go, string? Tip = null, bool Good = false);
+    /// <remarks>Go null : rien à cliquer (un point à corriger en jeu), la carte n'a pas de bouton.</remarks>
+    sealed record LeadAction(string Title, string? Text, string Button, Action? Go, string? Tip = null, bool Good = false);
 
     /// <summary>L'en-tête d'une page : la phrase (avec son chiffre en couleur), une ligne dessous, les actions, et combien d'autres attendent.</summary>
-    sealed record PageLead(string Before, string Figure, IBrush FigureColor, string After, string Sub, List<LeadAction> Actions, int More = 0);
+    sealed record PageLead(string Before, string Figure, IBrush FigureColor, string After, string Sub, List<LeadAction> Actions, int More = 0)
+    {
+        /// <summary>Replier le détail sous l'essentiel (non pour un outil ou une liste déjà repliable : Simulation, Tous les conseils).</summary>
+        public bool Fold { get; init; } = true;
+        /// <summary>Les actions sont des conseils du plan d'action : le reste se trouve dans « Tous les conseils ».</summary>
+        public bool Advice { get; init; }
+        /// <summary>Les actions sont dans un ordre de priorité : elles sont numérotées, la première mise en avant.</summary>
+        public bool Ordered { get; init; }
+    }
 
     /// <summary>Marge des blocs d'une page (<see cref="Page"/>) : c'est à elle qu'on reconnaît le corps d'une page.</summary>
     static readonly Thickness PageMargin = new(20, 14, 20, 24);
@@ -64,7 +73,7 @@ sealed partial class ScreenViews
             _ => "Voici les trois choses qui rapportent le plus, dans l'ordre.",
         };
         return new PageLead(subject + " ", score.ToString(), Tok.Score(score), $" sur 100 en {GameDatabase.ModeName(r.Mode)}.", sub,
-            todo.Take(3).Select(f => new LeadAction(f.Title, f.Action, "y aller", () => Go(f), f.Detail)).ToList(), Math.Max(0, todo.Count - 3));
+            todo.Take(3).Select(f => new LeadAction(f.Title, f.Action, "y aller", () => Go(f), f.Detail)).ToList(), Math.Max(0, todo.Count - 3)) { Advice = true, Ordered = true };
     }
 
     /// <summary>L'essentiel du Craft : ce que rapporte la proposition avec ton stock et ses trois premières étapes ; sans stock, les trois recettes les plus rentables.</summary>
@@ -80,7 +89,7 @@ sealed partial class ScreenViews
                     var id = x.Plan.Recipe.Id;
                     return new LeadAction($"Fabrique {Fmt.Big(x.N)} × {x.Plan.Recipe.Output.Name}", $"+{Fmt.Big(x.Total)} Kinah", "voir la recette", () => OpenRecipe(id),
                         "Ouvrir la recette : ses ingrédients et le calcul.", true);
-                }).ToList(), Math.Max(0, m.Proposal.Count - 3));
+                }).ToList(), Math.Max(0, m.Proposal.Count - 3)) { Ordered = true };
         }
         var winners = m.Plans.Where(p => p.Locked is null && p.Gain > 0).OrderByDescending(p => p.Gain).ToList();
         if (winners.Count == 0)
@@ -93,7 +102,7 @@ sealed partial class ScreenViews
                 var id = p.Recipe.Id;
                 return new LeadAction(p.Recipe.Output.Name, $"+{Fmt.Big(p.Gain!.Value)} Kinah par fabrication", "voir la recette", () => OpenRecipe(id),
                     "Ouvrir la recette : ses ingrédients et le calcul.", true);
-            }).ToList(), Math.Max(0, winners.Count - 3));
+            }).ToList(), Math.Max(0, winners.Count - 3)) { Ordered = true };
     }
 
     /// <summary>La phrase en grand, sa ligne d'explication, puis une carte numérotée par chose à faire (clic : y aller).</summary>
@@ -103,7 +112,11 @@ sealed partial class ScreenViews
         sentence.Inlines = [new Run(lead.Before), new Run(lead.Figure) { Foreground = lead.FigureColor }, new Run(lead.After)];
         var head = new StackPanel { Spacing = 4, Children = { sentence, T(lead.Sub, 14, Tok.Text2, wrap: true).WithLineHeight(1.45) } };
         var panel = new StackPanel { Spacing = 14, Margin = new Thickness(0, 6, 0, 6), Children = { head } };
-        if (lead.Actions.Count == 0) return panel;
+        if (lead.Actions.Count == 0)
+        {
+            if (lead.Fold) panel.Children.Add(T("Le détail", 12, Tok.Muted, FontWeight.SemiBold).WithMargin(0, 6, 0, -4));
+            return panel;
+        }
         var cards = new Avalonia.Controls.Primitives.UniformGrid { Columns = 3 };
         var n = 0;
         foreach (var a in lead.Actions)
@@ -117,17 +130,15 @@ sealed partial class ScreenViews
             var body = new StackPanel
             {
                 Spacing = 6, Margin = new Thickness(14, 12, 14, 14),
-                Children =
-                {
-                    T(n == 1 ? "1 · à faire d'abord" : n.ToString(), 11, Accent.Main, FontWeight.SemiBold, mono: true),
-                    T(a.Title, 14, Tok.Text, FontWeight.SemiBold, wrap: true).WithLineHeight(1.3),
-                },
+                Children = { T(a.Title, 14, Tok.Text, FontWeight.SemiBold, wrap: true).WithLineHeight(1.3) },
             };
+            if (lead.Ordered) body.Children.Insert(0, T(n == 1 ? "1 · à faire d'abord" : n.ToString(), 11, Accent.Main, FontWeight.SemiBold, mono: true));
             if (!string.IsNullOrWhiteSpace(a.Text)) body.Children.Add(T(a.Text, 13, a.Good ? Tok.Good : Tok.Text2, a.Good ? FontWeight.SemiBold : FontWeight.Normal, wrap: true).WithLineHeight(1.4));
-            body.Children.Add(go);
-            var stripe = new Border { Height = 3, Background = n == 1 ? Accent.Main : Tok.Border };
+            if (a.Go is not null) body.Children.Add(go);
+            var stripe = new Border { Height = 3, Background = n == 1 && lead.Ordered ? Accent.Main : Tok.Border };
             DockPanel.SetDock(stripe, Dock.Top);
-            var card = Clickable(new DockPanel { Children = { stripe, body } }, a.Go, Tok.Panel, Tok.TileHover, new Thickness(0));
+            var inner = new DockPanel { Children = { stripe, body } };
+            var card = a.Go is { } act ? Clickable(inner, act, Tok.Panel, Tok.TileHover, new Thickness(0)) : new Border { Background = Tok.Panel, Child = inner };
             card.CornerRadius = new CornerRadius(Skin.Radius);
             card.BorderBrush = Tok.Border;
             card.BorderThickness = new Thickness(1);
@@ -136,13 +147,13 @@ sealed partial class ScreenViews
             cards.Children.Add(a.Tip is { Length: > 0 } tip ? Tip(card, tip) : card);
         }
         panel.Children.Add(cards);
-        if (lead.More > 0 && s.Screen != Screen.Craft)
+        if (lead.More > 0 && lead.Advice)
         {
             var more = Clickable(T($"{Fmt.Plural(lead.More, "autre conseil", "autres conseils")} dans « Tous les conseils » ›", 12, Accent.Main), () => GoTo(Screen.Details), null, Tok.Hover, new Thickness(4, 2));
             more.HorizontalAlignment = HorizontalAlignment.Left;
             panel.Children.Add(more);
         }
-        panel.Children.Add(T("Le détail", 12, Tok.Muted, FontWeight.SemiBold).WithMargin(0, 6, 0, -4));
+        if (lead.Fold) panel.Children.Add(T("Le détail", 12, Tok.Muted, FontWeight.SemiBold).WithMargin(0, 6, 0, -4));
         return panel;
     }
 
@@ -187,11 +198,13 @@ sealed partial class ScreenViews
     /// </summary>
     Control Compose(Control content)
     {
-        if (!Skin.Comfort || !EssentialHere || content is not StackPanel page) return content;
+        if (!Skin.Comfort || content is not StackPanel page) return content;
         var body = page.Children.OfType<StackPanel>().FirstOrDefault(p => p.Margin == PageMargin);
         if (body is null) return content;
-        var lead = s.Screen == Screen.Craft ? Crafting() is { } m ? CraftLead(m) : null : ReportLead();
+        // L'essentiel posé par l'écran lui-même, sinon celui du Craft, sinon celui d'un écran noté.
+        var lead = pageLead ?? (s.Screen == Screen.Craft ? s.CraftPage == CraftPage.Overview && Crafting() is { } m ? CraftLead(m) : null : ReportLead());
         if (lead is null) return content;
+        if (!lead.Fold) { body.Children.Insert(0, LeadBlock(lead)); return content; }
         var blocks = body.Children.ToList();
         body.Children.Clear();
         body.Children.Add(LeadBlock(lead));
@@ -217,11 +230,18 @@ sealed partial class ScreenViews
             }
             if (block is Border { Tag: string cardTitle } titled && cardTitle != "kpi") Fold(titled, cardTitle);
             // Un panneau titré suivi de ses notes (même groupe) : replié, les notes suivent.
-            else if (block is StackPanel { Orientation: Orientation.Vertical, Children.Count: > 0 } group && group.Children[0] is Border { Tag: string groupTitle } first && groupTitle != "kpi")
+            else if (block is StackPanel { Orientation: Orientation.Vertical, Children.Count: > 0 } group && group.Children[0] is Border { Tag: string groupTitle } && groupTitle != "kpi")
             {
-                Fold(first, groupTitle);
-                if (!(OpenByDefault(groupTitle) ^ s.Open.Contains(FoldKey(groupTitle))))
-                    for (var j = 1; j < group.Children.Count; j++) group.Children[j].IsVisible = false;
+                var ownerOpen = true;
+                foreach (var child in group.Children)
+                {
+                    if (child is Border { Tag: string childTitle } childCard && childTitle != "kpi")
+                    {
+                        Fold(childCard, childTitle);
+                        ownerOpen = OpenByDefault(childTitle) ^ s.Open.Contains(FoldKey(childTitle));
+                    }
+                    else if (!ownerOpen) child.IsVisible = false;
+                }
             }
             body.Children.Add(block);
         }

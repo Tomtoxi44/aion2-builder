@@ -129,8 +129,10 @@ L'interface est organisée comme un éditeur :
   **Confort** : un seul menu à gauche, avec le nom entier de chaque écran, rangé par usage (mon personnage, combat et
   progrès, récolte et commerce), et les sous-pages de l'écran ouvert juste dessous ; des couleurs adoucies, des coins
   arrondis et des titres en minuscules ; l'essentiel en tête de la première page d'un écran (une phrase qui résume, au
-  plus trois choses à faire dans l'ordre, le détail replié dessous et ouvert d'un clic) sur Accueil, Stats, Équipement,
-  Compétences, Daevanion, Familiers et Craft ; le détail de ce que tu cliques qui glisse par la droite (✕, Échap ou
+  plus trois choses à faire, le détail replié dessous et ouvert d'un clic) sur tous les écrans : la note et les conseils
+  qui rapportent le plus pour les écrans notés, ce que rapporte ton stock pour le Craft, ce qui a bougé à l'hôtel des
+  ventes, ce que vaut ton inventaire, tes récoltes du jour, le DPS et les points à corriger d'un combat, l'évolution de ta
+  note. Les panneaux que tu ouvres ou replies le restent d'une session à l'autre. Le détail de ce que tu cliques qui glisse par la droite (✕, Échap ou
   Ctrl+I pour le fermer) et les conseils ouverts depuis la barre d'état, au lieu de panneaux toujours visibles.
 - **Inspecteur à droite** : clique une pièce, une stat, une compétence ou un plateau pour son détail. Sa largeur se règle
   en glissant sa bordure, **Ctrl+I** le masque. Les compteurs « − N + » (points non dépensés) recalculent tout de suite.

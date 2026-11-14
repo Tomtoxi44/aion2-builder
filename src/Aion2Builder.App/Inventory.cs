@@ -146,6 +146,7 @@ sealed partial class ScreenViews
         static string PlaceOf((string Place, int Slot, long Qty) w) => BarePlace(w.Place) is var bare && bare is "sac" or "coffre" ? bare : "autres";
         var visible = entries.Where(e => family is null || e.Family == family).Where(e => place is null || e.Where.Any(w => PlaceOf(w) == place)).ToList();
 
+        if (Skin.Comfort && family is null) pageLead = InventoryLead(m);
         var blocks = new List<Control?>();
         if (!market.Linked)
             blocks.Add(T("Sans ta clé Aion 2 Todo (écran Familiers), seuls les noms des ressources de récolte sont connus, et aucun prix.", 12, Tok.Warn, wrap: true));
@@ -168,6 +169,7 @@ sealed partial class ScreenViews
         blocks.Add(kpis);
 
         // Filtres : texte cherché (sans redessiner l'écran) et rangement.
+        var listStart = blocks.Count;
         var query = new TextBox { Text = s.InventoryQuery ?? "", PlaceholderText = "chercher : od, potion, anneau, n° …", Width = 260 };
         blocks.Add(new StackPanel
         {
@@ -272,6 +274,14 @@ sealed partial class ScreenViews
         blocks.Add(none);
         Filter();
 
+        if (Skin.Comfort && family is null)
+        {
+            // Présentation Confort : la recherche et tous les objets forment un seul panneau, replié sous l'essentiel.
+            var list = new StackPanel { Spacing = 14, Margin = new Thickness(14, 12) };
+            foreach (var b in blocks.Skip(listStart)) if (b is not null) list.Children.Add(b);
+            blocks.RemoveRange(listStart, blocks.Count - listStart);
+            blocks.Add(Card(list, $"Tous tes objets · {entries.Count}", T("recherche, rangement, valeur de chacun", 11, Tok.Muted, mono: true), new Thickness(0)));
+        }
         var right = m.Owners.Count > 1
             ? Tip(Choice(m.Owners.Select(c => (c.Character, !m.All && c == who, (Action)(() => update(st => { st.InventoryChar = c.Character; st.InventoryItem = null; }))))
                 .Append(("tous", m.All, (Action)(() => update(st => { st.InventoryChar = AllChars; st.InventoryItem = null; }))))),

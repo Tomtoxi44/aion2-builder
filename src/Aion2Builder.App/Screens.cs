@@ -3868,6 +3868,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         // 1. Résumé : le DPS, deux badges, quatre chiffres.
         var todo = cr.Findings.Where(f => f.Severity <= Severity.Advice).ToList();
         var idle = todo.FirstOrDefault(f => f.Title.StartsWith("Temps morts", StringComparison.Ordinal));
+        if (Skin.Comfort) pageLead = CombatLead(cr, todo);
         var badges = new WrapPanel();
         if (log.Casts is { Count: > 0 })
             badges.Children.Add(Badge(idle is null ? "Bon rythme : aucune pause" : idle.Title, idle is null ? Tok.Good : Tok.Warn).WithMargin(0, 0, 8, 6));
@@ -3899,7 +3900,9 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         }
         var kpiGrid = new Avalonia.Controls.Primitives.UniformGrid { Columns = 2, Rows = 2 };
         foreach (var k in kpis) kpiGrid.Children.Add(k.WithMargin(0, 0, 10, 10));
-        page.Children.Add(Columns("*,*", hero, kpiGrid));
+        // Présentation Confort : le DPS est déjà la phrase en tête de la page ; les quatre chiffres vont dans « Chiffres clés ».
+        if (Skin.Comfort) { (kpiGrid.Columns, kpiGrid.Rows) = (4, 1); page.Children.Add(kpiGrid); }
+        else page.Children.Add(Columns("*,*", hero, kpiGrid));
         if (log.Timeline is { Count: > 1 }) page.Children.Add(TargetTimeline(log));
         if (AggroAnalyzer.Analyze(log, db.Resolve(r.Character.ClassCode, log.Kind == "pvp" ? GameMode.PvP : GameMode.PvE), db) is { } aggro)
             page.Children.Add(AggroCard(log, aggro));
@@ -4799,6 +4802,8 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
             foreach (var x in diff.Differences) list.Children.Add(ColumnsSpaced("14,*", 6, T("•", 13, Accent.Main), T(x, 13, Tok.Text2, wrap: true).WithLineHeight(1.45)));
             differences = Card(list, $"Différences entre les deux builds, et pourquoi · {diff.Differences.Count}");
         }
+        if (Skin.Comfort && s.BuildPage == BuildPage.Compare)
+            pageLead = BuildLead(designed, cls.Designed is not null, sims[0].Item2.PerSecond, sims[1].Item2.PerSecond);
         return s.BuildPage switch
         {
             BuildPage.Rotations => Page($"Build · rotations simulées · {Mode}", choice,
@@ -5531,6 +5536,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         var choices = Card(options, "Ce que tu changes", o.Any ? reset : T("rien pour l'instant", 11, Tok.Muted, mono: true));
 
         var after = o.Any ? simulate(o) : r;
+        if (Skin.Comfort) pageLead = SimulateLead(o.Any, r.Scores.Overall, after.Scores.Overall);
         // Notes aujourd'hui → après, à côté des cases, dès l'ouverture (« = » partout tant que rien n'est coché).
         const string sc = "*,90,90,64";
         var scoreRows = new StackPanel();
@@ -5874,6 +5880,9 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
             var total = items.Sum(i => i.Qty);
             var radiant = items.Where(i => i.Rank == 4).Sum(i => i.Qty);
             var seen = g.Failed + items.Count;  // au moins une récolte par ressource : seulement pour savoir si le Pet Meter a vu quelque chose
+            if (Skin.Comfort)
+                pageLead = GatherLead(g, cap, span, span == 0 && chosen.FirstOrDefault()?.Date == gameToday,
+                    market.Data is { } priced ? LotValue(priced.Latest(MarketShown(priced)), items.Where(i => i.Id is not null).Select(i => ((long)i.Id!.Value, (long)i.Qty)))?.Value : null);
             var kpis = new Avalonia.Controls.Primitives.UniformGrid { Columns = 4 };
             kpis.Children.Add(Kpi(span > 0 ? "Récoltes" : "Récoltes du jour", span > 0 ? Fmt.Big(g.Count) : $"{Fmt.Big(g.Count)} / {Fmt.Big(cap)}",
                 span == 0 && g.Count >= cap ? Tok.Good : null).WithMargin(0, 0, 10, 0));
@@ -6195,6 +6204,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         if (older.Children.Count > 0)
             recent.Children.Add(Expander(Fmt.Plural(older.Children.Count, "import plus ancien", "imports plus anciens"),
                 IsOpen("progress:older"), () => Toggle("progress:older"), () => older, new Thickness(10, 4)));
+        if (Skin.Comfort) pageLead = ProgressLead(series);
         return Page($"Progression · {progress.Count} imports depuis le {first.FetchedAtUtc.ToLocalTime():dd/MM/yyyy}", ProgressModes(),
             curvesBlock, Card(recent, "Imports, du plus récent au plus ancien", padding: new Thickness(0)));
     }
@@ -6438,6 +6448,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
                     list.Children.Add(T("Ces conseils de l'import précédent ne ressortent plus de l'analyse de celui-ci.", 11, Tok.Faint, wrap: true));
                     return list;
                 }));
+        if (Skin.Comfort) pageLead = DetailsLead();
         return Page($"À faire · {Mode} · {Fmt.CountsText(r.Findings)}", bySeverity, groups.ToArray());
     }
 
