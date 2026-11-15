@@ -220,6 +220,9 @@ static class Market
     /// </summary>
     public static IReadOnlyDictionary<string, string> GameNames { get; private set; } = new Dictionary<string, string>();
 
+    /// <summary>L'inverse : nom plié → numéros du jeu. Une pièce d'équipement rangée dans le sac n'a pas de nom dans la liste de l'hôtel.</summary>
+    public static IReadOnlyDictionary<string, List<string>> GameIds { get; private set; } = new Dictionary<string, List<string>>();
+
     public static async Task<bool> LoadOfficialRecipes()
     {
         var file = Path.Combine(AppPaths.Root, "official-recipes.json");
@@ -275,6 +278,7 @@ static class Market
             OfficialRecipes = list;
             CraftCurves = curves;
             GameNames = names;
+            GameIds = names.GroupBy(x => Fold(x.Value)).ToDictionary(g => g.Key, g => g.Select(x => x.Key).ToList());
             return true;
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { return false; }

@@ -546,7 +546,8 @@ sealed partial class ScreenViews
             var field = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { MasteryBox(m, job) } };
             if (!known) field.Children.Add(T("inconnue : chances\nles plus basses", 11, Tok.Warn).WithLineHeight(1.2));
             head.Children.Add(Named($"Ta maîtrise · {job}", Tip(field,
-                $"Ton niveau en {job}, lu dans la fenêtre d'artisanat du jeu (rien ne le donne au Builder), puis Entrée. Plus il dépasse celui d'une recette, plus elle réussit. " +
+                $"Ton niveau en {job}, comme l'affiche la fenêtre d'artisanat du jeu : le rang (Débutant, puis Spécialiste) et le niveau de 1 à 50, puis Entrée. " +
+                "« Spécialiste 50 » est le maximum. Plus ton niveau dépasse celui d'une recette, plus elle réussit. " +
                 "Vide : les chances sont celles du niveau de chaque recette, les plus basses.")));
         }
         head.Children.Add(Named("Compter", Tip(Choice(new[] { ("en moyenne", "mean"), ("au mieux", "best"), ("large", "wide") }
@@ -657,10 +658,10 @@ sealed partial class ScreenViews
             if (again) cell.Children.Add(T("à refaire : il en faut une de plus", 11, Tok.Warn, wrap: true).WithMargin(11, 0, 0, 0));
             var mine = m.Mastery.TryGetValue(rc.Profession ?? "", out var lv) ? lv : (int?)null;
             if (todo && n > 0 && !o.Transfer && mine is { } my && rc.Mastery is { } needed && my < needed)
-                cell.Children.Add(T($"{rc.Profession} {needed} demandée, tu as {my} : hors de portée", 11, Tok.Bad, wrap: true).WithMargin(11, 0, 0, 0));
+                cell.Children.Add(T($"{rc.Profession} {MasteryName(needed)} demandé, tu es {MasteryName(my)} : hors de portée", 11, Tok.Bad, wrap: true).WithMargin(11, 0, 0, 0));
             ToolTip.SetTip(names, "Par essai : " + (rc.Transfer is { } source ? $"{source} (la pièce de départ), " : "") +
                 string.Join(", ", rc.Inputs.Select(x => x.Qty > 1 ? $"{x.Qty} {x.Name}" : x.Name)) + "." +
-                (o.Transfer ? "" : $" Maîtrise demandée : {rc.Profession} {rc.Mastery}."));
+                (o.Transfer || rc.Mastery is not { } asked ? "" : $" Maîtrise demandée : {rc.Profession}, {MasteryName(asked)}."));
 
             Control chance, tries;
             if (!todo)
@@ -762,7 +763,11 @@ sealed partial class ScreenViews
             Child = Columns(cols, Label("Ressource"), Label("Il faut").AlignRight(), Label("En stock").AlignRight(), Label("Manque").AlignRight(), Label("Coût du manque").AlignRight()),
         };
         var resCard = TableCard($"Ce qu'il te faut · {Fmt.Plural(res.Count, "ressource")}, {counted}",
-            T(m.AllStock ? "stock de tous tes persos" : m.Who is null ? "stock inconnu sur ce PC : il faut le Pet Meter" : $"stock de {m.Who.Character}", 11, Tok.Muted, mono: true),
+            m.Who is null ? T("stock inconnu sur ce PC : il faut le Pet Meter", 11, Tok.Muted, mono: true)
+                : Tip(T((m.AllStock ? "stock de tous tes persos" : $"stock de {m.Who.Character}") + $", relevé {Market.Since(m.Who.At)}", 11,
+                        DateTime.UtcNow - m.Who.At > TimeSpan.FromDays(1) ? Tok.Warn : Tok.Muted, mono: true),
+                    "Le Pet Meter relève ton sac et ton coffre quand tu entres en jeu, puis à chaque changement. Lancé après ton entrée en jeu, il ne relève rien : " +
+                    "le stock affiché est alors celui de son dernier relevé sur ce PC."),
             resHead, resRows);
 
         // ----- Le détail, replié : les matériaux à fabriquer d'abord, puis les règles du jeu.

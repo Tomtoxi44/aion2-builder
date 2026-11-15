@@ -295,13 +295,15 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    épinglée a deux **alertes** au choix (le gain par fabrication atteint ton seuil ; la vente passe sous le prix
    plancher) : elles s'affichent sur la carte, dans la barre de gauche et sur l'entrée Craft du rail, et les prix sont
    alors relus toutes les 15 minutes. **Maîtrise** : indique ton niveau dans chaque métier, une fois par personnage (rien
-   ne le donne au Builder) ; les recettes qui en demandent plus sont rangées à part, et une carte montre ce que débloque
+   ne le donne au Builder), comme le jeu l'affiche : le rang (Débutant, puis Spécialiste) et le niveau de 1 à 50,
+   « Spécialiste 50 » étant le maximum ; les recettes qui en demandent plus sont rangées à part, et une carte montre ce que débloque
    ton prochain palier. **Que fabriquer avec…** : tape le nom d'une ressource, la page liste les recettes qui l'utilisent,
    ce qu'il en faut par fabrication, combien tu peux en faire avec ton stock et ce que chacune rapporte, puis les recettes
    un cran plus loin (celles qui utilisent ce que ces recettes fabriquent) ; sans rien taper, tes ressources qui servent à
    une recette. On y arrive aussi depuis un objet de l'inventaire ou de l'hôtel des ventes (« Sert à fabriquer »).
    **Chaîne d'un équipement** : une pièce (arme, armure, bijou), du premier palier blanc au dernier palier du jeu. La page
-   repère la pièce que tu portes ou que tu as en stock : ton palier est entouré (« tu es ici ») et le compte repart de lui,
+   repère la pièce que tu portes (relevé du Pet Meter ou fiche du perso, le plus récent des deux) ou que tu as en stock :
+   ton palier est entouré (« tu es ici ») et le compte repart de lui,
    sans refaire les paliers passés. Pour chaque palier restant, sa chance de réussite à ta maîtrise, sa chance de combo
    (25 % : la version « éclatante » que demande le palier suivant) et les fabrications par transfert des paliers Roi
    dragon, avec le nombre d'essais en moyenne, au mieux ou en comptant large (9 fois sur 10). Dessous, la grille des

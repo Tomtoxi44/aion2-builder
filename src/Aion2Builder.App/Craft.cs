@@ -400,7 +400,15 @@ sealed partial class ScreenViews
             : allStock ? InventoryEntriesAll(inv, owners, days, latest, out kinahHave) : InventoryEntries(inv, who, days, latest, out kinahHave);
         var byKey = entries?.GroupBy(e => e.Id.ToString()).ToDictionary(g => g.Key, g => g.Sum(e => e.Qty)) ?? [];
         var byName = entries?.Where(e => e.Family != "Sans nom").GroupBy(e => Market.Fold(e.Name)).ToDictionary(g => g.Key, g => g.Sum(e => e.Qty)) ?? [];
-        long? HaveOf(RecipePart p) => entries is null ? null : byKey.TryGetValue(p.Key, out var q) ? q : byName.GetValueOrDefault(Market.Fold(p.Name));
+        // Une pièce d'équipement rangée (sac, coffre) n'a pas de nom dans la liste de l'hôtel : elle est reconnue par son numéro du jeu.
+        long? HaveOf(RecipePart p)
+        {
+            if (entries is null) return null;
+            if (byKey.TryGetValue(p.Key, out var q)) return q;
+            var fold = Market.Fold(p.Name);
+            if (byName.TryGetValue(fold, out q)) return q;
+            return Market.GameIds.TryGetValue(fold, out var ids) ? ids.Sum(id => byKey.GetValueOrDefault(id)) : 0;
+        }
         // Stock de tous tes persos : sur lesquels est l'objet.
         string? WhereOf(RecipePart p)
         {
@@ -408,19 +416,29 @@ sealed partial class ScreenViews
             var e = entries.FirstOrDefault(x => x.Id.ToString() == p.Key) ?? entries.FirstOrDefault(x => x.Family != "Sans nom" && Market.Fold(x.Name) == Market.Fold(p.Name));
             return e is null ? null : string.Join(", ", e.Where.GroupBy(w => PlaceOwner(w.Place)).Select(g => $"{g.Key} ×{Fmt.Big(g.Sum(w => w.Qty))}"));
         }
-        // Les pièces portées : le rangement « porté » lu par le Pet Meter pour le ou les persos du stock ; sans lui, la fiche
-        // officielle du perso ouvert (s'il est celui du stock, ou sans stock).
+        // Les pièces portées. Perso ouvert (toujours compté, quel que soit le stock choisi) : deux sources, emplacement par
+        // emplacement, le rangement « porté » lu par le Pet Meter et la fiche officielle ; la plus récente des deux l'emporte,
+        // l'autre complète. Le Pet Meter ne note rien s'il est lancé après l'entrée en jeu : son relevé peut dater de plusieurs
+        // jours, et ne plus montrer l'arme d'aujourd'hui. Autres persos du stock : le Pet Meter seul.
         var wearers = new Dictionary<string, Dictionary<string, long>>(StringComparer.OrdinalIgnoreCase);
         var wornNames = new Dictionary<string, string>();
-        if (inv is not null)
-            foreach (var c in allStock ? owners : who is null ? [] : [who])
-            {
-                var pieces = c.Items.Where(i => i.Qty > 0 && inv.ContainerName(i.Cont) == "porté").GroupBy(i => i.Item.ToString()).ToDictionary(g => g.Key, g => g.Sum(i => i.Qty));
-                if (pieces.Count > 0) wearers[c.Character] = pieces;
-            }
+        Dictionary<int, string> MeterSlots(CharacterInventory? c) => c is null || inv is null ? []
+            : c.Items.Where(i => i.Qty > 0 && inv.ContainerName(i.Cont) == "porté").GroupBy(i => i.Slot).ToDictionary(g => g.Key, g => g.First().Item.ToString());
+        static Dictionary<string, long> Counted(IEnumerable<string> ids) => ids.GroupBy(id => id).ToDictionary(g => g.Key, g => (long)g.Count());
         var open = r.Character.Name;
-        if (!wearers.ContainsKey(open) && (who is null || allStock || string.Equals(who.Character, open, StringComparison.OrdinalIgnoreCase)))
-            wearers[open] = r.Character.Equipment.GroupBy(e => e.Id.ToString()).ToDictionary(g => g.Key, g => (long)g.Count());
+        var meterOpen = inv?.For(open);
+        var fromMeter = MeterSlots(meterOpen);
+        var fromSheet = r.Character.Equipment.GroupBy(e => e.SlotPos).ToDictionary(g => g.Key, g => g.First().Id.ToString());
+        var sheetFirst = meterOpen is null || fromMeter.Count == 0 || r.Character.FetchedAtUtc > meterOpen.At;
+        var onMe = new Dictionary<int, string>(sheetFirst ? fromSheet : fromMeter);
+        foreach (var (slot, id) in sheetFirst ? fromMeter : fromSheet) onMe.TryAdd(slot, id);
+        if (onMe.Count > 0) wearers[open] = Counted(onMe.Values);
+        foreach (var c in allStock ? owners : who is null ? [] : [who])
+        {
+            if (string.Equals(c.Character, open, StringComparison.OrdinalIgnoreCase)) continue;
+            var pieces = Counted(MeterSlots(c).Values);
+            if (pieces.Count > 0) wearers[c.Character] = pieces;
+        }
         // Le nom d'un numéro : celui des recettes officielles, sinon celui de la liste de l'hôtel, sinon celui de la fiche.
         foreach (var e in r.Character.Equipment) wornNames.TryAdd(e.Id.ToString(), e.Name);
         var wornCount = new Dictionary<string, long>();
@@ -445,7 +463,7 @@ sealed partial class ScreenViews
         // Ta maîtrise (perso ouvert, tapée à la main) : une recette qui en demande plus est hors de portée.
         IReadOnlyDictionary<string, int> mastery = s.CraftMastery.GetValueOrDefault(r.Character.Name) ?? [];
         string? LockOf(CraftRecipe rc) => rc.Official && rc.Profession is { } job && rc.Mastery is { } need && mastery.TryGetValue(job, out var mine) && need > mine
-            ? $"maîtrise {need} en {job} demandée, tu as {mine}" : null;
+            ? $"{job} {MasteryName(need)} demandé, tu es {MasteryName(mine)}" : null;
         // Les ingrédients de ton stock comptent à ce qu'ils te rapporteraient vendus (frais de vente déduits), les autres au prix payé.
         var book = new CraftBook(data, latest, tax, recipes, s.CraftMake, HaveOf, rc => LockOf(rc) is null);
 
@@ -832,7 +850,7 @@ sealed partial class ScreenViews
         head.Children.Add(MarketItemLine(p.Item, rc.Output.Qty > 1 ? $"{rc.Output.Name} ×{rc.Output.Qty} par fabrication" : rc.Output.Name, 18, withKind: true).WithMargin(0, 0, 16, 0));
         if (rc.Official)
         {
-            head.Children.Add(T($"recette officielle · {rc.Profession}{(rc.Mastery is { } mastery ? $", maîtrise {mastery}" : "")}", 11, Tok.Muted, mono: true).WithMargin(0, 5, 12, 0));
+            head.Children.Add(T($"recette officielle · {rc.Profession}{(rc.Mastery is int mastery && mastery > 0 ? $", {MasteryName(mastery)}" : "")}", 11, Tok.Muted, mono: true).WithMargin(0, 5, 12, 0));
             if (rc.Source is { } source)
                 head.Children.Add(Tip(Clickable(T("recette sur MetaBot.GG ↗", 11, Accent.Main, mono: true), () => OpenLink(source), null, Tok.Hover, new Thickness(6, 2)),
                     "Recette officielle relevée dans la base d'artisanat AION 2 de MetaBot.GG (site de fans) : ouvre sa page."));

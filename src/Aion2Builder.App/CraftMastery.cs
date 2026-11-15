@@ -18,16 +18,46 @@ sealed partial class ScreenViews
     static List<string> CraftProfessions() =>
         Market.OfficialRecipes.Select(rc => rc.Profession).OfType<string>().Distinct().OrderBy(p => p, French).ToList();
 
-    /// <summary>La case de ta maîtrise dans un métier, pour le perso ouvert : gardée à la sortie de la case, ou sur Entrée.</summary>
-    TextBox MasteryBox(CraftModel m, string job)
+    /// <summary>Les rangs d'un métier, comme le jeu les affiche : Débutant (niveaux 1 à 50), puis Spécialiste (1 à 50 de nouveau).</summary>
+    static readonly string[] MasteryRanks = ["Débutant", "Spécialiste"];
+
+    /// <summary>
+    /// Une maîtrise de 1 à 100 (l'échelle des recettes, relevée sur MetaBot.GG) dite comme dans le jeu : « Débutant 30 »,
+    /// « Spécialiste 5 » (55), « Spécialiste 50 » (100, le maximum).
+    /// </summary>
+    static string MasteryName(int level) => level > 50 ? $"Spécialiste {level - 50}" : $"Débutant {level}";
+
+    /// <summary>
+    /// Ta maîtrise dans un métier, pour le perso ouvert, saisie comme le jeu l'affiche : le rang, puis le niveau de 1 à 50. Gardée
+    /// de 1 à 100 (Spécialiste 5 = 55) ; enregistrée à la sortie de la case, sur Entrée ou au changement de rang.
+    /// </summary>
+    Control MasteryBox(CraftModel m, string job)
     {
         var who = r.Character.Name;
-        var box = new TextBox { Text = m.Mastery.TryGetValue(job, out var have) ? have.ToString() : "", Width = 58, PlaceholderText = "?", MaxLength = 3 };
+        var before = m.Mastery.TryGetValue(job, out var have) ? have : (int?)null;
+        var rank = new ComboBox { ItemsSource = MasteryRanks, SelectedIndex = before > 50 ? 1 : 0, MinWidth = 122, VerticalAlignment = VerticalAlignment.Center };
+        var box = new TextBox
+        {
+            Text = before is { } shown ? (shown > 50 ? shown - 50 : shown).ToString() : "", Width = 54, PlaceholderText = "niv.", MaxLength = 3,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var busy = false;
         void Commit()
         {
-            var typed = Num(box.Text) is { } v ? (int?)Math.Min(v, 999) : null;
-            var before = m.Mastery.TryGetValue(job, out var old) ? old : (int?)null;
-            if (typed == before) return;
+            if (busy) return;
+            // Un nombre au-dessus de 50 : la maîtrise entière (55, 100) ; le rang suit.
+            int? typed = Num(box.Text) is { } v && v > 0 ? (v > 50 ? (int)Math.Min(v, 100) : rank.SelectedIndex == 1 ? 50 + (int)v : (int)v) : null;
+            if (typed == before)
+            {
+                if (typed is { } same && same > 50 && (rank.SelectedIndex != 1 || box.Text != (same - 50).ToString()))
+                {
+                    busy = true;
+                    rank.SelectedIndex = 1;
+                    box.Text = (same - 50).ToString();
+                    busy = false;
+                }
+                return;
+            }
             update(st =>
             {
                 if (!st.CraftMastery.TryGetValue(who, out var mine)) st.CraftMastery[who] = mine = [];
@@ -37,7 +67,8 @@ sealed partial class ScreenViews
         }
         box.LostFocus += (_, _) => Commit();
         box.KeyDown += (_, k) => { if (k.Key == Avalonia.Input.Key.Enter) { k.Handled = true; Commit(); } };
-        return box;
+        rank.SelectionChanged += (_, _) => { if (rank.SelectedIndex >= 0) Commit(); };  // -1 : la liste se remplit ou se retire
+        return new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { rank, box } };
     }
 
     /// <summary>
@@ -51,7 +82,8 @@ sealed partial class ScreenViews
         var who = r.Character.Name;
         var row = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
         row.Children.Add(Tip(T($"Maîtrise de {who}", 13, Tok.Text, FontWeight.Medium).WithMargin(0, 0, 14, 0),
-            "Ton niveau dans chaque métier, lu dans la fenêtre d'artisanat du jeu. Rien ne le donne au Builder : tape-le ici. Chaque perso a le sien."));
+            "Ton niveau dans chaque métier, comme l'affiche la fenêtre d'artisanat du jeu : le rang (Débutant, puis Spécialiste) et le niveau de 1 à 50. " +
+            "« Spécialiste 50 » est le maximum. Rien ne le donne au Builder : indique-le ici. Chaque perso a le sien."));
         foreach (var job in jobs)
         {
             row.Children.Add(new StackPanel
@@ -90,11 +122,11 @@ sealed partial class ScreenViews
                     : p.C.ForSelf && p.Cost is { } cost ? T($"pour toi : coûte {Short(cost)}", 12, Tok.Text2, mono: true).AlignRight()
                     : T("prix manquant", 12, Tok.Faint, mono: true).AlignRight();
                 rows.Add(TableRow(Columns(cols, MarketItemLine(p.Item, rc.Output.Qty > 1 ? $"{rc.Output.Name} ×{rc.Output.Qty}" : rc.Output.Name, 13),
-                    T($"{job} · maîtrise {next} (encore {next - have})", 12, Tok.Text2), worth), false, () => OpenRecipe(id)));
+                    T($"{job} · {MasteryName(next)} (encore {Fmt.Plural(next - have, "niveau", "niveaux")})", 12, Tok.Text2), worth), false, () => OpenRecipe(id)));
             }
             var more = above.Count(p => p.Recipe.Mastery == next) - 4;
             if (more > 0)
-                rows.Add(new Border { Padding = new Thickness(20, 3), Child = T($"et {Fmt.Plural(more, "autre recette", "autres recettes")} de {job} à la maîtrise {next}", 11, Tok.Muted) });
+                rows.Add(new Border { Padding = new Thickness(20, 3), Child = T($"et {Fmt.Plural(more, "autre recette", "autres recettes")} de {job} dès {MasteryName(next)}", 11, Tok.Muted) });
         }
         if (rows.Count == 0) return null;
         return TableCard("Ce que débloque ton prochain palier", T("aux prix d'aujourd'hui · clic : la recette", 11, Tok.Muted, mono: true),
