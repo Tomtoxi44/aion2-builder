@@ -308,7 +308,9 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    (25 % : la version « éclatante » que demande le palier suivant) et les fabrications par transfert des paliers Roi
    dragon, avec le nombre d'essais en moyenne, au mieux ou en comptant large (9 fois sur 10). Dessous, la grille des
    ressources : ce qu'il faut, ton stock, ce qui manque, ce que coûte le manque, puis le total à acheter et le prix
-   complet de la pièce. Chances relevées sur MetaBot.GG.
+   complet de la pièce. Quand un transfert demande en plus une autre pièce éclatante d'un palier d'avant (Roi dragon
+   blanc, sage…), elle est écrite sous ce palier et en tête de la grille : achetée à l'hôtel des ventes ou refaite, au
+   moins cher des deux, un clic pour changer. Chances relevées sur MetaBot.GG.
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par

@@ -171,13 +171,15 @@ sealed partial class ScreenViews
     /// <summary>
     /// Ce qu'il faut pour un but. Crafts : essais par recette ; Needs : matériaux demandés par ces essais ; Raw : les mêmes une fois
     /// les matériaux fabriqués (lingot, corne raffinée) remplacés par leurs propres ingrédients, ton stock déduit ; Makes : ces
-    /// matériaux fabriqués (besoin, pris dans ton stock, fabrications).
+    /// matériaux fabriqués (besoin, pris dans ton stock, fabrications) ; Held : d'une pièce achetée à l'hôtel, ce que la chaîne
+    /// garde de ton stock pour ses propres paliers (la grille ne le compte pas une seconde fois).
     /// </summary>
     sealed class ChainBill
     {
         public Dictionary<int, double> Crafts { get; } = [];
         public Dictionary<string, double> Needs { get; } = [];
         public Dictionary<string, double> Raw { get; } = [];
+        public Dictionary<string, double> Held { get; } = [];
         public Dictionary<string, (CraftPlan Plan, double Need, double FromStock, double Crafts)> Makes { get; } = [];
         public double Total => Crafts.Values.Sum();
     }
@@ -185,9 +187,17 @@ sealed partial class ScreenViews
     /// <summary>Ce que tu as d'un objet de la chaîne : dans ton stock, et sur toi (la pièce que tu portes est celle dont tu repars).</summary>
     static double ChainHave(ChainBook book, CraftModel m, string key)
     {
-        var part = book.Parts.TryGetValue(key, out var known) ? known : new RecipePart("", book.Names.GetValueOrDefault(key, key), 1);
+        var part = ChainPart(book, key);
         return (m.HaveOf(part) ?? 0) + m.WornOf(part);
     }
+
+    static RecipePart ChainPart(ChainBook book, string key) => book.Parts.TryGetValue(key, out var known) ? known : new RecipePart("", book.Names.GetValueOrDefault(key, key), 1);
+
+    /// <summary>
+    /// Une pièce de la chaîne qu'un transfert demande en plus de celle dont il part (une autre éclatante d'un palier d'avant),
+    /// quand on choisit de l'acheter à l'hôtel plutôt que de repasser ses paliers : elle est alors comptée comme une ressource.
+    /// </summary>
+    static bool ChainBought(CraftPlan p, string key, IReadOnlySet<string> buy) => p.Recipe.Transfer is not null && buy.Contains(key);
 
     /// <summary>
     /// Où tu en es sur une ligne : le palier le plus haut dont tu as la pièce, portée ou en stock. Bright : c'est sa version
@@ -217,7 +227,7 @@ sealed partial class ScreenViews
     /// transfert rattrape le résultat normal, 1 / (chance d'obtenir l'un ou l'autre) fois plus la part de transferts. La pièce
     /// normale d'un palier Roi dragon que tu as déjà passe directement par ce transfert, sans refaire le palier.
     /// </summary>
-    static ChainBill Spread(ChainBook book, CraftModel m, string goal, bool lucky)
+    static ChainBill Spread(ChainBook book, CraftModel m, string goal, bool lucky, IReadOnlySet<string> buy)
     {
         var bill = new ChainBill();
         var want = new Dictionary<string, double> { [goal] = 1 };
@@ -226,7 +236,7 @@ sealed partial class ScreenViews
             bill.Crafts[p.Recipe.Id] = bill.Crafts.GetValueOrDefault(p.Recipe.Id) + n;
             foreach (var (key, part) in book.Inputs[p.Recipe.Id])
             {
-                var to = book.IsLink(key) ? want : bill.Needs;
+                var to = book.IsLink(key) && !ChainBought(p, key, buy) ? want : bill.Needs;
                 to[key] = to.GetValueOrDefault(key) + n * part.Qty;
             }
             if (withSource && p.Recipe.Transfer is { } src)
@@ -238,7 +248,13 @@ sealed partial class ScreenViews
         foreach (var key in ChainOrder(book, goal))
         {
             var need = want.GetValueOrDefault(key);
-            if (key != goal) need = Math.Max(0, need - ChainHave(book, m, key));
+            if (key != goal)
+            {
+                var have = ChainHave(book, m, key);
+                // Achetée à l'hôtel pour les transferts : ce que ses propres paliers prennent dans ton stock ne se déduit pas de l'achat.
+                if (buy.Contains(key)) bill.Held[key] = Math.Max(0, Math.Min(need, have) - m.WornOf(ChainPart(book, key)));
+                need = Math.Max(0, need - have);
+            }
             if (need <= 0) continue;
             var (main, then, combo) = book.Ways(key);
             if (main is null) continue;
@@ -275,7 +291,7 @@ sealed partial class ScreenViews
     /// Les mêmes essais « en comptant large » : la chaîne est jouée 2 000 fois au hasard (toujours la même suite de tirages), et
     /// chaque nombre est celui que 9 parties sur 10 ne dépassent pas. Total : le nombre d'essais en tout, compté de la même façon.
     /// </summary>
-    static (ChainBill Bill, double Total) Prudent(ChainBook book, CraftModel m, string goal)
+    static (ChainBill Bill, double Total) Prudent(ChainBook book, CraftModel m, string goal, IReadOnlySet<string> buy)
     {
         const int runs = 2000;
         var items = ChainOrder(book, goal);
@@ -293,7 +309,7 @@ sealed partial class ScreenViews
             var uses = new List<(int, int)>();
             foreach (var (key, part) in book.Inputs[p.Recipe.Id])
             {
-                if (book.IsLink(key)) { if (itemAt.TryGetValue(key, out var at)) links.Add((at, part.Qty)); }
+                if (book.IsLink(key) && !ChainBought(p, key, buy)) { if (itemAt.TryGetValue(key, out var at)) links.Add((at, part.Qty)); }
                 else
                 {
                     if (!matAt.TryGetValue(key, out var at)) { matAt[key] = at = mats.Count; mats.Add(key); }
@@ -409,20 +425,69 @@ sealed partial class ScreenViews
     /// <summary>Tout ce que la page montre pour un but : les trois comptes et, par ressource, les trois besoins et ton stock.</summary>
     sealed record ChainView(string Goal, ChainBill Best, ChainBill Mean, ChainBill Wide, double WideTotal);
 
-    (CraftModel Model, string Goal, ChainView View)? chainView;
+    (CraftModel Model, Dictionary<string, ChainView> Views, Dictionary<string, long> Costs)? chainKept;
 
-    ChainView ChainFor(ChainBook book, CraftModel m, string goal)
+    /// <summary>Les comptes déjà faits pour ce modèle (prix, stock, maîtrise) : un par but et par choix « pièce achetée ou fabriquée ».</summary>
+    (Dictionary<string, ChainView> Views, Dictionary<string, long> Costs) ChainKept(CraftModel m)
     {
-        if (chainView is { } kept && ReferenceEquals(kept.Model, m) && kept.Goal == goal) return kept.View;
-        var best = Spread(book, m, goal, true);
-        var mean = Spread(book, m, goal, false);
-        var (wide, wideTotal) = Prudent(book, m, goal);
+        if (chainKept is { } kept && ReferenceEquals(kept.Model, m)) return (kept.Views, kept.Costs);
+        var views = new Dictionary<string, ChainView>();
+        var costs = new Dictionary<string, long>();
+        chainKept = (m, views, costs);
+        return (views, costs);
+    }
+
+    static string ChainSign(string goal, IReadOnlySet<string> buy) => buy.Count == 0 ? goal : goal + "\n" + string.Join("\n", buy.Order(StringComparer.Ordinal));
+
+    /// <summary>buy : les pièces demandées en plus par un transfert qu'on achète à l'hôtel au lieu de repasser leurs paliers.</summary>
+    ChainView ChainFor(ChainBook book, CraftModel m, string goal, IReadOnlySet<string> buy)
+    {
+        var views = ChainKept(m).Views;
+        var sign = ChainSign(goal, buy);
+        if (views.TryGetValue(sign, out var kept)) return kept;
+        var best = Spread(book, m, goal, true, buy);
+        var mean = Spread(book, m, goal, false, buy);
+        var (wide, wideTotal) = Prudent(book, m, goal, buy);
+        foreach (var (key, held) in mean.Held) wide.Held[key] = held;
         Expand(book, m, best, true);
         Expand(book, m, mean, false);
         Expand(book, m, wide, false);
-        var view = new ChainView(goal, best, mean, wide, wideTotal);
-        chainView = (m, goal, view);
-        return view;
+        return views[sign] = new ChainView(goal, best, mean, wide, wideTotal);
+    }
+
+    /// <summary>
+    /// Une ligne de la grille : besoin, stock (moins ce que la chaîne en garde pour ses paliers), manque, prix à l'unité.
+    /// Piece : une pièce de la chaîne achetée à l'hôtel, pas une ressource.
+    /// </summary>
+    readonly record struct ChainRes(int At, string Key, RecipePart Part, long Need, long Have, long Miss, long? Unit, bool Piece);
+
+    static ChainRes ResOf(ChainBook book, CraftModel m, string key, int at, double need, double held)
+    {
+        var part = book.Parts[key];
+        long n = (long)Math.Ceiling(need - 1e-6), have = Math.Max(0, (m.HaveOf(part) ?? 0) - (long)Math.Ceiling(held - 1e-6));
+        return new(at, key, part, n, have, Math.Max(0, n - have), part.Npc ?? m.Book.PriceOf(part)?.Price, book.IsLink(key));
+    }
+
+    /// <summary>
+    /// Ce que coûte, en moyenne et aux derniers prix, ce que ton stock ne couvre pas pour un but : sert à choisir entre acheter
+    /// une pièce et repasser ses paliers.
+    /// </summary>
+    long ChainCost(ChainBook book, CraftModel m, string goal, IReadOnlySet<string> buy)
+    {
+        var (views, costs) = ChainKept(m);
+        var sign = ChainSign(goal, buy);
+        if (costs.TryGetValue(sign, out var known)) return known;
+        ChainBill mean;
+        if (views.TryGetValue(sign, out var view)) mean = view.Mean;
+        else
+        {
+            mean = Spread(book, m, goal, false, buy);
+            Expand(book, m, mean, false);
+        }
+        long cost = 0;
+        foreach (var (key, need) in mean.Raw)
+            if (ResOf(book, m, key, 0, need, mean.Held.GetValueOrDefault(key)) is { Unit: { } unit } row) cost += row.Miss * unit;
+        return costs[sign] = cost;
     }
 
     void OpenChain(string line, string goal) => update(st => { st.Screen = Screen.Craft; st.CraftPage = CraftPage.Chain; st.CraftChainLine = line; st.CraftChainGoal = goal; });
@@ -505,8 +570,28 @@ sealed partial class ScreenViews
         var goalAt = goals.FindIndex(g => g.Key == s.CraftChainGoal);
         if (goalAt < 0) goalAt = goals.Count - 1;
         var goal = goals[goalAt];
-        var view = ChainFor(book, m, goal.Key);
         var steps = line.Take(line.IndexOf(goal.Plan) + 1).ToList();
+        // Les pièces qu'un transfert demande en plus de celle dont il part (une autre éclatante d'un palier d'avant). Vendue à
+        // l'hôtel, elle est achetée ou refaite : par défaut le moins cher des deux, un clic sur sa ligne pour changer.
+        var asks = new List<(int Step, CraftPlan By, string Key, RecipePart Part)>();
+        for (var i = 0; i < steps.Count; i++)
+            foreach (var asker in new[] { steps[i], steps[i].Recipe.ComboName is { } shiny ? book.Ways(Market.Fold(shiny)).Then : null })
+            {
+                if (asker?.Recipe.Transfer is null) continue;
+                foreach (var (key, part) in book.Inputs[asker.Recipe.Id])
+                    if (book.IsLink(key)) asks.Add((i, asker, key, part));
+            }
+        IReadOnlySet<string> forSale = asks.Select(x => x.Key).Where(key => m.Book.PriceOf(book.Parts[key])?.Price is not null).ToHashSet();
+        IReadOnlySet<string> nothing = new HashSet<string>();
+        long costMake = 0, costBuy = 0;
+        var buying = false;
+        if (forSale.Count > 0)
+        {
+            costMake = ChainCost(book, m, goal.Key, nothing);
+            costBuy = ChainCost(book, m, goal.Key, forSale);
+            buying = s.CraftChainBuy.TryGetValue(lineKey, out var chosen) ? chosen : costBuy < costMake;
+        }
+        var view = ChainFor(book, m, goal.Key, buying ? forSale : nothing);
         var job = line[0].Recipe.Profession ?? "";
         var goalBright = goal.Key != KeyOf(goal.Plan);
         // Tu as déjà le but, ou mieux : les chiffres comptent alors une pièce de plus.
@@ -562,12 +647,7 @@ sealed partial class ScreenViews
             foreach (var key in b.Raw.Keys)
                 if (!keys.Contains(key)) keys.Add(key);
         keys.Reverse();  // le calcul part du but et descend : les ressources du premier palier d'abord
-        var res = keys.Select((key, at) =>
-        {
-            var part = book.Parts[key];
-            long need = Up(RawOf(key)), have = m.HaveOf(part) ?? 0;
-            return (At: at, Part: part, Need: need, Have: have, Miss: Math.Max(0, need - have), Unit: part.Npc ?? m.Book.PriceOf(part)?.Price);
-        }).Where(x => x.Need > 0).ToList();
+        var res = keys.Select((key, at) => ResOf(book, m, key, at, RawOf(key), bill.Held.GetValueOrDefault(key))).Where(x => x.Need > 0).ToList();
         var missing = res.Count(x => x.Miss > 0);
         var buy = res.Sum(x => x.Unit is { } u ? x.Miss * u : 0);
         var full = res.Sum(x => x.Unit is { } u ? x.Need * u : 0);
@@ -607,16 +687,19 @@ sealed partial class ScreenViews
 
         // ----- Ton chemin : un palier par ligne, du premier au but ; le palier où tu es est entouré.
         const string pathCols = "22,*,265,130";
-        // Ce qu'un palier à venir demande en plus de la pièce dont il part (une autre pièce éclatante d'un palier déjà passé).
-        var extra = steps.Where((p, i) => spot is not null && i > spot.Tier && p.Recipe.Transfer is not null)
-            .SelectMany(p => book.Inputs[p.Recipe.Id].Where(x => book.IsLink(x.Key)).Select(x => (By: p.Recipe.Output.Name, What: x.Part.Name))).ToList();
+        // Ce qu'un palier demande en plus de la pièce dont il part : combien, achetée ou non, et pour quels paliers on repasse les précédents.
+        bool BoughtOf(string key) => buying && forSale.Contains(key);
+        double AskedOf(string key) => asks.Where(x => x.Key == key).Sum(x => CraftsOf(x.By.Recipe.Id) * x.Part.Qty);
+        string AskersOf(string? key) => string.Join(" et ", asks.Where(x => (key is null ? !BoughtOf(x.Key) : x.Key == key) && CraftsOf(x.By.Recipe.Id) > 0)
+            .Select(x => $"« {x.By.Recipe.Output.Name} »").Distinct());
+        var askedKeys = asks.Select(x => x.Key).Distinct().Where(key => AskedOf(key) > 0).ToList();
+        var redoFor = AskersOf(null);
         static Border Dot(IBrush color, bool filled, double size) => new()
         {
             Width = size, Height = size, CornerRadius = new CornerRadius(size / 2), Background = filled ? color : Tok.Panel, BorderBrush = color,
             BorderThickness = new Thickness(2), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
         };
         var pathRows = new List<Control>();
-        var redo = false;
         for (var i = 0; i < steps.Count; i++)
         {
             var p = steps[i];
@@ -631,7 +714,6 @@ sealed partial class ScreenViews
             var here = spot is not null && spot.Tier == i;
             var passed = spot is not null && i <= spot.Tier;
             var again = todo && passed && (!here || spot!.Bright);
-            redo |= again;
 
             // Le repère sur le rail : fait (plein, vert), tu es ici (plein, couleur d'accent), à refaire (creux, orange), à faire (creux).
             var mark = here ? Dot(Accent.Main, true, 14) : again ? Dot(Tok.Warn, false, 11) : passed ? Dot(Tok.Good, true, 9) : Dot(last ? Accent.Main : Tok.Muted, false, 11);
@@ -655,7 +737,17 @@ sealed partial class ScreenViews
             var cell = new StackPanel { Spacing = 3, Margin = new Thickness(0, 9), VerticalAlignment = VerticalAlignment.Center, Children = { names } };
             if (here)
                 cell.Children.Add(T($"{spot!.Name}, {where}" + (!spot.Bright && bright ? " : il te manque sa version éclatante" : ""), 11, Tok.Text2, wrap: true).WithMargin(11, 0, 0, 0));
-            if (again) cell.Children.Add(T("à refaire : il en faut une de plus", 11, Tok.Warn, wrap: true).WithMargin(11, 0, 0, 0));
+            if (again)
+                cell.Children.Add(T("à refaire : il en faut une de plus" + (redoFor.Length > 0 ? $" pour {redoFor}" : ""), 11, Tok.Warn, wrap: true).WithMargin(11, 0, 0, 0));
+            foreach (var ask in asks.Where(x => x.Step == i && CraftsOf(x.By.Recipe.Id) > 0))
+            {
+                long wanted = Up(CraftsOf(ask.By.Recipe.Id) * ask.Part.Qty), stock = m.HaveOf(ask.Part) ?? 0;
+                var way = stock >= wanted ? "tu l'as en stock"
+                    : BoughtOf(ask.Key) ? $"à acheter à l'hôtel, {Short(m.Book.PriceOf(ask.Part)?.Price ?? 0)} Kinah"
+                    : "à fabriquer, c'est compté dans les paliers d'avant";
+                cell.Children.Add(Tip(T($"demande aussi {Fmt.Big(wanted)} {ask.Part.Name} : {way}", 11, stock >= wanted ? Tok.Text2 : Tok.Warn, FontWeight.SemiBold, wrap: true).WithMargin(11, 0, 0, 0),
+                    "Ce palier refond la pièce que tu as déjà et consomme en plus cette autre pièce. Elle est en tête de la grille dessous, où tu choisis de l'acheter ou de la fabriquer."));
+            }
             var mine = m.Mastery.TryGetValue(rc.Profession ?? "", out var lv) ? lv : (int?)null;
             if (todo && n > 0 && !o.Transfer && mine is { } my && rc.Mastery is { } needed && my < needed)
                 cell.Children.Add(T($"{rc.Profession} {MasteryName(needed)} demandé, tu es {MasteryName(my)} : hors de portée", 11, Tok.Bad, wrap: true).WithMargin(11, 0, 0, 0));
@@ -711,12 +803,6 @@ sealed partial class ScreenViews
             Padding = new Thickness(20, 8), Background = Tok.Alpha(color, 0.09), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1),
             Child = T(text, 12, Tok.Text, wrap: true).WithLineHeight(1.4),
         };
-        if (redo && extra.Count > 0)
-        {
-            var askers = extra.Select(x => $"« {x.By} »").Distinct().ToList();
-            pathRows.Insert(0, Band($"{string.Join(" et ", askers)} {(askers.Count > 1 ? "demandent chacun" : "demande")} aussi une autre « {extra[0].What} » : " +
-                                    "les paliers marqués « à refaire » sont à repasser pour elle.", Tok.Warn));
-        }
         if (reached)
             pathRows.Insert(0, Band($"Tu as déjà {spot!.Name} ({where}) : ce but est atteint. Les chiffres comptent une pièce de plus.", Tok.Good));
         var pathCard = TableCard($"Ton chemin · {KindOf(line)}", T("clic sur un palier : sa recette", 11, Tok.Muted, mono: true),
@@ -726,19 +812,52 @@ sealed partial class ScreenViews
         const string cols = "*,110,110,110,170";
         static TextBlock Cell(string text, IBrush color, bool bold = false) => T(text, 13, color, bold ? FontWeight.SemiBold : FontWeight.Normal, mono: true).AlignRight();
         var resRows = new List<Control>();
-        foreach (var x in res.OrderBy(x => x.Miss > 0 ? 0 : 1).ThenByDescending(x => x.Miss > 0 ? x.Unit is { } u ? x.Miss * u : -1 : 0).ThenBy(x => x.At))
+        Border ResRow(Border row, bool piece) => new()
+        {
+            Background = piece ? Tok.Alpha(Accent.Main, 0.07) : null, BorderBrush = Tok.Alpha(Tok.Border, 0.6), BorderThickness = new Thickness(0, 0, 0, 1), Child = row,
+        };
+        // Une pièce demandée en plus par un transfert : son nom, pour quel palier, et le choix « achetée ou fabriquée » quand l'hôtel la vend.
+        Control PieceName(string key, RecipePart part)
+        {
+            var bought = BoughtOf(key);
+            var note = new WrapPanel();
+            note.Children.Add(T($"pièce demandée par {AskersOf(key)} · " + (bought ? "achetée à l'hôtel" : "à fabriquer, ses ressources sont dans les lignes dessous"), 11, Tok.Text2));
+            if (forSale.Contains(key))
+            {
+                long mine = bought ? costBuy : costMake, other = bought ? costMake : costBuy;
+                note.Children.Add(T($" · total à acheter {Short(mine)}, contre {Short(other)} en {(bought ? "la fabriquant" : "l'achetant")}", 11, mine <= other ? Tok.Good : Tok.Warn));
+                note.Children.Add(Tip(Clickable(T(bought ? "la fabriquer plutôt" : "l'acheter plutôt", 11, Accent.Main, FontWeight.SemiBold, mono: true),
+                        () => update(st => st.CraftChainBuy[lineKey] = !bought), null, Tok.Hover, new Thickness(8, 0)),
+                    $"Pour ce but, en moyenne et aux derniers prix : {Fmt.Big(costBuy)} Kinah à acheter en prenant la pièce à l'hôtel, {Fmt.Big(costMake)} en repassant ses paliers. " +
+                    "Sans choix de ta part, la page prend le moins cher des deux."));
+            }
+            else note.Children.Add(T(" · pas de prix noté à l'hôtel", 11, Tok.Muted));
+            return new StackPanel { Spacing = 3, Children = { MarketItemLine(m.Book.ItemOf(part) ?? Market.ReferenceOf(part.Name), part.Name, 13), note } };
+        }
+        foreach (var key in askedKeys.Where(k => !BoughtOf(k)))
+        {
+            var part = book.Parts[key];
+            long need = Up(AskedOf(key)), have = m.HaveOf(part) ?? 0, miss = Math.Max(0, need - have);
+            resRows.Add(ResRow(TableRow(Columns(cols, PieceName(key, part),
+                Cell(Fmt.Big(need), Tok.Text, true),
+                !m.HasStock ? Cell("—", Tok.Faint) : Cell(Fmt.Big(have), have > 0 ? Tok.Text2 : Tok.Faint),
+                miss == 0 ? Cell("✓", Tok.Good, true) : Cell(Fmt.Big(miss), Tok.Bad, true),
+                miss == 0 ? Cell("—", Tok.Faint) : Tip(Cell("à fabriquer", Tok.Text2), "Son coût est celui des ressources des lignes dessous : les paliers d'avant sont à repasser pour elle.")),
+                false, () => OpenUses(part.Name)), true));
+        }
+        foreach (var x in res.OrderBy(x => x.Piece ? 0 : 1).ThenBy(x => x.Miss > 0 ? 0 : 1).ThenByDescending(x => x.Miss > 0 ? x.Unit is { } u ? x.Miss * u : -1 : 0).ThenBy(x => x.At))
         {
             var name = x.Part.Name;
             var on = m.WhereOf(x.Part);
             Control cost = x.Miss == 0 ? Cell("—", Tok.Faint)
                 : x.Unit is { } u ? Tip(Cell(Fmt.Big(x.Miss * u), Tok.Text, true), $"{Fmt.Big(x.Miss)} × {Fmt.Big(u)} Kinah pièce, au {(x.Part.Npc is not null ? "prix du PNJ" : "dernier prix de l'hôtel des ventes")}.")
                 : Tip(Cell("pas de prix", Tok.Faint), "Aucun prix noté pour cette ressource : elle ne se vend peut-être pas (objet lié), ou personne ne l'a encore relevée. Elle n'est pas comptée dans les totaux.");
-            var row = TableRow(Columns(cols, MarketItemLine(m.Book.ItemOf(x.Part) ?? Market.ReferenceOf(name), name, 13),
+            var row = TableRow(Columns(cols, x.Piece ? PieceName(x.Key, x.Part) : MarketItemLine(m.Book.ItemOf(x.Part) ?? Market.ReferenceOf(name), name, 13),
                 Cell(Fmt.Big(x.Need), Tok.Text, true),
                 !m.HasStock ? Cell("—", Tok.Faint) : Tip(Cell(Fmt.Big(x.Have), x.Have > 0 ? Tok.Text2 : Tok.Faint), on is null ? "Dans ton stock (sac, coffre, rangements)." : $"Dans ton stock : {on}."),
                 x.Miss == 0 ? Cell("✓", Tok.Good, true) : Cell(Fmt.Big(x.Miss), Tok.Bad, true),
                 cost), false, () => OpenUses(name));
-            resRows.Add(new Border { BorderBrush = Tok.Alpha(Tok.Border, 0.6), BorderThickness = new Thickness(0, 0, 0, 1), Child = row });
+            resRows.Add(ResRow(row, x.Piece));
         }
         Border Foot(string label, string note, string value, IBrush color, double size) => new()
         {
@@ -749,7 +868,8 @@ sealed partial class ScreenViews
         var counted = mode == "best" ? "au mieux" : wide ? "en comptant large" : "en moyenne";
         resRows.Add(Foot("Total à acheter",
             !m.HasStock ? "ton stock est inconnu sur ce PC : tout est compté à acheter"
-            : missing == 0 ? "ton stock couvre toutes les ressources" : $"{Fmt.Plural(missing, "ressource")} sur {res.Count} à compléter, aux derniers prix",
+            : missing == 0 ? "ton stock couvre toutes les ressources"
+            : $"{Fmt.Plural(missing, "ressource")} sur {res.Count} à compléter, aux derniers prix" + (res.Any(x => x.Piece && x.Miss > 0) ? ", la pièce achetée à l'hôtel comprise" : ""),
             $"{Fmt.Big(buy)} Kinah", missing == 0 && m.HasStock ? Tok.Good : Tok.Text, 16));
         if (m.HasStock)
             resRows.Add(Foot("Prix complet de la pièce", "si tu achetais toutes les ressources, celles de ton stock comprises", $"{Fmt.Big(full)} Kinah", Tok.Text2, 14));
@@ -762,7 +882,7 @@ sealed partial class ScreenViews
             Padding = new Thickness(20, 8), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1),
             Child = Columns(cols, Label("Ressource"), Label("Il faut").AlignRight(), Label("En stock").AlignRight(), Label("Manque").AlignRight(), Label("Coût du manque").AlignRight()),
         };
-        var resCard = TableCard($"Ce qu'il te faut · {Fmt.Plural(res.Count, "ressource")}, {counted}",
+        var resCard = TableCard($"Ce qu'il te faut · {(askedKeys.Count > 0 ? Fmt.Plural(askedKeys.Count, "pièce") + " et " : "")}{Fmt.Plural(res.Count(x => !x.Piece), "ressource")}, {counted}",
             m.Who is null ? T("stock inconnu sur ce PC : il faut le Pet Meter", 11, Tok.Muted, mono: true)
                 : Tip(T((m.AllStock ? "stock de tous tes persos" : $"stock de {m.Who.Character}") + $", relevé {Market.Since(m.Who.At)}", 11,
                         DateTime.UtcNow - m.Who.At > TimeSpan.FromDays(1) ? Tok.Warn : Tok.Muted, mono: true),
@@ -799,6 +919,7 @@ sealed partial class ScreenViews
                      "Réussie, elle a 25 % de chances de combo. Le combo donne la version « éclatante », du rang au-dessus (blanc → vert, vert → bleu, bleu → jaune). C'est une fabrication à part, qui peut rater à son tour.",
                      "La recette du palier suivant demande cette version éclatante : sans combo, la pièce normale ne sert pas à monter.",
                      "À partir du Roi dragon, on avance par transfert : la recette refond la pièce que tu as déjà, garde ses améliorations et ne rate pas. Si le combo d'un palier Roi dragon ne sort pas, un transfert donne quand même sa version éclatante, pour quelques matériaux de plus.",
+                     "Certains transferts demandent en plus une autre pièce éclatante d'un palier d'avant. Tu peux l'acheter à l'hôtel des ventes ou repasser ses paliers : la page prend le moins cher des deux, et un clic sur sa ligne, en tête de la grille, change ce choix.",
                      "Ne vends pas et ne démonte pas une pièce éclatante : il faudrait retenter le combo.",
                  })
             rules.Children.Add(T("· " + text, 12, Tok.Text2, wrap: true).WithLineHeight(1.45));

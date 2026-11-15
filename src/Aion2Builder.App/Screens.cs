@@ -101,6 +101,9 @@ sealed class UiState
     public string? CraftChainGoal { get; set; }
     /// <summary>Craft · « Chaîne d'un équipement » : comment compter (null : en moyenne ; « best » : au mieux ; « wide » : en comptant large).</summary>
     public string? CraftChainCount { get; set; }
+    /// <summary>Craft · « Chaîne d'un équipement » : la pièce qu'un transfert demande en plus, par ligne (nom plié du premier palier) :
+    /// true achetée à l'hôtel, false fabriquée ; absente : le moins cher des deux.</summary>
+    public Dictionary<string, bool> CraftChainBuy { get; } = [];
     public string? CraftFilter { get; set; }
     /// <summary>Craft : métier montré (Forge, Armure…, « Notées par les joueurs ») ; null : tous.</summary>
     public string? CraftProfession { get; set; }
