@@ -214,13 +214,20 @@ static class Market
     /// </summary>
     public static IReadOnlyDictionary<string, double[]> CraftCurves { get; private set; } = new Dictionary<string, double[]>();
 
+    /// <summary>
+    /// Numéro du jeu → nom, pour les objets des recettes officielles (même source). Le Pet Meter note les pièces portées par leur
+    /// numéro : c'est ce qui permet de reconnaître la pièce d'une chaîne d'équipement que tu as déjà sur toi.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> GameNames { get; private set; } = new Dictionary<string, string>();
+
     public static async Task<bool> LoadOfficialRecipes()
     {
         var file = Path.Combine(AppPaths.Root, "official-recipes.json");
         string? json = null;
         try { if (File.Exists(file) && DateTime.UtcNow - File.GetLastWriteTimeUtc(file) < TimeSpan.FromDays(1)) json = File.ReadAllText(file); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-        if (json is not null && !json.Contains("\"curves\"")) json = null;  // gardé d'avant les chances de fabrication : relu sur le site
+        // Gardé d'avant les chances de fabrication ou les numéros du jeu : relu sur le site.
+        if (json is not null && !(json.Contains("\"curves\"") && json.Contains("\"ids\""))) json = null;
         if (json is null)
         {
             try
@@ -248,6 +255,10 @@ static class Market
             if (doc.RootElement.TryGetProperty("curves", out var cv) && cv.ValueKind == JsonValueKind.Object)
                 foreach (var c in cv.EnumerateObject())
                     if (c.Value.ValueKind == JsonValueKind.Array) curves[c.Name] = c.Value.EnumerateArray().Select(x => x.GetDouble()).ToArray();
+            var names = new Dictionary<string, string>();
+            if (doc.RootElement.TryGetProperty("ids", out var ids) && ids.ValueKind == JsonValueKind.Object)
+                foreach (var x in ids.EnumerateObject())
+                    if (x.Value.ValueKind == JsonValueKind.String) names[x.Name] = x.Value.GetString()!;
             var list = new List<CraftRecipe>();
             foreach (var r in doc.RootElement.GetProperty("recipes").EnumerateArray())
             {
@@ -263,6 +274,7 @@ static class Market
             }
             OfficialRecipes = list;
             CraftCurves = curves;
+            GameNames = names;
             return true;
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { return false; }

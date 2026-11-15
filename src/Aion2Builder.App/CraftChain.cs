@@ -11,8 +11,9 @@ namespace Aion2Builder.App;
 /// Craft · « Chaîne d'un équipement » : du premier objet blanc au dernier palier du jeu. Une pièce d'équipement se fabrique par
 /// paliers : la fabrication d'un palier peut rater (tout est perdu), et, réussie, elle a une chance de combo (25 %) qui donne la
 /// version « éclatante », du rang au-dessus ; c'est cette version que demande la recette du palier suivant. Les paliers Roi dragon
-/// passent ensuite par des fabrications par transfert, qui partent de la pièce du palier d'avant et ne ratent pas. La page compte,
-/// pour un but, les essais de chaque recette (au mieux, en moyenne, et en comptant large) et les ressources, comparées à ton stock.
+/// passent ensuite par des fabrications par transfert, qui partent de la pièce du palier d'avant et ne ratent pas. La page repère
+/// la pièce que tu portes ou que tu as en stock (ton palier) et compte, de là jusqu'à ton but, les essais de chaque recette (en
+/// moyenne, au mieux ou en comptant large) et les ressources : ce qu'il faut, ton stock, ce qui manque et ce que coûte le manque.
 /// Chances relevées sur MetaBot.GG (servies par le site avec les recettes officielles) ; ordre des transferts déduit des paliers.
 /// </summary>
 sealed partial class ScreenViews
@@ -109,6 +110,8 @@ sealed partial class ScreenViews
             book.Inputs[p.Recipe.Id] = inputs;
             foreach (var (key, part) in inputs) book.Parts.TryAdd(key, part);
         }
+        // Une pièce qui n'est l'ingrédient d'aucune recette (le dernier palier, la pièce de départ d'un transfert) garde son numéro.
+        foreach (var p in gear) book.Parts.TryAdd(Market.Fold(p.Recipe.Output.Name), p.Recipe.Output with { Qty = 1 });
 
         // Les lignes : du blanc (aucun objet de la chaîne dans ses ingrédients), puis la recette qui demande son éclatant, etc.
         var users = new Dictionary<string, List<CraftPlan>>();
@@ -179,14 +182,40 @@ sealed partial class ScreenViews
         public double Total => Crafts.Values.Sum();
     }
 
-    /// <summary>Stock d'un objet de la chaîne (une version éclatante déjà dans ton sac compte).</summary>
-    static double ChainHave(ChainBook book, CraftModel m, string key) =>
-        m.HaveOf(book.Parts.TryGetValue(key, out var part) ? part : new RecipePart("", book.Names.GetValueOrDefault(key, key), 1)) ?? 0;
+    /// <summary>Ce que tu as d'un objet de la chaîne : dans ton stock, et sur toi (la pièce que tu portes est celle dont tu repars).</summary>
+    static double ChainHave(ChainBook book, CraftModel m, string key)
+    {
+        var part = book.Parts.TryGetValue(key, out var known) ? known : new RecipePart("", book.Names.GetValueOrDefault(key, key), 1);
+        return (m.HaveOf(part) ?? 0) + m.WornOf(part);
+    }
+
+    /// <summary>
+    /// Où tu en es sur une ligne : le palier le plus haut dont tu as la pièce, portée ou en stock. Bright : c'est sa version
+    /// éclatante (le palier est fini) ; sinon sa version normale. Worn : tu la portes ; By : sur quel perso.
+    /// </summary>
+    sealed record ChainSpot(int Tier, bool Bright, string Name, bool Worn, string? By);
+
+    static ChainSpot? SpotOf(ChainBook book, CraftModel m, List<CraftPlan> line)
+    {
+        for (var i = line.Count - 1; i >= 0; i--)
+        {
+            var rc = line[i].Recipe;
+            foreach (var (name, bright) in new (string? Name, bool Bright)[] { (rc.ComboName, true), (rc.Output.Name, false) })
+            {
+                if (name is null) continue;
+                var part = book.Parts.TryGetValue(Market.Fold(name), out var known) ? known : new RecipePart("", name, 1);
+                var worn = m.WornOf(part);
+                if (worn + (m.HaveOf(part) ?? 0) > 0) return new ChainSpot(i, bright, name, worn > 0, m.WornBy(part));
+            }
+        }
+        return null;
+    }
 
     /// <summary>
     /// Les essais de chaque recette pour un but. lucky : au mieux (rien ne rate, chaque combo sort du premier coup) ; sinon en
     /// moyenne : une recette dont on veut le combo est relancée 1 / (réussite × combo × réussite du combo) fois, et, quand un
-    /// transfert rattrape le résultat normal, 1 / (chance d'obtenir l'un ou l'autre) fois plus la part de transferts.
+    /// transfert rattrape le résultat normal, 1 / (chance d'obtenir l'un ou l'autre) fois plus la part de transferts. La pièce
+    /// normale d'un palier Roi dragon que tu as déjà passe directement par ce transfert, sans refaire le palier.
     /// </summary>
     static ChainBill Spread(ChainBook book, CraftModel m, string goal, bool lucky)
     {
@@ -214,6 +243,16 @@ sealed partial class ScreenViews
             var (main, then, combo) = book.Ways(key);
             if (main is null) continue;
             var o = OddsOf(main.Recipe, m.Mastery);
+            if (combo && then is not null)
+            {
+                var spare = Math.Min(need, ChainHave(book, m, Market.Fold(main.Recipe.Output.Name)));
+                if (spare > 0)
+                {
+                    Attempt(then, spare, false);
+                    need -= spare;
+                }
+                if (need <= 0) continue;
+            }
             if (combo)
             {
                 var yes = lucky ? 1 : o.ComboYield;
@@ -270,12 +309,14 @@ sealed partial class ScreenViews
         var sim = items.Select(key =>
         {
             var (main, then, combo) = book.Ways(key);
-            return new SimItem(Compile(main), Compile(then), combo, key == goal ? 0 : ChainHave(book, m, key));
+            return new SimItem(Compile(main), Compile(then), combo, key == goal ? 0 : ChainHave(book, m, key),
+                combo && then is not null && main is not null ? ChainHave(book, m, Market.Fold(main.Recipe.Output.Name)) : 0);
         }).ToArray();
 
         var crafts = new int[recipes.Count];
         var used = new int[mats.Count];
         var left = new double[sim.Length];
+        var spare = new double[sim.Length];
         var rng = new Random(20261114);
         int Try(SimRecipe r, bool withSource)
         {
@@ -292,6 +333,8 @@ sealed partial class ScreenViews
             var it = sim[at];
             if (left[at] >= 1) { left[at]--; return; }
             if (it.Main is null) return;
+            // La pièce normale du palier, déjà en main : le transfert la change en éclatante, sans refaire le palier.
+            if (it.Then is not null && spare[at] >= 1) { spare[at]--; Try(it.Then, false); return; }
             // Rien ne peut donner l'objet (combo voulu sans chance de combo ni transfert) : pas de boucle sans fin.
             if (it.Combo ? it.Main.Combo <= 0 && (it.Then is null || it.Main.Normal <= 0) : it.Main.Combo + it.Main.Normal <= 0) return;
             for (var guard = 0; guard < 5000; guard++)
@@ -311,7 +354,7 @@ sealed partial class ScreenViews
         {
             Array.Clear(crafts);
             Array.Clear(used);
-            for (var i = 0; i < sim.Length; i++) left[i] = sim[i].Have;
+            for (var i = 0; i < sim.Length; i++) { left[i] = sim[i].Have; spare[i] = sim[i].Spare; }
             Get(itemAt[goal]);
             for (var i = 0; i < crafts.Length; i++) { craftRuns[i][run] = crafts[i]; totals[run] += crafts[i]; }
             for (var i = 0; i < used.Length; i++) matRuns[i][run] = used[i];
@@ -329,7 +372,8 @@ sealed partial class ScreenViews
 
     /// <summary>Une recette de la chaîne prête à être jouée : objets de la chaîne et matériaux consommés par essai, objet de départ d'un transfert, chances.</summary>
     sealed record SimRecipe(int At, int Id, (int Item, int Qty)[] Links, (int Mat, int Qty)[] Mats, int Source, double Combo, double Normal);
-    sealed record SimItem(SimRecipe? Main, SimRecipe? Then, bool Combo, double Have);
+    /// <summary>Un objet de la chaîne prêt à être joué. Have : ce que tu en as ; Spare : ce que tu as de la pièce normale que le transfert change en cet objet.</summary>
+    sealed record SimItem(SimRecipe? Main, SimRecipe? Then, bool Combo, double Have, double Spare);
 
     /// <summary>
     /// Les matériaux qui se fabriquent sont remplacés par leurs ingrédients : ton stock du matériau sert d'abord, le reste est
@@ -421,7 +465,12 @@ sealed partial class ScreenViews
         return row;
     }
 
-    /// <summary>La page « Chaîne d'un équipement ».</summary>
+    /// <summary>
+    /// La page « Chaîne d'un équipement » : la pièce et le but (deux listes), où tu en es (la pièce que tu portes ou que tu as en
+    /// stock marque ton palier, et le compte repart d'elle), le chemin palier par palier, puis la grille des ressources : ce qu'il
+    /// faut, ton stock, ce qui manque et ce que coûte le manque, avec les totaux. Le détail (matériaux à fabriquer d'abord, règles
+    /// du jeu) est replié dessous.
+    /// </summary>
     Control CraftChainPage(CraftModel m, Control? right)
     {
         var book = Chains(m);
@@ -432,8 +481,17 @@ sealed partial class ScreenViews
 
         MarketItem? ItemOf(string name) => m.Book.ItemOf(new RecipePart("", name, 1)) ?? Market.ReferenceOf(name);
         string KeyOf(CraftPlan p) => Market.Fold(p.Recipe.Output.Name);
-        var line = book.Lines.FirstOrDefault(l => KeyOf(l[0]) == s.CraftChainLine) ?? book.Lines[0];
+        static long Up(double v) => (long)Math.Ceiling(v - 1e-6);
+
+        // La pièce : celle choisie ; sinon celle dont tu portes déjà un palier, puis celle dont tu en as un en stock, puis la première.
+        var spots = book.Lines.Select(l => SpotOf(book, m, l)).ToList();
+        var lineAt = book.Lines.FindIndex(l => KeyOf(l[0]) == s.CraftChainLine);
+        if (lineAt < 0) lineAt = spots.FindIndex(x => x is { Worn: true });
+        if (lineAt < 0) lineAt = spots.FindIndex(x => x is not null);
+        if (lineAt < 0) lineAt = 0;
+        var line = book.Lines[lineAt];
         var lineKey = KeyOf(line[0]);
+        var spot = spots[lineAt];
 
         // Les buts de la ligne : chaque version éclatante, et les pièces Roi dragon elles-mêmes.
         var goals = new List<(string Key, string Name, CraftPlan Plan)>();
@@ -444,193 +502,276 @@ sealed partial class ScreenViews
             if (combo is not null) goals.Add((combo, p.Recipe.ComboName!, p));
         }
         if (goals.Count == 0) goals.Add((KeyOf(line[^1]), line[^1].Recipe.Output.Name, line[^1]));
-        var goal = goals.FirstOrDefault(g => g.Key == s.CraftChainGoal);
-        if (goal.Key is null) goal = goals[^1];
+        var goalAt = goals.FindIndex(g => g.Key == s.CraftChainGoal);
+        if (goalAt < 0) goalAt = goals.Count - 1;
+        var goal = goals[goalAt];
         var view = ChainFor(book, m, goal.Key);
         var steps = line.Take(line.IndexOf(goal.Plan) + 1).ToList();
         var job = line[0].Recipe.Profession ?? "";
+        var goalBright = goal.Key != KeyOf(goal.Plan);
+        // Tu as déjà le but, ou mieux : les chiffres comptent alors une pièce de plus.
+        var reached = spot is not null && (spot.Tier >= steps.Count || spot.Tier == steps.Count - 1 && (spot.Bright || !goalBright));
 
-        // Quelle pièce, puis jusqu'où.
+        // Comment compter : en moyenne (par défaut), au mieux, ou large (9 parties sur 10).
+        var mode = s.CraftChainCount is "best" or "wide" ? s.CraftChainCount : "mean";
+        var bill = mode == "best" ? view.Best : mode == "wide" ? view.Wide : view.Mean;
+        var wide = mode == "wide";
+        double CraftsOf(int id) => wide ? Math.Max(bill.Crafts.GetValueOrDefault(id), view.Mean.Crafts.GetValueOrDefault(id)) : bill.Crafts.GetValueOrDefault(id);
+        double RawOf(string key) => wide ? Math.Max(bill.Raw.GetValueOrDefault(key), view.Mean.Raw.GetValueOrDefault(key)) : bill.Raw.GetValueOrDefault(key);
+        var wideTotal = Math.Max(view.WideTotal, view.Mean.Total);
+        var total = mode == "best" ? view.Best.Total : wide ? wideTotal : view.Mean.Total;
+        string Approx(double v) => (mode == "best" ? "" : "≈ ") + ChainCount(v);
+
+        // ----- Les choix, sur une rangée : la pièce, le but, ta maîtrise du métier, comment compter.
         string KindOf(List<CraftPlan> l) => Market.ReferenceOf(l[0].Recipe.Output.Name)?.Category is { Length: > 0 } kind ? kind : l[0].Recipe.Output.Name;
         var kinds = book.Lines.GroupBy(KindOf).ToDictionary(g => g.Key, g => g.Count());
-        var pick = Choice(book.Lines.Select(l =>
+        string LineName(List<CraftPlan> l) => kinds[KindOf(l)] > 1 ? l[0].Recipe.Output.Name : KindOf(l);
+        ComboBox Pick(List<string> names, int at, Action<int> choose)
         {
-            var key = KeyOf(l[0]);
-            return (kinds[KindOf(l)] > 1 ? l[0].Recipe.Output.Name : KindOf(l), key == lineKey, (Action)(() => update(st => { st.CraftChainLine = key; st.CraftChainGoal = null; })));
-        }), wrap: true);
-        var until = new WrapPanel();
-        foreach (var g in goals)
-        {
-            var key = g.Key;
-            var on = key == goal.Key;
-            var chip = Clickable(MarketItemLine(ItemOf(g.Name), g.Name, 12), () => update(st => { st.CraftChainLine = lineKey; st.CraftChainGoal = key; }),
-                on ? Accent.Dim : Tok.Panel, on ? null : Tok.Hover, new Thickness(8, 4));
-            chip.CornerRadius = new CornerRadius(Skin.Radius);
-            chip.BorderBrush = on ? Accent.Main : Tok.Border;
-            chip.BorderThickness = new Thickness(1);
-            until.Children.Add(chip.WithMargin(0, 0, 6, 6));
+            var box = new ComboBox { ItemsSource = names, SelectedIndex = at, MinWidth = 240, MaxDropDownHeight = 460, VerticalAlignment = VerticalAlignment.Center };
+            box.SelectionChanged += (_, _) => { if (box.SelectedIndex >= 0 && box.SelectedIndex != at) choose(box.SelectedIndex); };
+            return box;
         }
-        var choose = Card(new StackPanel
+        static StackPanel Named(string label, Control control) => new() { Spacing = 5, Margin = new Thickness(0, 0, 20, 6), Children = { Label(label), control } };
+        var head = new WrapPanel();
+        head.Children.Add(Named("Pièce", Tip(Pick(book.Lines.Select((l, i) => LineName(l) + (spots[i] is { } at ? $"   ·   tu as le palier {at.Tier + 1} sur {l.Count}" : "")).ToList(), lineAt,
+            i => { var key = KeyOf(book.Lines[i][0]); update(st => { st.CraftChainLine = key; st.CraftChainGoal = null; }); }),
+            "Armes, armures et bijoux qui se fabriquent par paliers. Une pièce dont tu as déjà un palier, sur toi ou en stock, l'indique.")));
+        head.Children.Add(Named("Ton but", Tip(Pick(goals.Select(g => g.Name).ToList(), goalAt,
+            i => { var key = goals[i].Key; update(st => { st.CraftChainLine = lineKey; st.CraftChainGoal = key; }); }),
+            "Jusqu'où tu veux monter. Par défaut : le dernier palier de la pièce.")));
+        if (job.Length > 0)
         {
-            Spacing = 10,
-            Children =
-            {
-                new StackPanel { Spacing = 6, Children = { Label("Quelle pièce"), pick } },
-                new StackPanel { Spacing = 6, Children = { Label("Jusqu'où · ton but"), until } },
-            },
-        });
+            var known = m.Mastery.ContainsKey(job);
+            var field = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { MasteryBox(m, job) } };
+            if (!known) field.Children.Add(T("inconnue : chances\nles plus basses", 11, Tok.Warn).WithLineHeight(1.2));
+            head.Children.Add(Named($"Ta maîtrise · {job}", Tip(field,
+                $"Ton niveau en {job}, lu dans la fenêtre d'artisanat du jeu (rien ne le donne au Builder), puis Entrée. Plus il dépasse celui d'une recette, plus elle réussit. " +
+                "Vide : les chances sont celles du niveau de chaque recette, les plus basses.")));
+        }
+        head.Children.Add(Named("Compter", Tip(Choice(new[] { ("en moyenne", "mean"), ("au mieux", "best"), ("large", "wide") }
+            .Select(x => (x.Item1, mode == x.Item2, (Action)(() => update(st => st.CraftChainCount = x.Item2 == "mean" ? null : x.Item2))))),
+            "En moyenne : le nombre moyen d'essais avec les chances du jeu. Au mieux : rien ne rate et chaque combo sort du premier coup. " +
+            "Large : la chaîne est jouée 2 000 fois au hasard, et 9 fois sur 10 il n'en faut pas plus.")));
+        var choose = Card(head, padding: new Thickness(14, 10, 14, 4));
 
-        // Les chiffres clés.
-        var first = steps[0];
-        var mean = view.Mean.Total;
-        var kpis = new WrapPanel();
-        kpis.Children.Add(Tip(Kpi("Fabrications en moyenne", "≈ " + ChainCount(mean), null, 22,
-            $"dont {ChainCount(view.Mean.Crafts.GetValueOrDefault(first.Recipe.Id))} × {first.Recipe.Output.Name}"),
-            "Le nombre moyen d'essais, tous paliers confondus, pour obtenir 1 fois ton but : chaque palier est relancé jusqu'à ce que son combo sorte, " +
-            "et chaque essai consomme la pièce éclatante du palier d'avant.").WithMargin(0, 0, 10, 10));
-        kpis.Children.Add(Tip(Kpi("Au mieux", ChainCount(view.Best.Total), Tok.Good, 22, "si rien ne rate et si chaque combo sort du premier coup"),
-            "Le minimum possible : une fabrication par palier.").WithMargin(0, 0, 10, 10));
-        kpis.Children.Add(Tip(Kpi("En comptant large", ChainCount(view.WideTotal), Tok.Warn, 22, "9 fois sur 10, il n'en faut pas plus"),
-            "La chaîne est jouée 2 000 fois au hasard avec les chances du jeu : dans 9 parties sur 10, le but est atteint avec ce nombre d'essais ou moins. " +
-            "Une fois sur 10, il en faut davantage.").WithMargin(0, 0, 10, 10));
-
-        // Les ressources : besoin au mieux, en moyenne, en comptant large, ton stock.
-        var order = new List<string>();
-        foreach (var bill in new[] { view.Mean, view.Wide, view.Best })
-            foreach (var key in bill.Raw.Keys)
-                if (!order.Contains(key)) order.Add(key);
-        order.Reverse();
-        var rows = order.Select(key =>
+        // ----- Les ressources : ce qu'il faut, ton stock, ce qui manque, ce que coûte le manque.
+        var keys = new List<string>();
+        foreach (var b in new[] { view.Mean, view.Wide, view.Best })
+            foreach (var key in b.Raw.Keys)
+                if (!keys.Contains(key)) keys.Add(key);
+        keys.Reverse();  // le calcul part du but et descend : les ressources du premier palier d'abord
+        var res = keys.Select((key, at) =>
         {
             var part = book.Parts[key];
-            return (Key: key, Part: part, Best: view.Best.Raw.GetValueOrDefault(key), Mean: view.Mean.Raw.GetValueOrDefault(key),
-                Wide: Math.Max(view.Wide.Raw.GetValueOrDefault(key), view.Mean.Raw.GetValueOrDefault(key)), Have: m.HaveOf(part) ?? 0);
-        }).ToList();
-        static long Up(double v) => (long)Math.Ceiling(v - 1e-6);
-        var shortMean = rows.Count(x => x.Have < Up(x.Mean));
-        var shortWide = rows.Count(x => x.Have < Up(x.Wide));
-        if (m.HasStock)
-            kpis.Children.Add(Tip(Kpi("Ton stock", shortMean == 0 ? shortWide == 0 ? "tout y est" : "ça passe" : $"il manque {Fmt.Plural(shortMean, "ressource")}",
-                shortMean == 0 ? shortWide == 0 ? Tok.Good : Tok.Warn : Tok.Bad, 18,
-                shortMean > 0 ? $"sur {rows.Count}, pour le besoin moyen" : shortWide > 0 ? $"en moyenne oui ; en comptant large, {Fmt.Plural(shortWide, "ressource")} à compléter" : "même en comptant large"),
-                "Ton stock comparé à ce que la chaîne demande, du premier palier à ton but. Le détail est dans le tableau des ressources.").WithMargin(0, 0, 10, 10));
+            long need = Up(RawOf(key)), have = m.HaveOf(part) ?? 0;
+            return (At: at, Part: part, Need: need, Have: have, Miss: Math.Max(0, need - have), Unit: part.Npc ?? m.Book.PriceOf(part)?.Price);
+        }).Where(x => x.Need > 0).ToList();
+        var missing = res.Count(x => x.Miss > 0);
+        var buy = res.Sum(x => x.Unit is { } u ? x.Miss * u : 0);
+        var full = res.Sum(x => x.Unit is { } u ? x.Need * u : 0);
+        var unpriced = res.Where(x => x.Unit is null).ToList();
 
-        // Les paliers, du blanc au but.
-        const string stepCols = "*,120,80,130,190";
-        var stepRows = new List<Control>();
-        Control Count(CraftPlan p)
+        // ----- Les chiffres clés : où tu en es, ce qu'il reste à fabriquer, ce qu'il reste à acheter.
+        var where = spot is null ? "" : !spot.Worn ? "dans ton stock"
+            : "équipée" + (spot.By is { } by && (m.AllStock || !string.Equals(by, r.Character.Name, StringComparison.OrdinalIgnoreCase)) ? $" sur {by}" : "");
+        var kpis = new WrapPanel();
+        kpis.Children.Add(Tip(Kpi("Où tu en es", spot is null ? "pas commencé" : reached ? "but atteint" : $"palier {spot.Tier + 1} sur {steps.Count}",
+            spot is null ? Tok.Text2 : reached ? Tok.Good : Accent.Main, 20,
+            spot is null ? "aucune pièce de cette chaîne sur toi ni dans ton stock" : $"{spot.Name}, {where}"),
+            "La pièce la plus haute de cette chaîne que tu portes ou que tu as en stock (lue par le Pet Meter, ou sur ta fiche). Le compte repart d'elle : les paliers déjà passés ne sont pas refaits.")
+            .WithMargin(0, 0, 10, 10));
+        kpis.Children.Add(Tip(Kpi("Fabrications à faire", Approx(total), null, 20,
+            mode == "best" ? "si rien ne rate et si chaque combo sort du premier coup"
+            : wide ? "9 fois sur 10, il n'en faut pas plus"
+            : $"au mieux {ChainCount(view.Best.Total)} · en comptant large {ChainCount(wideTotal)}"),
+            "Le nombre d'essais, tous paliers confondus, pour obtenir 1 fois ton but en partant de ce que tu as : chaque palier est relancé jusqu'à ce que son combo sorte, " +
+            "et chaque essai consomme la pièce éclatante du palier d'avant.").WithMargin(0, 0, 10, 10));
+        kpis.Children.Add(Tip(m.HasStock
+            ? Kpi("À acheter", missing == 0 ? "rien" : Short(buy), missing == 0 ? Tok.Good : null, 20,
+                missing == 0 ? "ton stock couvre toutes les ressources" : $"Kinah, pour {Fmt.Plural(missing, "ressource")} qui manque{(missing > 1 ? "nt" : "")} sur {res.Count}")
+            : Kpi("Tout acheter", Short(full), null, 20, "Kinah ; ton stock est inconnu sur ce PC (il faut le Pet Meter)"),
+            "Ce que coûtent, aux derniers prix de l'hôtel des ventes (ou du PNJ), les ressources que ton stock ne couvre pas. Le détail est dans la grille dessous.")
+            .WithMargin(0, 0, 10, 10));
+        if (m.HasStock)
+            kpis.Children.Add(Tip(Kpi("Prix complet", Short(full), null, 20, "Kinah, si tu achetais tout, ton stock compris"),
+                "Ce que valent toutes les ressources de la chaîne aux derniers prix : ce que te coûte la pièce, en comptant aussi ce que tu sors de ton stock.")
+                .WithMargin(0, 0, 10, 10));
+        if (Skin.Comfort)
+            pageLead = spot is null || reached
+                ? new PageLead($"{goal.Name} : ", Approx(total), Tok.Text, " fabrications à faire.",
+                    reached ? $"Tu as déjà {spot!.Name} : les chiffres comptent une pièce de plus." : "Tu n'as encore aucune pièce de cette chaîne : le compte part du premier palier.", []) { Fold = false }
+                : new PageLead("Tu es au ", $"palier {spot.Tier + 1} sur {steps.Count}", Accent.Main, $" : il te reste {Approx(total)} fabrications.",
+                    $"Tu as {spot.Name} ({where}). Ton but : {goal.Name}." + (m.HasStock && missing > 0 ? $" Ressources à acheter : {Short(buy)} Kinah." : ""), []) { Fold = false };
+
+        // ----- Ton chemin : un palier par ligne, du premier au but ; le palier où tu es est entouré.
+        const string pathCols = "22,*,265,130";
+        // Ce qu'un palier à venir demande en plus de la pièce dont il part (une autre pièce éclatante d'un palier déjà passé).
+        var extra = steps.Where((p, i) => spot is not null && i > spot.Tier && p.Recipe.Transfer is not null)
+            .SelectMany(p => book.Inputs[p.Recipe.Id].Where(x => book.IsLink(x.Key)).Select(x => (By: p.Recipe.Output.Name, What: x.Part.Name))).ToList();
+        static Border Dot(IBrush color, bool filled, double size) => new()
         {
-            var id = p.Recipe.Id;
-            var n = view.Mean.Crafts.GetValueOrDefault(id);
-            if (n <= 0) return Tip(T("0", 13, Tok.Faint, mono: true).AlignRight(), "Aucun essai à faire : ton stock couvre déjà ce que ce palier fournit.");
-            return new StackPanel
-            {
-                Children =
-                {
-                    T("≈ " + ChainCount(n), 14, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(),
-                    T($"mieux {ChainCount(view.Best.Crafts.GetValueOrDefault(id))} · large {ChainCount(Math.Max(n, view.Wide.Crafts.GetValueOrDefault(id)))}", 11, Tok.Muted, mono: true).AlignRight(),
-                },
-            };
-        }
-        string Inputs(CraftPlan p) => string.Join(", ", p.Recipe.Inputs.Select(i => i.Qty > 1 ? $"{i.Qty} {i.Name}" : i.Name));
-        void Step(CraftPlan p, bool rescue)
+            Width = size, Height = size, CornerRadius = new CornerRadius(size / 2), Background = filled ? color : Tok.Panel, BorderBrush = color,
+            BorderThickness = new Thickness(2), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+        };
+        var pathRows = new List<Control>();
+        var redo = false;
+        for (var i = 0; i < steps.Count; i++)
         {
+            var p = steps[i];
             var rc = p.Recipe;
             var o = OddsOf(rc, m.Mastery);
-            var name = new StackPanel { Spacing = 2, Children = { MarketItemLine(ItemOf(rc.Output.Name), rc.Output.Name, 13) } };
-            if (rescue) name.Children.Insert(0, T("si le combo ne sort pas, le transfert le rattrape :", 11, Tok.Muted, wrap: true).WithMargin(11, 0, 0, 0));
-            if (rc.ComboName is { } result)
-                name.Children.Add(new StackPanel
-                {
-                    Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(11, 0, 0, 0),
-                    Children = { T("combo →", 11, Tok.Muted, mono: true), T(result, 12, MarketBrush(ItemOf(result)?.GameGrade), FontWeight.Medium, wrap: true) },
-                });
-            name.Children.Add(T("par essai : " + (rc.Transfer is { } source ? $"{source} (la pièce de départ), " : "") + Inputs(p), 11, Tok.Muted, wrap: true).WithMargin(11, 0, 0, 0));
+            var last = i == steps.Count - 1;
+            // Ce palier doit donner sa version éclatante (le but peut être la pièce Roi dragon elle-même).
+            var bright = rc.ComboName is not null && (!last || goalBright);
+            var then = bright ? book.Ways(Market.Fold(rc.ComboName!)).Then : null;
+            double n = CraftsOf(rc.Id), t = then is null ? 0 : CraftsOf(then.Recipe.Id);
+            var todo = n > 0 || t > 0;
+            var here = spot is not null && spot.Tier == i;
+            var passed = spot is not null && i <= spot.Tier;
+            var again = todo && passed && (!here || spot!.Bright);
+            redo |= again;
 
-            Control mastery;
-            if (o.Transfer) mastery = T("transfert", 12, Tok.Text2, mono: true);
+            // Le repère sur le rail : fait (plein, vert), tu es ici (plein, couleur d'accent), à refaire (creux, orange), à faire (creux).
+            var mark = here ? Dot(Accent.Main, true, 14) : again ? Dot(Tok.Warn, false, 11) : passed ? Dot(Tok.Good, true, 9) : Dot(last ? Accent.Main : Tok.Muted, false, 11);
+            Border Rail(bool show, bool done) => new() { Width = 2, HorizontalAlignment = HorizontalAlignment.Center, Background = done ? Tok.Alpha(Tok.Good, 0.55) : Tok.Border, IsVisible = show };
+            var up = Rail(i > 0, passed);
+            var down = Rail(!last, spot is not null && i < spot.Tier);
+            Grid.SetRow(down, 1);
+            Grid.SetRowSpan(mark, 2);
+            var rail = new Grid { RowDefinitions = new RowDefinitions("*,*"), Children = { up, down, mark } };
+
+            var names = new WrapPanel();
+            names.Children.Add(MarketItemLine(ItemOf(rc.Output.Name), rc.Output.Name, 13));
+            if (bright)
+            {
+                names.Children.Add(T("→", 12, Tok.Muted).WithMargin(8, 0, 8, 0));
+                names.Children.Add(T(rc.ComboName!, 13, MarketBrush(ItemOf(rc.ComboName!)?.GameGrade), FontWeight.Medium));
+            }
+            if (here) names.Children.Add(Badge("tu es ici", Accent.Main).WithMargin(10, 0, 0, 0));
+            if (last && !reached) names.Children.Add(Badge("ton but", Tok.Text2).WithMargin(10, 0, 0, 0));
+            foreach (var child in names.Children) child.VerticalAlignment = VerticalAlignment.Center;
+            var cell = new StackPanel { Spacing = 3, Margin = new Thickness(0, 9), VerticalAlignment = VerticalAlignment.Center, Children = { names } };
+            if (here)
+                cell.Children.Add(T($"{spot!.Name}, {where}" + (!spot.Bright && bright ? " : il te manque sa version éclatante" : ""), 11, Tok.Text2, wrap: true).WithMargin(11, 0, 0, 0));
+            if (again) cell.Children.Add(T("à refaire : il en faut une de plus", 11, Tok.Warn, wrap: true).WithMargin(11, 0, 0, 0));
+            var mine = m.Mastery.TryGetValue(rc.Profession ?? "", out var lv) ? lv : (int?)null;
+            if (todo && n > 0 && !o.Transfer && mine is { } my && rc.Mastery is { } needed && my < needed)
+                cell.Children.Add(T($"{rc.Profession} {needed} demandée, tu as {my} : hors de portée", 11, Tok.Bad, wrap: true).WithMargin(11, 0, 0, 0));
+            ToolTip.SetTip(names, "Par essai : " + (rc.Transfer is { } source ? $"{source} (la pièce de départ), " : "") +
+                string.Join(", ", rc.Inputs.Select(x => x.Qty > 1 ? $"{x.Qty} {x.Name}" : x.Name)) + "." +
+                (o.Transfer ? "" : $" Maîtrise demandée : {rc.Profession} {rc.Mastery}."));
+
+            Control chance, tries;
+            if (!todo)
+            {
+                chance = passed ? T("fait", 12, Tok.Good, mono: true) : Tip(T("couvert", 12, Tok.Text2, mono: true), "Aucun essai à faire : ce que tu as déjà couvre ce palier.");
+                tries = T("", 12);
+            }
             else
             {
-                var mine = m.Mastery.TryGetValue(rc.Profession ?? "", out var lv) ? lv : (int?)null;
-                var low = mine is { } have && rc.Mastery is { } need && have < need;
-                mastery = new StackPanel
-                {
-                    Children =
-                    {
-                        T($"{rc.Profession} {rc.Mastery}", 12, low ? Tok.Bad : Tok.Text2, mono: true),
-                        T(mine is { } my ? low ? $"tu as {my} : hors de portée" : $"tu as {my}" : "la tienne : inconnue", 11, low ? Tok.Bad : Tok.Muted, wrap: true),
-                    },
-                };
+                // Tu as déjà la pièce normale de ce palier : seul le transfert vers l'éclatante reste.
+                var onlyTransfer = n <= 0 || o.Transfer;
+                var top = onlyTransfer ? T("transfert : ne rate pas", 12, Tok.Good, mono: true)
+                    : o.Success is { } ok ? T($"réussite {ChainPct(ok)}", 12, ok >= 0.9 ? Tok.Good : ok >= 0.8 ? Tok.Text : Tok.Warn, FontWeight.SemiBold, mono: true)
+                    : T("réussite inconnue", 12, Tok.Faint, mono: true);
+                var odds = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center, Children = { top } };
+                if (bright && rc.Combo > 0 && n > 0)
+                    odds.Children.Add(T($"éclatante : {(o.Transfer ? $"{rc.Combo} %" : ChainPct(o.ComboYield))}{(then is not null ? ", sinon transfert" : "")}", 11, Tok.Muted, mono: true));
+                chance = Tip(odds, n <= 0 ? "Un transfert refond la pièce que tu as déjà en sa version éclatante : il réussit toujours."
+                    : o.Transfer ? "Une fabrication par transfert refond la pièce que tu as déjà : elle réussit toujours et garde ses améliorations." +
+                                   (bright && rc.Combo > 0 ? $" Une fois sur {Fmt.Num(100.0 / rc.Combo)}, elle donne directement la version éclatante" + (then is not null ? " ; sinon un second transfert la donne." : ".") : "")
+                    : "Chance que la fabrication réussisse. Ratée, tous ses ingrédients sont perdus, la pièce éclatante du palier d'avant comprise." +
+                      (bright && rc.Combo > 0 ? $" Réussie, elle a {rc.Combo} % de chances de combo ; le combo est une fabrication à part, qui peut rater à son tour : " +
+                          $"{ChainPct(o.Success ?? 1)} × {rc.Combo} % × {ChainPct(o.ComboSuccess ?? o.Success ?? 1)} = {ChainPct(o.ComboYield)} des essais donnent l'éclatante." +
+                          (then is not null ? " Si le combo ne sort pas, un transfert change la pièce normale en éclatante." : "") : "") +
+                      (o.Known ? "" : " Ta maîtrise n'est pas renseignée : ce sont les chances les plus basses."));
+                var count = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                if (n > 0) count.Children.Add(T(Approx(n), 14, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight());
+                if (t > 0) count.Children.Add(T($"{(n > 0 ? "+ " : "")}{Approx(t)} transfert{(t >= 2 ? "s" : "")}", n > 0 ? 11 : 13, n > 0 ? Tok.Muted : Tok.Text, n > 0 ? FontWeight.Normal : FontWeight.SemiBold, mono: true).AlignRight());
+                tries = count;
             }
-            Control success = o.Transfer ? Tip(T("ne rate pas", 12, Tok.Good, mono: true).AlignRight(), "Une fabrication par transfert refond la pièce que tu as déjà : elle réussit toujours.")
-                : o.Success is { } ok ? Tip(T(ChainPct(ok), 13, ok >= 0.9 ? Tok.Good : ok >= 0.8 ? Tok.Text : Tok.Warn, FontWeight.SemiBold, mono: true).AlignRight(),
-                    "Chance que la fabrication réussisse. Ratée, tous ses ingrédients sont perdus, la pièce éclatante du palier d'avant comprise.")
-                : Tip(T("?", 13, Tok.Faint, mono: true).AlignRight(), "Le jeu ne donne pas la chance de réussite de cette recette : comptée à 100 %.");
-            Control combo = rc.Combo <= 0 ? T("—", 12, Tok.Faint, mono: true).AlignRight()
-                : Tip(new StackPanel
-                {
-                    Children =
-                    {
-                        T($"{rc.Combo} %", 13, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(),
-                        T($"{ChainPct(o.ComboYield)} des essais", 11, Tok.Muted, mono: true).AlignRight(),
-                    },
-                }, o.Transfer ? $"Une fois sur {Fmt.Num(100.0 / rc.Combo)}, le transfert donne directement la version éclatante."
-                    : $"Chance de combo après une fabrication réussie. Le combo est une fabrication à part, qui peut rater à son tour : " +
-                      $"réussite {ChainPct(o.Success ?? 1)} × combo {rc.Combo} % × réussite du combo {ChainPct(o.ComboSuccess ?? o.Success ?? 1)} = {ChainPct(o.ComboYield)} des essais donnent l'éclatant.");
+            chance.VerticalAlignment = VerticalAlignment.Center;
+
             var id = rc.Id;
-            var count = Count(p);
-            foreach (var cell in new[] { mastery, success, combo, count }) cell.VerticalAlignment = VerticalAlignment.Top;
-            stepRows.Add(TableRow(Columns(stepCols, name, mastery, success, combo, count), false, () => OpenRecipe(id)));
+            var row = Clickable(Columns(pathCols, rail, cell, chance, tries), () => OpenRecipe(id), here ? Accent.Dim : null, here ? null : Tok.Hover, new Thickness(here ? 13 : 20, 0));
+            if (here)
+            {
+                row.BorderBrush = Accent.Main;
+                row.BorderThickness = new Thickness(1);
+                row.CornerRadius = new CornerRadius(Skin.Radius);
+                row.Margin = new Thickness(6, 0);
+            }
+            if (passed && !todo && !here) cell.Opacity = 0.6;
+            pathRows.Add(row);
         }
-        foreach (var p in steps)
+        static Border Band(string text, IBrush color) => new()
         {
-            Step(p, false);
-            if (p.Recipe.ComboName is { } result && book.Ways(Market.Fold(result)).Then is { } then && view.Mean.Crafts.GetValueOrDefault(then.Recipe.Id) > 0)
-                Step(then, true);
+            Padding = new Thickness(20, 8), Background = Tok.Alpha(color, 0.09), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = T(text, 12, Tok.Text, wrap: true).WithLineHeight(1.4),
+        };
+        if (redo && extra.Count > 0)
+        {
+            var askers = extra.Select(x => $"« {x.By} »").Distinct().ToList();
+            pathRows.Insert(0, Band($"{string.Join(" et ", askers)} {(askers.Count > 1 ? "demandent chacun" : "demande")} aussi une autre « {extra[0].What} » : " +
+                                    "les paliers marqués « à refaire » sont à repasser pour elle.", Tok.Warn));
         }
-        var stepCard = TableCard($"Les paliers · de « {first.Recipe.Output.Name} » à « {goal.Name} »",
-            T("clic : la recette", 11, Tok.Muted, mono: true),
-            TableHeader(stepCols, "Tu fabriques", "Maîtrise", "Réussite", "Combo", "Essais"), stepRows);
+        if (reached)
+            pathRows.Insert(0, Band($"Tu as déjà {spot!.Name} ({where}) : ce but est atteint. Les chiffres comptent une pièce de plus.", Tok.Good));
+        var pathCard = TableCard($"Ton chemin · {KindOf(line)}", T("clic sur un palier : sa recette", 11, Tok.Muted, mono: true),
+            TableHeader(pathCols, "", "Palier → version éclatante, que demande le palier suivant", "Chance", "Essais"), pathRows);
 
-        // Le tableau des ressources.
-        const string cols = "*,90,100,100,100,150";
-        long buy = 0;
-        var noPrice = 0;
+        // ----- La grille des ressources, tous paliers additionnés : ce qui manque d'abord (le plus cher en tête), puis ce que tu as.
+        const string cols = "*,110,110,110,170";
+        static TextBlock Cell(string text, IBrush color, bool bold = false) => T(text, 13, color, bold ? FontWeight.SemiBold : FontWeight.Normal, mono: true).AlignRight();
         var resRows = new List<Control>();
-        foreach (var x in rows)
+        foreach (var x in res.OrderBy(x => x.Miss > 0 ? 0 : 1).ThenByDescending(x => x.Miss > 0 ? x.Unit is { } u ? x.Miss * u : -1 : 0).ThenBy(x => x.At))
         {
-            long best = Up(x.Best), need = Up(x.Mean), wide = Up(x.Wide), have = (long)x.Have;
-            var unit = x.Part.Npc ?? m.Book.PriceOf(x.Part)?.Price;
-            if (have < need) { if (unit is { } u) buy += (need - have) * u; else noPrice++; }
-            Control state = !m.HasStock ? T("—", 12, Tok.Faint, mono: true).AlignRight()
-                : have >= wide ? Tip(T("assez", 12, Tok.Good, FontWeight.SemiBold, mono: true).AlignRight(), "Ton stock couvre même le besoin compté large.")
-                : have >= need ? Tip(T($"assez en moyenne", 12, Tok.Warn, mono: true).AlignRight(), $"Pour être tranquille (9 fois sur 10), il en faudrait {Fmt.Big(wide - have)} de plus.")
-                : Tip(T($"manque {Fmt.Big(need - have)}", 12, Tok.Bad, FontWeight.SemiBold, mono: true).AlignRight(),
-                    $"Pour le besoin moyen. En comptant large, il en manque {Fmt.Big(wide - have)}." + (unit is { } u2 ? $" Prix noté : {Fmt.Big(u2)} Kinah pièce." : " Pas de prix noté."));
-            var where = m.WhereOf(x.Part);
             var name = x.Part.Name;
-            resRows.Add(TableRow(Columns(cols, MarketItemLine(m.Book.ItemOf(x.Part) ?? Market.ReferenceOf(name), name, 13),
-                T(Fmt.Big(best), 13, Tok.Text2, mono: true).AlignRight(),
-                T(Fmt.Big(need), 13, Tok.Text, FontWeight.SemiBold, mono: true).AlignRight(),
-                T(Fmt.Big(wide), 13, Tok.Text2, mono: true).AlignRight(),
-                !m.HasStock ? T("—", 12, Tok.Faint, mono: true).AlignRight()
-                    : Tip(T(Fmt.Big(have), 13, have > 0 ? Tok.Text : Tok.Faint, mono: true).AlignRight(), where is null ? "Dans ton stock." : $"Dans ton stock : {where}."),
-                state), false, () => OpenUses(name)));
+            var on = m.WhereOf(x.Part);
+            Control cost = x.Miss == 0 ? Cell("—", Tok.Faint)
+                : x.Unit is { } u ? Tip(Cell(Fmt.Big(x.Miss * u), Tok.Text, true), $"{Fmt.Big(x.Miss)} × {Fmt.Big(u)} Kinah pièce, au {(x.Part.Npc is not null ? "prix du PNJ" : "dernier prix de l'hôtel des ventes")}.")
+                : Tip(Cell("pas de prix", Tok.Faint), "Aucun prix noté pour cette ressource : elle ne se vend peut-être pas (objet lié), ou personne ne l'a encore relevée. Elle n'est pas comptée dans les totaux.");
+            var row = TableRow(Columns(cols, MarketItemLine(m.Book.ItemOf(x.Part) ?? Market.ReferenceOf(name), name, 13),
+                Cell(Fmt.Big(x.Need), Tok.Text, true),
+                !m.HasStock ? Cell("—", Tok.Faint) : Tip(Cell(Fmt.Big(x.Have), x.Have > 0 ? Tok.Text2 : Tok.Faint), on is null ? "Dans ton stock (sac, coffre, rangements)." : $"Dans ton stock : {on}."),
+                x.Miss == 0 ? Cell("✓", Tok.Good, true) : Cell(Fmt.Big(x.Miss), Tok.Bad, true),
+                cost), false, () => OpenUses(name));
+            resRows.Add(new Border { BorderBrush = Tok.Alpha(Tok.Border, 0.6), BorderThickness = new Thickness(0, 0, 0, 1), Child = row });
         }
-        if (m.HasStock && (buy > 0 || noPrice > 0))
-            resRows.Add(T((buy > 0 ? $"Ce qui manque pour le besoin moyen coûte environ {Fmt.Big(buy)} Kinah aux prix notés" : "Ce qui manque n'a pas de prix noté") +
-                          (buy > 0 && noPrice > 0 ? $" ({Fmt.Plural(noPrice, "ressource")} sans prix non comptée{(noPrice > 1 ? "s" : "")})." : "."), 11, Tok.Muted, wrap: true).WithMargin(20, 8, 20, 10));
-        var resCard = TableCard($"Les ressources, tous paliers additionnés · {rows.Count}",
+        Border Foot(string label, string note, string value, IBrush color, double size) => new()
+        {
+            Padding = new Thickness(20, 9), Background = Tok.Chrome, BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 1, 0, 0),
+            Child = Columns("*,Auto", new StackPanel { Spacing = 2, Children = { T(label, 13, Tok.Text, FontWeight.SemiBold), T(note, 11, Tok.Muted, wrap: true) } },
+                T(value, size, color, FontWeight.SemiBold, mono: true).AlignRight()),
+        };
+        var counted = mode == "best" ? "au mieux" : wide ? "en comptant large" : "en moyenne";
+        resRows.Add(Foot("Total à acheter",
+            !m.HasStock ? "ton stock est inconnu sur ce PC : tout est compté à acheter"
+            : missing == 0 ? "ton stock couvre toutes les ressources" : $"{Fmt.Plural(missing, "ressource")} sur {res.Count} à compléter, aux derniers prix",
+            $"{Fmt.Big(buy)} Kinah", missing == 0 && m.HasStock ? Tok.Good : Tok.Text, 16));
+        if (m.HasStock)
+            resRows.Add(Foot("Prix complet de la pièce", "si tu achetais toutes les ressources, celles de ton stock comprises", $"{Fmt.Big(full)} Kinah", Tok.Text2, 14));
+        if (m.Book.PriceOf(new RecipePart("", goal.Name, 1))?.Price is { } sold)
+            resRows.Add(Foot($"« {goal.Name} » à l'hôtel des ventes", "dernier prix relevé de la pièce finie, pour comparer", $"{Fmt.Big(sold)} Kinah", Tok.Text2, 14));
+        if (unpriced.Count > 0)
+            resRows.Add(T($"Sans prix noté, donc hors des totaux : {string.Join(", ", unpriced.Select(x => x.Part.Name))}.", 11, Tok.Muted, wrap: true).WithMargin(20, 8, 20, 10));
+        var resHead = new Border
+        {
+            Padding = new Thickness(20, 8), BorderBrush = Tok.Border, BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = Columns(cols, Label("Ressource"), Label("Il faut").AlignRight(), Label("En stock").AlignRight(), Label("Manque").AlignRight(), Label("Coût du manque").AlignRight()),
+        };
+        var resCard = TableCard($"Ce qu'il te faut · {Fmt.Plural(res.Count, "ressource")}, {counted}",
             T(m.AllStock ? "stock de tous tes persos" : m.Who is null ? "stock inconnu sur ce PC : il faut le Pet Meter" : $"stock de {m.Who.Character}", 11, Tok.Muted, mono: true),
-            TableHeader(cols, "Ressource", "Au mieux", "En moyenne", "Large", "Ton stock", "Verdict"), resRows);
+            resHead, resRows);
 
-        // Les matériaux à fabriquer d'abord.
-        Control? makeCard = null;
-        if (view.Mean.Makes.Count > 0)
+        // ----- Le détail, replié : les matériaux à fabriquer d'abord, puis les règles du jeu.
+        Border? makeCard = null;
+        if (bill.Makes.Count > 0)
         {
             const string makeCols = "*,110,110,130,150";
             var makeRows = new List<Control>();
-            foreach (var (key, make) in view.Mean.Makes)
+            foreach (var (_, make) in bill.Makes)
             {
                 var rc = make.Plan.Recipe;
                 var o = OddsOf(rc, m.Mastery);
@@ -638,14 +779,14 @@ sealed partial class ScreenViews
                 makeRows.Add(TableRow(Columns(makeCols, MarketItemLine(make.Plan.Item ?? Market.ReferenceOf(rc.Output.Name), rc.Output.Name, 13),
                     T(Fmt.Big(Up(make.Need)), 13, Tok.Text, mono: true).AlignRight(),
                     m.HasStock ? T(Fmt.Big(make.FromStock), 13, make.FromStock > 0 ? Tok.Text : Tok.Faint, mono: true).AlignRight() : T("—", 12, Tok.Faint, mono: true).AlignRight(),
-                    T(make.Crafts > 0 ? "≈ " + ChainCount(make.Crafts) : "0", 13, make.Crafts > 0 ? Tok.Text : Tok.Faint, FontWeight.SemiBold, mono: true).AlignRight(),
+                    T(make.Crafts > 0 ? Approx(make.Crafts) : "0", 13, make.Crafts > 0 ? Tok.Text : Tok.Faint, FontWeight.SemiBold, mono: true).AlignRight(),
                     T($"{rc.Profession} {rc.Mastery}" + (o.Success is { } ok ? $" · {ChainPct(ok)}" : ""), 12, Tok.Text2, mono: true)), false, () => OpenRecipe(id)));
             }
-            makeCard = TableCard("À fabriquer d'abord", T("leurs ingrédients sont déjà dans les ressources ci-dessus", 11, Tok.Muted, mono: true),
-                TableHeader(makeCols, "Matériau", "Besoin moyen", "Pris au stock", "Fabrications", "Recette"), makeRows);
+            makeCard = TableCard($"Matériaux à fabriquer d'abord · {bill.Makes.Count}", T("leurs ingrédients sont déjà dans la grille ci-dessus", 11, Tok.Muted, mono: true),
+                TableHeader(makeCols, "Matériau", "Besoin", "Pris au stock", "Fabrications", "Recette"), makeRows);
+            Fold(makeCard, "Matériaux à fabriquer d'abord");
         }
 
-        // Comment ça marche, en clair.
         var rules = new StackPanel { Spacing = 6 };
         foreach (var text in new[]
                  {
@@ -660,11 +801,9 @@ sealed partial class ScreenViews
         link.HorizontalAlignment = HorizontalAlignment.Left;
         rules.Children.Add(Tip(link, "Chance de combo et courbes de réussite de chaque recette, lues dans le client du jeu par MetaBot.GG (site de fans). " +
                                      "L'ordre des transferts (quelle pièce part vers quel palier) est déduit de l'ordre des paliers : le jeu ne le donne pas dans la recette."));
-        var how = Card(rules, "Comment ça marche");
+        var how = Card(rules, "Comment marche la fabrication par paliers");
+        Fold(how, "Comment marche la fabrication par paliers");
 
-        var unknown = !steps.Any(p => p.Recipe.Transfer is null && OddsOf(p.Recipe, m.Mastery).Known);
-        var hint = T((unknown && job.Length > 0 ? $"Ta maîtrise en {job} n'est pas renseignée : les chances sont celles du niveau de chaque recette, les plus basses. Tape-la ci-dessous pour les vraies. " : "") +
-                     "Les nombres sont pour obtenir 1 fois ton but. Une pièce éclatante déjà dans ton stock est comptée.", 12, Tok.Muted, wrap: true).WithLineHeight(1.45);
-        return Page("Craft · chaîne d'un équipement", right, choose, hint, CraftMasteryRow(m), kpis, stepCard, resCard, makeCard, how);
+        return Page("Craft · chaîne d'un équipement", right, choose, kpis, pathCard, resCard, makeCard, how);
     }
 }

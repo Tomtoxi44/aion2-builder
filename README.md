@@ -300,11 +300,13 @@ La liste des serveurs est gardée en cache une semaine dans `%APPDATA%\Aion2Buil
    ce qu'il en faut par fabrication, combien tu peux en faire avec ton stock et ce que chacune rapporte, puis les recettes
    un cran plus loin (celles qui utilisent ce que ces recettes fabriquent) ; sans rien taper, tes ressources qui servent à
    une recette. On y arrive aussi depuis un objet de l'inventaire ou de l'hôtel des ventes (« Sert à fabriquer »).
-   **Chaîne d'un équipement** : une pièce, du premier palier blanc au dernier palier du jeu, avec pour chaque recette sa
-   chance de réussite à ta maîtrise, sa chance de combo (25 % : la version « éclatante » que demande le palier suivant) et
-   les fabrications par transfert des paliers Roi dragon ; pour un but, le nombre d'essais au mieux, en moyenne et en
-   comptant large (9 fois sur 10), et toutes les ressources additionnées, comparées à ton stock. Chances relevées sur
-   MetaBot.GG.
+   **Chaîne d'un équipement** : une pièce (arme, armure, bijou), du premier palier blanc au dernier palier du jeu. La page
+   repère la pièce que tu portes ou que tu as en stock : ton palier est entouré (« tu es ici ») et le compte repart de lui,
+   sans refaire les paliers passés. Pour chaque palier restant, sa chance de réussite à ta maîtrise, sa chance de combo
+   (25 % : la version « éclatante » que demande le palier suivant) et les fabrications par transfert des paliers Roi
+   dragon, avec le nombre d'essais en moyenne, au mieux ou en comptant large (9 fois sur 10). Dessous, la grille des
+   ressources : ce qu'il faut, ton stock, ce qui manque, ce que coûte le manque, puis le total à acheter et le prix
+   complet de la pièce. Chances relevées sur MetaBot.GG.
 
 Le site officiel ne montre pas les points non dépensés (compétences, Daevanion, cristaux Ariel/Azphel) : indique-les
 dans les onglets Compétences et Daevanion, ou avec `--sp`, `--dp`, `--ariel`, `--azphel` dans le CLI. Ils sont gardés par

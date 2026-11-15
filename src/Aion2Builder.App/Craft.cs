@@ -335,7 +335,15 @@ sealed partial class ScreenViews
     sealed record CraftModel(MarketData Data, string Shown, double Tax, string TaxNote, CraftBook Book, Dictionary<string, NpcItem> NpcByName,
         List<CraftPlan> Plans, List<CharacterInventory> Owners, CharacterInventory? Who, bool HasStock, long Kinah,
         List<(CraftPlan Plan, int N, long Total)> Proposal, List<CraftPlan> Flips,
-        Func<RecipePart, long?> HaveOf, Func<RecipePart, string?> WhereOf, bool AllStock, IReadOnlyDictionary<string, int> Mastery);
+        Func<RecipePart, long?> HaveOf, Func<RecipePart, string?> WhereOf, bool AllStock, IReadOnlyDictionary<string, int> Mastery)
+    {
+        /// <summary>
+        /// Les pièces que tu portes : elles ne sont pas dans le stock (on ne les vend pas, on ne les compte pas comme ingrédients),
+        /// mais la chaîne d'un équipement part de la pièce que tu as déjà. WornOf : combien tu en portes ; WornBy : sur quel perso.
+        /// </summary>
+        public Func<RecipePart, long> WornOf { get; init; } = _ => 0;
+        public Func<RecipePart, string?> WornBy { get; init; } = _ => null;
+    }
 
     CraftModel? craftModel;
     bool craftModelDone;
@@ -400,6 +408,40 @@ sealed partial class ScreenViews
             var e = entries.FirstOrDefault(x => x.Id.ToString() == p.Key) ?? entries.FirstOrDefault(x => x.Family != "Sans nom" && Market.Fold(x.Name) == Market.Fold(p.Name));
             return e is null ? null : string.Join(", ", e.Where.GroupBy(w => PlaceOwner(w.Place)).Select(g => $"{g.Key} ×{Fmt.Big(g.Sum(w => w.Qty))}"));
         }
+        // Les pièces portées : le rangement « porté » lu par le Pet Meter pour le ou les persos du stock ; sans lui, la fiche
+        // officielle du perso ouvert (s'il est celui du stock, ou sans stock).
+        var wearers = new Dictionary<string, Dictionary<string, long>>(StringComparer.OrdinalIgnoreCase);
+        var wornNames = new Dictionary<string, string>();
+        if (inv is not null)
+            foreach (var c in allStock ? owners : who is null ? [] : [who])
+            {
+                var pieces = c.Items.Where(i => i.Qty > 0 && inv.ContainerName(i.Cont) == "porté").GroupBy(i => i.Item.ToString()).ToDictionary(g => g.Key, g => g.Sum(i => i.Qty));
+                if (pieces.Count > 0) wearers[c.Character] = pieces;
+            }
+        var open = r.Character.Name;
+        if (!wearers.ContainsKey(open) && (who is null || allStock || string.Equals(who.Character, open, StringComparison.OrdinalIgnoreCase)))
+            wearers[open] = r.Character.Equipment.GroupBy(e => e.Id.ToString()).ToDictionary(g => g.Key, g => (long)g.Count());
+        // Le nom d'un numéro : celui des recettes officielles, sinon celui de la liste de l'hôtel, sinon celui de la fiche.
+        foreach (var e in r.Character.Equipment) wornNames.TryAdd(e.Id.ToString(), e.Name);
+        var wornCount = new Dictionary<string, long>();
+        var wornOn = new Dictionary<string, List<string>>();
+        foreach (var (wearer, pieces) in wearers)
+            foreach (var (id, n) in pieces)
+            {
+                wornCount[id] = wornCount.GetValueOrDefault(id) + n;
+                if (!wornOn.TryGetValue(id, out var list)) wornOn[id] = list = [];
+                list.Add(wearer);
+            }
+        var wornByName = new Dictionary<string, string>();
+        foreach (var id in wornCount.Keys)
+            if (Market.GameNames.TryGetValue(id, out var name)) wornByName.TryAdd(Market.Fold(name), id);
+        foreach (var item in data.Items)
+            if (wornCount.ContainsKey(item.Key)) wornByName.TryAdd(Market.Fold(item.Name), item.Key);
+        foreach (var (id, name) in wornNames)
+            if (wornCount.ContainsKey(id)) wornByName.TryAdd(Market.Fold(name), id);
+        string? WornId(RecipePart p) => wornCount.ContainsKey(p.Key) ? p.Key : wornByName.GetValueOrDefault(Market.Fold(p.Name));
+        long WornOf(RecipePart p) => WornId(p) is { } id ? wornCount[id] : 0;
+        string? WornBy(RecipePart p) => WornId(p) is { } id ? string.Join(", ", wornOn[id]) : null;
         // Ta maîtrise (perso ouvert, tapée à la main) : une recette qui en demande plus est hors de portée.
         IReadOnlyDictionary<string, int> mastery = s.CraftMastery.GetValueOrDefault(r.Character.Name) ?? [];
         string? LockOf(CraftRecipe rc) => rc.Official && rc.Profession is { } job && rc.Mastery is { } need && mastery.TryGetValue(job, out var mine) && need > mine
@@ -436,7 +478,7 @@ sealed partial class ScreenViews
         var proposal = entries is null ? [] : CraftBook.Proposal(plans.Where(p => p.Locked is null), HaveOf, kinahHave);
         var flips = plans.Where(p => p.Flip > 0 && p.Locked is null).OrderByDescending(p => p.Flip).ToList();
         return craftModel = new CraftModel(data, shown, tax, taxNote, book, npcByName, plans, owners, who, entries is not null, kinahHave, proposal, flips,
-            HaveOf, WhereOf, allStock, mastery);
+            HaveOf, WhereOf, allStock, mastery) { WornOf = WornOf, WornBy = WornBy };
     }
 
     enum CraftCall { Make, SellInputs, ForSelf, BuyNpc, NoPrice }

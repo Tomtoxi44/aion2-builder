@@ -18,6 +18,28 @@ sealed partial class ScreenViews
     static List<string> CraftProfessions() =>
         Market.OfficialRecipes.Select(rc => rc.Profession).OfType<string>().Distinct().OrderBy(p => p, French).ToList();
 
+    /// <summary>La case de ta maîtrise dans un métier, pour le perso ouvert : gardée à la sortie de la case, ou sur Entrée.</summary>
+    TextBox MasteryBox(CraftModel m, string job)
+    {
+        var who = r.Character.Name;
+        var box = new TextBox { Text = m.Mastery.TryGetValue(job, out var have) ? have.ToString() : "", Width = 58, PlaceholderText = "?", MaxLength = 3 };
+        void Commit()
+        {
+            var typed = Num(box.Text) is { } v ? (int?)Math.Min(v, 999) : null;
+            var before = m.Mastery.TryGetValue(job, out var old) ? old : (int?)null;
+            if (typed == before) return;
+            update(st =>
+            {
+                if (!st.CraftMastery.TryGetValue(who, out var mine)) st.CraftMastery[who] = mine = [];
+                if (typed is { } level) mine[job] = level; else mine.Remove(job);
+                if (mine.Count == 0) st.CraftMastery.Remove(who);
+            });
+        }
+        box.LostFocus += (_, _) => Commit();
+        box.KeyDown += (_, k) => { if (k.Key == Avalonia.Input.Key.Enter) { k.Handled = true; Commit(); } };
+        return box;
+    }
+
     /// <summary>
     /// La ligne « Ta maîtrise » de la vue d'ensemble : une case par métier pour le perso ouvert. Une case vide : maîtrise inconnue,
     /// toutes les recettes du métier restent proposées. La saisie est gardée à la sortie de la case (ou sur Entrée).
@@ -32,26 +54,10 @@ sealed partial class ScreenViews
             "Ton niveau dans chaque métier, lu dans la fenêtre d'artisanat du jeu. Rien ne le donne au Builder : tape-le ici. Chaque perso a le sien."));
         foreach (var job in jobs)
         {
-            var name = job;
-            var box = new TextBox { Text = m.Mastery.TryGetValue(job, out var have) ? have.ToString() : "", Width = 58, PlaceholderText = "?", MaxLength = 3 };
-            void Commit()
-            {
-                var typed = Num(box.Text) is { } v ? (int?)Math.Min(v, 999) : null;
-                var before = m.Mastery.TryGetValue(name, out var old) ? old : (int?)null;
-                if (typed == before) return;
-                update(st =>
-                {
-                    if (!st.CraftMastery.TryGetValue(who, out var mine)) st.CraftMastery[who] = mine = [];
-                    if (typed is { } level) mine[name] = level; else mine.Remove(name);
-                    if (mine.Count == 0) st.CraftMastery.Remove(who);
-                });
-            }
-            box.LostFocus += (_, _) => Commit();
-            box.KeyDown += (_, k) => { if (k.Key == Avalonia.Input.Key.Enter) { k.Handled = true; Commit(); } };
             row.Children.Add(new StackPanel
             {
                 Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 2, 14, 2),
-                Children = { T(job, 12, Tok.Text2), box },
+                Children = { T(job, 12, Tok.Text2), MasteryBox(m, job) },
             });
         }
         var locked = m.Plans.Count(p => p.Locked is not null);

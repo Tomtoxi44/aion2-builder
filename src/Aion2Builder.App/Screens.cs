@@ -99,6 +99,8 @@ sealed class UiState
     /// <summary>Craft · « Chaîne d'un équipement » : la pièce choisie (son premier palier, nom plié) et le but (nom plié ; null : le dernier palier).</summary>
     public string? CraftChainLine { get; set; }
     public string? CraftChainGoal { get; set; }
+    /// <summary>Craft · « Chaîne d'un équipement » : comment compter (null : en moyenne ; « best » : au mieux ; « wide » : en comptant large).</summary>
+    public string? CraftChainCount { get; set; }
     public string? CraftFilter { get; set; }
     /// <summary>Craft : métier montré (Forge, Armure…, « Notées par les joueurs ») ; null : tous.</summary>
     public string? CraftProfession { get; set; }
