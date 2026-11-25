@@ -4854,7 +4854,7 @@ sealed partial class ScreenViews(GameDatabase db, AdviceReport r, PlayerInputs i
         }
         if (Group("Actives · importance · niveau visé", "Active", 12) is { } actives) col.Children.Add(actives);
         var passives = Group("Passifs", "Passive", 10);
-        var stigmas = Group("Stigmas (les 4 premiers sont équipés)", "Stigma", 6);
+        var stigmas = Group($"Stigmas (les {db.Settings.Stigmas.Slots} premiers sont équipés)", "Stigma", 6);
         if (passives is not null || stigmas is not null)
             col.Children.Add(Expander("Passifs et stigmas", IsOpen($"build:{id}:more"), () => Toggle($"build:{id}:more"), () =>
             {

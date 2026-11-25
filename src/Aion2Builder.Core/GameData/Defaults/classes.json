@@ -571,7 +571,7 @@
         }
       },
       "designed": {
-        "summary": "Minutie est active en permanence (Flèche à marque : 10 s de recharge pour 10 s de durée) : le build s'appuie dessus avec Flèche oppressive, 150 % par lancer. Flèche explosive remplace Arc de bénédiction, dont les +200 CRIT ne durent que 8 % du temps alors que le CRIT plafonne à 50 %. Tirs concentrés et Œil d'entrave montent, parce que la cible saigne et reste ralentie presque tout le temps.",
+        "summary": "Minutie est active en permanence (Flèche à marque : 10 s de recharge pour 10 s de durée) : le build s'appuie dessus avec Flèche oppressive, 150 % par lancer. Flèche explosive remplace Arc de bénédiction, dont les +200 CRIT ne durent que 11 % du temps (recharge de 1 min 30 depuis le 25/11) alors que le CRIT plafonne à 50 %. Tirs concentrés et Œil d'entrave montent, parce que la cible saigne et reste ralentie presque tout le temps.",
         "method": "Données des sorts au niveau 1 (metabot.gg) : dégâts par seconde = % d'ATQ ÷ temps de recharge (× nombre de cibles), pondérés par leurs conditions (Minutie pour Flèche oppressive et Visée de flèche, ralentissement pour Flèche déchirante et Œil d'entrave, dégâts sur la durée pour Tirs concentrés) ; buffs comptés par leur temps actif (durée ÷ recharge). Sans guide ni profil de joueur.",
         "skills": [
           { "name": "Flèche à marque", "kind": "Active", "role": "Minutie en permanence", "priority": { "PvE": 1.0, "PvP": 0.95 }, "target": { "PvE": 10, "PvP": 10 },
@@ -582,7 +582,7 @@
             "why": "50 % de chance de 31 % d'ATQ en plus par coup (une fois par seconde) sur une cible qui subit des dégâts sur la durée. Flèche perçante fait saigner toutes les 5 s et Flèche du Griffon brûle 10 s : la condition est presque toujours remplie, soit jusqu'à 15 % d'ATQ par seconde." },
           { "name": "Œil d'entrave", "kind": "Passive", "role": "Dégâts sur cible ralentie", "priority": { "PvE": 0.8, "PvP": 0.65 }, "target": { "PvE": 10, "PvP": 6 },
             "why": "50 % de chance de 35 % d'ATQ en plus par coup (une fois par seconde) sur une cible ralentie : Flèche à traquenard ralentit toutes les 15 s, ce qui ouvre aussi Flèche déchirante." },
-          { "name": "Arc de bénédiction", "kind": "Stigma", "role": "Buff de CRIT (8 % du temps)", "priority": { "PvE": 0.7, "PvP": 0.85 }, "target": { "PvE": 10, "PvP": 10 },
+          { "name": "Arc de bénédiction", "kind": "Stigma", "role": "Buff de CRIT (11 % du temps)", "priority": { "PvE": 0.7, "PvP": 0.85 }, "target": { "PvE": 10, "PvP": 10 },
             "why": "+200 CRIT et +100 Précision pendant 10 s, recharge 2 min : actif 8 % du temps. Le CRIT plafonne à 50 % sur les serveurs occidentaux : un Rôdeur équipé y est souvent déjà, et les +200 CRIT ne servent plus à rien." },
           { "name": "Flèche explosive", "kind": "Stigma", "role": "Dégâts de zone", "priority": { "PvE": 0.8, "PvP": 0.5 }, "target": { "PvE": 10, "PvP": 5 },
             "why": "253 % d'ATQ sur 4 cibles ; au niveau 5, recharge 30 s (8,4 % d'ATQ par seconde sur une cible) ; au niveau 10, +10 % sur une cible ralentie, ce qui est presque toujours le cas avec Flèche à traquenard." }
@@ -606,7 +606,7 @@
           }
         },
         "differences": [
-          "Flèche explosive remplace Arc de bénédiction dans le set JcE : 253 % d'ATQ sur 4 cibles toutes les 30 s, contre +200 CRIT 10 s toutes les 2 min (8 % du temps), alors que le CRIT plafonne à 50 %.",
+          "Flèche explosive remplace Arc de bénédiction dans le set JcE : 253 % d'ATQ sur 4 cibles toutes les 30 s, contre +200 CRIT 10 s toutes les 1 min 30 depuis le 25/11 (11 % du temps), alors que le CRIT plafonne à 50 %.",
           "Flèche oppressive monte (0,60 contre 0,25) : Minutie est active en permanence, et 150 % par lancer bat Tir rapide (57 %).",
           "Flèche à marque passe premier (1,0 contre 0,90) : elle porte Minutie, donc +35 % sur Visée de flèche et l'accès à Flèche oppressive.",
           "Tirs concentrés et Œil d'entrave montent au niveau 10 (contre 8) : la cible saigne toutes les 5 s (Flèche perçante) et reste ralentie (Flèche à traquenard toutes les 15 s)."
@@ -933,7 +933,7 @@
         { "name": "Coup d'esprit", "kind": "Passive", "role": "Boost de DGT (toi + esprit)", "priority": { "PvE": 0.95, "PvP": 0.9 }, "target": { "PvE": 10, "PvP": 10 },
           "why": "+6 % de Boost de DGT JcE (+3 % JcJ) et Coup parfait, pour toi et ton esprit. Effet multiplié par 1,5 avec Faveur d'esprit améliorée au niveau 10. +4 niveaux par le Daevanion JcE." },
         { "name": "Unification des éléments", "kind": "Passive", "role": "Boost de DGT CRIT après une compétence d'esprit", "priority": { "PvE": 0.85, "PvP": 0.7 }, "target": { "PvE": 10, "PvP": 8 },
-          "why": "Après une compétence d'esprit, +1,1 % de Boost de DGT CRIT pendant 10 s, cumulable (toi et l'esprit). Troisième passif selon le guide, rentable une fois l'équipement CRIT en place." },
+          "why": "Après une compétence d'esprit, +5,5 % de Boost de DGT CRIT pendant 10 s (toi et l'esprit), +0,5 % par niveau ; depuis le 25/11, plus cumulable (avant : +1,1 %, cumulable). Troisième passif selon le guide, rentable une fois l'équipement CRIT en place." },
         { "name": "Revitalisation d'esprit", "kind": "Passive", "role": "Invocations plus fréquentes", "priority": { "PvE": 0.8, "PvP": 0.75 }, "target": { "PvE": 10, "PvP": 10 },
           "why": "11 % de chance à chaque coup de retirer 1 s aux invocations, et soin de l'esprit : plus d'invocations, donc plus de Fusion des éléments. Quatrième passif selon le guide." },
         { "name": "Avènement d'esprit", "kind": "Passive", "role": "Dégâts après une invocation", "priority": { "PvE": 0.7, "PvP": 0.6 }, "target": { "PvE": 8, "PvP": 6 },

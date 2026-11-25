@@ -34,8 +34,8 @@
     "changeThreshold": 0.15
   },
   "stigmas": {
-    "_note": "Guides (client Global) : 4 emplacements (niveaux 22, 27, 32, 37), niveau max 20, montée avec des fragments de stigma, échange gratuit.",
-    "slots": 4,
+    "_note": "Guides (client Global) : 4 emplacements (niveaux 22, 27, 32, 37) ; 5 stigmas équipables depuis le 25/11 (notes officielles). Niveau max 20, montée avec des fragments de stigma, échange gratuit.",
+    "slots": 5,
     "maxLevel": 20,
     "shardCostByLevel": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4, 8, 8, 8, 8, 8],
     "shardSources": "Ascension, montées de niveau, boutique d'échange Abyssale (points Abyssaux), boutique Cauchemar, boutique du festival Shugo."
